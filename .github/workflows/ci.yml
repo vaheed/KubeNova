@@ -94,21 +94,23 @@ jobs:
       - uses: helm/kind-action@v1
         with:
           cluster_name: kubenova-e2e
-      - name: Build images (local load)
+      - name: Build Agent image (local) and load into kind
         run: |
-          docker build -t ghcr.io/vaheed/kubenova-api:dev -f build/Dockerfile.api .
           docker build -t ghcr.io/vaheed/kubenova-agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova-api:dev --name kubenova-e2e
           kind load docker-image ghcr.io/vaheed/kubenova-agent:dev --name kubenova-e2e
-      - name: Install platform
-        run: make platform-up
-      - name: Deploy API
-        run: make deploy-api
+      - name: Start API + Postgres via docker compose
+        env:
+          KUBENOVA_REQUIRE_AUTH: "false"
+          MANAGER_URL_PUBLIC: http://localhost:8080
+        run: |
+          docker compose -f docker-compose.dev.yml up -d --build
+          for i in {1..30}; do curl -fsS http://localhost:8080/healthz && break || sleep 2; done
       - name: Smoke
+        env:
+          API_URL: http://localhost:8080
         run: |
           set -e
           mkdir -p artifacts
-          # Run smoke and capture logs on failure
           bash kind/tests/smoke.sh | tee artifacts/smoke.log
       - name: Collect artifacts on failure
         if: failure()
@@ -118,11 +120,15 @@ jobs:
           kubectl -n kubenova logs deploy/kubenova-api --tail=1000 > artifacts/api.log || true
           kubectl -n kubenova logs deploy/kubenova-agent --tail=1000 > artifacts/agent.log || true
           kubectl get crd > artifacts/crds.txt || true
+          docker compose -f docker-compose.dev.yml logs api > artifacts/api-compose.log || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: e2e-artifacts
           path: artifacts
+      - name: Compose down
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v || true
 
   docs_publish:
     runs-on: ubuntu-latest
