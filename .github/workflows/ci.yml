@@ -359,3 +359,62 @@ jobs:
           publish_dir: repo
           destination_dir: ${{ github.ref_name == 'develop' && 'charts/dev' || 'charts/stable' }}
           keep_files: true
+
+  charts_push_oci:
+    runs-on: ubuntu-latest
+    needs: build_push_amd64
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+      - name: Login to GHCR for Helm/ORAS
+        run: echo ${{ secrets.GITHUB_TOKEN }} | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Package charts (OCI)
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          package_chart() {
+            CHART_DIR=$1
+            NAME=$(basename "$CHART_DIR")
+            TMP=$(mktemp -d)
+            rsync -a "$CHART_DIR/" "$TMP/"
+            if [[ "$BRANCH" == "develop" ]]; then
+              sed -E -i 's/^(version: .*)$/\1-dev/' "$TMP/Chart.yaml"
+            fi
+            helm package "$TMP" -d out
+          }
+          package_chart deploy/helm/kubenova-api
+          package_chart deploy/helm/kubenova-agent
+          ls -la out
+      - name: Push charts to GHCR (OCI)
+        env:
+          OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          REPO="oci://ghcr.io/${OWNER}/kubenova"
+          for f in out/*.tgz; do echo pushing "$f"; helm push "$f" "$REPO"; done
+      - name: Tag charts as latest via ORAS
+        if: always()
+        uses: oras-project/setup-oras@v1
+      - name: Apply lightweight tags (latest or latest-dev)
+        env:
+          OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for f in out/*.tgz; do
+            base=$(basename "$f")
+            name=${base%%-*}
+            ver=${base#${name}-}; ver=${ver%.tgz}
+            src="ghcr.io/${OWNER}/kubenova/${name}:${ver}"
+            if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova/${name}:latest-dev"; else dst="ghcr.io/${OWNER}/kubenova/${name}:latest"; fi
+            oras copy "$src" "$dst"
+          done
