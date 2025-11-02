@@ -21,13 +21,13 @@ func startPostgres(t *testing.T) (dsn string, terminate func()) {
         Image:        "postgres:16",
         ExposedPorts: []string{"5432/tcp"},
         Env: map[string]string{ "POSTGRES_PASSWORD":"pw", "POSTGRES_DB":"kubenova", "POSTGRES_USER":"kubenova" },
-        WaitingFor:   wait.ForLog("database system is ready to accept connections").WithStartupTimeout(60*time.Second),
+        WaitingFor:   wait.ForListeningPort("5432/tcp").WithStartupTimeout(90*time.Second),
     }
     c, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{ContainerRequest: req, Started: true})
     if err != nil { t.Fatalf("container: %v", err) }
-    host, _ := c.Host(ctx)
     port, _ := c.MappedPort(ctx, "5432/tcp")
-    dsn = fmt.Sprintf("postgres://kubenova:pw@%s:%s/kubenova?sslmode=disable", host, port.Port())
+    // Prefer IPv4 to avoid ::1 issues on CI
+    dsn = fmt.Sprintf("postgres://kubenova:pw@127.0.0.1:%s/kubenova?sslmode=disable", port.Port())
     return dsn, func(){ _ = c.Terminate(ctx) }
 }
 

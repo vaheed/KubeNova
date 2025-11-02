@@ -26,12 +26,12 @@ func startPG(t *testing.T) (string, func()) {
         Image:        "postgres:16",
         ExposedPorts: []string{"5432/tcp"},
         Env: map[string]string{ "POSTGRES_PASSWORD":"pw", "POSTGRES_DB":"kubenova", "POSTGRES_USER":"kubenova" },
-        WaitingFor:   wait.ForLog("database system is ready to accept connections").WithStartupTimeout(60*time.Second),
+        WaitingFor:   wait.ForListeningPort("5432/tcp").WithStartupTimeout(90*time.Second),
     }
     c, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{ContainerRequest: req, Started: true})
     if err != nil { t.Fatalf("container: %v", err) }
-    host, _ := c.Host(ctx)
     port, _ := c.MappedPort(ctx, "5432/tcp")
+    const host = "127.0.0.1"
     dsn := "postgres://kubenova:pw@" + host + ":" + port.Port() + "/kubenova?sslmode=disable"
     return dsn, func(){ _ = c.Terminate(ctx) }
 }
