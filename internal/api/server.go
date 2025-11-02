@@ -52,8 +52,8 @@ func NewServer(s store.Store) *Server {
     })
     srv := &Server{r: mux, store: s, jwtKey: []byte(os.Getenv("JWT_SIGNING_KEY")), requireAuth: os.Getenv("KUBENOVA_REQUIRE_AUTH") == "true"}
 
-    mux.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); w.Write([]byte("ok")) })
-    mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); w.Write([]byte("ok")) })
+    mux.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
+    mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
     mux.Method(http.MethodGet, "/metrics", promhttp.Handler())
     mux.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "docs/openapi.yaml") })
 
@@ -360,7 +360,9 @@ func respond(w http.ResponseWriter, v any, err error) {
     }
     w.Header().Set("Content-Type", "application/json")
     enc := json.NewEncoder(w); enc.SetIndent("", "  ")
-    enc.Encode(v)
+    if err := enc.Encode(v); err != nil {
+        http.Error(w, err.Error(), 500)
+    }
 }
 
 // Build a minimal kubeconfig string bound to the capsule-proxy URL and JWT token

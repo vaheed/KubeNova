@@ -23,7 +23,14 @@ func main() {
     defer closeFn(context.Background())
 
     srv := api.NewServer(st)
-    s := &http.Server{ Addr: ":8080", Handler: srv.Router() }
+    s := &http.Server{
+        Addr:              ":8080",
+        Handler:           srv.Router(),
+        ReadHeaderTimeout: 5 * time.Second,
+        ReadTimeout:       30 * time.Second,
+        WriteTimeout:      30 * time.Second,
+        IdleTimeout:       60 * time.Second,
+    }
     logging.L.Info("KubeNova API listening", zap.String("addr", s.Addr))
     if err := api.StartHTTP(context.Background(), s); err != nil && err != http.ErrServerClosed {
         logging.L.Error("server error", zap.Error(err))
