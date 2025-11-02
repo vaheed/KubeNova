@@ -146,6 +146,8 @@ jobs:
           # Docker compose services (API + DB)
           docker compose -f docker-compose.dev.yml ps > artifacts/compose-ps.txt || true
           docker compose -f docker-compose.dev.yml logs --no-color > artifacts/compose-all.log || true
+          docker compose -f docker-compose.dev.yml logs api --no-color > artifacts/api-compose.log || true
+          docker compose -f docker-compose.dev.yml logs db --no-color > artifacts/db-compose.log || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
