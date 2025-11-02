@@ -1,5 +1,5 @@
-//go:build integration
-// +build integration
+//go:build integration && !darwin
+// +build integration,!darwin
 
 package api
 
@@ -31,7 +31,7 @@ func startPG(t *testing.T) (string, func()) {
     c, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{ContainerRequest: req, Started: true})
     if err != nil { t.Fatalf("container: %v", err) }
     host, _ := c.Host(ctx)
-    port, _ := c.MappedPort(ctx, "5432")
+    port, _ := c.MappedPort(ctx, "5432/tcp")
     dsn := "postgres://kubenova:pw@" + host + ":" + port.Port() + "/kubenova?sslmode=disable"
     return dsn, func(){ _ = c.Terminate(ctx) }
 }

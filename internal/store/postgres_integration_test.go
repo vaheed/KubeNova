@@ -1,5 +1,5 @@
-//go:build integration
-// +build integration
+//go:build integration && !darwin
+// +build integration,!darwin
 
 package store
 
@@ -26,7 +26,7 @@ func startPostgres(t *testing.T) (dsn string, terminate func()) {
     c, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{ContainerRequest: req, Started: true})
     if err != nil { t.Fatalf("container: %v", err) }
     host, _ := c.Host(ctx)
-    port, _ := c.MappedPort(ctx, "5432")
+    port, _ := c.MappedPort(ctx, "5432/tcp")
     dsn = fmt.Sprintf("postgres://kubenova:pw@%s:%s/kubenova?sslmode=disable", host, port.Port())
     return dsn, func(){ _ = c.Terminate(ctx) }
 }
@@ -54,4 +54,3 @@ func TestPostgresStoreIntegration(t *testing.T) {
     conds := []types.Condition{{Type:"AgentReady", Status:"True", LastTransitionTime: time.Now()}}
     if err := p.AddConditionHistory(ctx, id, conds); err != nil { t.Fatal(err) }
 }
-
