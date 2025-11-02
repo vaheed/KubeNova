@@ -206,6 +206,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: build_images_scan
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Clean Trivy cache dir (avoid tar restore conflicts)
         run: rm -rf ~/.cache/trivy || true
       - name: Cache Trivy DB
