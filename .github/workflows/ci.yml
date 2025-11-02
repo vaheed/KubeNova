@@ -32,7 +32,7 @@ jobs:
 
   build_push:
     runs-on: ubuntu-latest
-    needs: lint_unit
+    needs: [lint_unit, security_scan]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -112,3 +112,122 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs/site/.vitepress/dist
+
+  security_scan:
+    runs-on: ubuntu-latest
+    needs: lint_unit
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.24' }
+      - name: Install gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - name: Run gosec
+        run: |
+          $(go env GOPATH)/bin/gosec ./...
+      - name: Build images for scan
+        run: |
+          docker build -t kubenova-api:scan -f build/Dockerfile.api .
+          docker build -t kubenova-agent:scan -f build/Dockerfile.agent .
+      - name: Trivy FS scan
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+      - name: Trivy Config scan (Helm, manifests)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: 'config'
+          scanners: 'config'
+          scan-ref: 'deploy'
+          format: 'table'
+          exit-code: '1'
+      - name: Trivy image scan (API)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: 'kubenova-api:scan'
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Trivy image scan (Agent)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: 'kubenova-agent:scan'
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Gitleaks secrets scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  charts_publish:
+    runs-on: ubuntu-latest
+    needs: build_push
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+      - name: Package charts
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          CHANNEL=stable
+          DEST=charts/stable
+          if [[ "$BRANCH" == "develop" ]]; then CHANNEL=dev; DEST=charts/dev; fi
+          mkdir -p out
+          package_chart() {
+            CHART_DIR=$1
+            NAME=$(basename "$CHART_DIR")
+            TMP=$(mktemp -d)
+            rsync -a "$CHART_DIR/" "$TMP/"
+            if [[ "$CHANNEL" == "dev" ]]; then
+              # append -dev to version in Chart.yaml
+              sed -E -i 's/^(version: .*)$/\1-dev/' "$TMP/Chart.yaml"
+            fi
+            helm package "$TMP" -d out
+          }
+          package_chart deploy/helm/kubenova-api
+          package_chart deploy/helm/kubenova-agent
+          ls -la out
+          # create latest copies (for direct downloads convenience)
+          for f in out/*.tgz; do cp "$f" "out/$(basename "$f" | sed 's/-[0-9].*/-latest.tgz/')"; done
+      - name: Build Helm repo index (merge existing)
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          CHANNEL=stable
+          DEST=charts/stable
+          if [[ "$BRANCH" == "develop" ]]; then CHANNEL=dev; DEST=charts/dev; fi
+          mkdir -p repo
+          mv out/*.tgz repo/
+          # try merge with existing index from Pages if present
+          EXISTING_URL="https://vaheed.github.io/kubenova/${DEST}/index.yaml"
+          curl -fsS "$EXISTING_URL" -o existing.yaml || true
+          if [[ -s existing.yaml ]]; then
+            helm repo index repo --merge existing.yaml
+          else
+            helm repo index repo
+          fi
+          ls -la repo
+      - name: Publish charts to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: repo
+          destination_dir: ${{ github.ref_name == 'develop' && 'charts/dev' || 'charts/stable' }}
+          keep_files: true

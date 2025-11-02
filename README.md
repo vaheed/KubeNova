@@ -34,6 +34,18 @@ Tests
 Docs
 - VitePress site at `docs/site`. Build with `make docs-build` and serve with `make docs-serve`.
 
+Helm charts
+- CI publishes packaged charts to GitHub Pages:
+  - develop → https://vaheed.github.io/kubenova/charts/dev
+  - main → https://vaheed.github.io/kubenova/charts/stable
+- Add repo and install:
+```
+helm repo add kubenova-dev https://vaheed.github.io/kubenova/charts/dev
+helm repo add kubenova https://vaheed.github.io/kubenova/charts/stable
+helm repo update
+helm install kubenova-api kubenova/kubenova-api --namespace kubenova --create-namespace
+```
+
 This document includes:
 - Capsule & capsule-proxy bootstrap instructions  
 - Top-50 Capsule API → KubeNova route mapping  
