@@ -28,13 +28,19 @@ func init() {
 
 type ctxKey int
 const reqIDKey ctxKey = 1
+const corrIDKey ctxKey = 2
 
 func WithRequestID(ctx context.Context, id string) context.Context { return context.WithValue(ctx, reqIDKey, id) }
+func WithCorrelationID(ctx context.Context, id string) context.Context { return context.WithValue(ctx, corrIDKey, id) }
 func FromContext(ctx context.Context) *zap.Logger {
+    l := L
     if v := ctx.Value(reqIDKey); v != nil {
-        return L.With(zap.String("request_id", v.(string)))
+        l = l.With(zap.String("request_id", v.(string)))
     }
-    return L
+    if v := ctx.Value(corrIDKey); v != nil {
+        l = l.With(zap.String("correlation_id", v.(string)))
+    }
+    return l
 }
 
 // WithTrace returns a logger enriched with trace/span ids if present in ctx.

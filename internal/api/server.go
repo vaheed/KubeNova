@@ -38,10 +38,13 @@ type Server struct {
 func NewServer(s store.Store) *Server {
     mux := chi.NewRouter()
     mux.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
-    mux.Use(func(next http.Handler) http.Handler { // zap logging with request_id and traces
+    mux.Use(func(next http.Handler) http.Handler { // zap logging with request_id, correlation_id and traces
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
             reqID := middleware.GetReqID(r.Context())
             ctx := logging.WithRequestID(r.Context(), reqID)
+            corr := r.Header.Get("X-Correlation-ID")
+            if corr == "" { corr = reqID }
+            ctx = logging.WithCorrelationID(ctx, corr)
             lg := logging.WithTrace(ctx, logging.FromContext(ctx))
             lg.Info("http", zap.String("method", r.Method), zap.String("path", r.URL.Path))
             next.ServeHTTP(w, r.WithContext(ctx))

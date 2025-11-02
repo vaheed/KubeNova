@@ -4,6 +4,7 @@ import (
     "context"
     "log"
     "os"
+    "strconv"
     "time"
 
     "go.opentelemetry.io/otel"
@@ -23,10 +24,15 @@ func InitOTelProvider() {
     defer cancel()
     exp, err := otlptracehttp.New(ctx)
     if err != nil { log.Printf("otel exporter error: %v", err); return }
+    // sampling configuration (ratio 0..1 via OTEL_SAMPLING_RATIO)
+    var sampler sdktrace.Sampler = sdktrace.ParentBased(sdktrace.TraceIDRatioBased(1.0))
+    if v := os.Getenv("OTEL_SAMPLING_RATIO"); v != "" {
+        if f, err := strconv.ParseFloat(v, 64); err == nil { sampler = sdktrace.ParentBased(sdktrace.TraceIDRatioBased(f)) }
+    }
     tp := sdktrace.NewTracerProvider(
         sdktrace.WithBatcher(exp),
+        sdktrace.WithSampler(sampler),
         sdktrace.WithResource(resource.Empty()),
     )
     otel.SetTracerProvider(tp)
 }
-
