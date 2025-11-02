@@ -17,6 +17,8 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: 8080
+          securityContext:
+            readOnlyRootFilesystem: true
           env:
             - name: KUBENOVA_REQUIRE_AUTH
               value: "{{ .Values.env.KUBENOVA_REQUIRE_AUTH }}"
