@@ -103,13 +103,24 @@ jobs:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
         run: |
+          set -euo pipefail
           docker compose -f docker-compose.dev.yml up -d --build
-          for i in {1..30}; do curl -fsS http://localhost:8080/healthz && break || sleep 2; done
+          ok=0
+          for i in {1..60}; do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "API failed to become ready; compose logs:" >&2
+            docker compose -f docker-compose.dev.yml logs --no-color || true
+            exit 1
+          fi
       - name: Smoke
         env:
           API_URL: http://localhost:8080
         run: |
-          set -e
+          set -euo pipefail
+          set -o pipefail
           mkdir -p artifacts
           bash kind/tests/smoke.sh | tee artifacts/smoke.log
       - name: Collect cluster and compose logs
