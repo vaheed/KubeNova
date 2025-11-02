@@ -1,0 +1,108 @@
+name: ci
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+
+jobs:
+  lint_unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.24' }
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+      - name: Check repository for binaries
+        run: bash build/tools/check_binaries.sh
+      - run: go vet ./...
+      - run: go test ./... -count=1
+
+  build_push:
+    runs-on: ubuntu-latest
+    needs: lint_unit
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build images
+        run: |
+          TAG=${GITHUB_REF##*/}
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then EXTRA_TAGS="--tag ghcr.io/vaheed/kubenova-api:$TAG --tag ghcr.io/vaheed/kubenova-agent:$TAG"; fi
+          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova-api:dev $EXTRA_TAGS --push -f build/Dockerfile.api .
+          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova-agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
+
+  e2e_kind:
+    runs-on: ubuntu-latest
+    needs: build_push
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kubenova-e2e
+      - name: Build images (local load)
+        run: |
+          docker build -t ghcr.io/vaheed/kubenova-api:dev -f build/Dockerfile.api .
+          docker build -t ghcr.io/vaheed/kubenova-agent:dev -f build/Dockerfile.agent .
+          kind load docker-image ghcr.io/vaheed/kubenova-api:dev --name kubenova-e2e
+          kind load docker-image ghcr.io/vaheed/kubenova-agent:dev --name kubenova-e2e
+      - name: Install platform
+        run: make platform-up
+      - name: Deploy API
+        run: make deploy-api
+      - name: Smoke
+        run: |
+          set -e
+          mkdir -p artifacts
+          # Run smoke and capture logs on failure
+          bash kind/tests/smoke.sh | tee artifacts/smoke.log
+      - name: Collect artifacts on failure
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          kubectl -n kubenova get all -o wide > artifacts/kubenova.txt || true
+          kubectl -n kubenova logs deploy/kubenova-api --tail=1000 > artifacts/api.log || true
+          kubectl -n kubenova logs deploy/kubenova-agent --tail=1000 > artifacts/agent.log || true
+          kubectl get crd > artifacts/crds.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-artifacts
+          path: artifacts
+
+  docs_publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: |
+          cd docs/site
+          npm ci || npm install
+          npm run docs:build
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/site/.vitepress/dist

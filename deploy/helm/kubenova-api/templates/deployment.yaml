@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubenova-api
+  labels: { app: kubenova-api }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: kubenova-api}
+  template:
+    metadata:
+      labels: {app: kubenova-api}
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: KUBENOVA_REQUIRE_AUTH
+              value: "{{ .Values.env.KUBENOVA_REQUIRE_AUTH }}"
+            - name: AGENT_IMAGE
+              value: "{{ .Values.env.AGENT_IMAGE }}"
+            - name: MANAGER_URL_PUBLIC
+              value: "{{ .Values.env.MANAGER_URL_PUBLIC }}"
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5

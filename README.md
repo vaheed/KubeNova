@@ -6,7 +6,33 @@
 ## Overview
 
 KubeNova acts as a **central control plane** for multi-tenant Kubernetes environments.  
-It coordinates **Capsule** for multi-tenancy and **KubeVela** for application delivery.  
+It coordinates **Capsule** for multi-tenancy and **KubeVela** for application delivery. 
+
+Quick Start (Kind)
+- make kind-up
+- make platform-up     # optional in local dev; Agent can install too
+- make deploy-api
+- Port-forward API and register the cluster:
+  - kubectl -n kubenova port-forward svc/kubenova-api 8080:8080 &
+  - curl -XPOST localhost:8080/api/v1/clusters -H 'Content-Type: application/json' \
+    -d '{"name":"kind","kubeconfig":"'"$(base64 -w0 ~/.kube/config 2>/dev/null || base64 ~/.kube/config)"'"}'
+
+What happens
+- Manager stores the Cluster and installs the in-cluster Agent Deployment (replicas=2) and HPA.
+- Agent starts with leader election, installs/validates add-ons in order: Capsule → capsule-proxy → KubeVela.
+- Manager exposes status at GET /api/v1/clusters/{id} with Conditions: AgentReady, AddonsReady.
+- Both components expose /healthz and /readyz and publish Prometheus metrics and OpenTelemetry traces.
+
+Configuration
+- env.example documents DATABASE_URL, JWT, and deployment image versions.
+- AGENT_IMAGE controls the image used for remote install.
+
+Tests
+- make test-unit          # unit tests
+- make test-e2e           # Kind-based e2e smoke
+
+Docs
+- VitePress site at `docs/site`. Build with `make docs-build` and serve with `make docs-serve`.
 
 This document includes:
 - Capsule & capsule-proxy bootstrap instructions  

@@ -1,0 +1,6 @@
+services:
+  api:
+    image: ghcr.io/vaheed/kubenova-api:latest
+    env_file: [ env.example ]
+    ports: ["8080:8080"]
+

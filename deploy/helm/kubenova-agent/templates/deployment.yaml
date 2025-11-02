@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubenova-agent
+  labels: { app: kubenova-agent }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: kubenova-agent}
+  template:
+    metadata:
+      labels: {app: kubenova-agent}
+    spec:
+      serviceAccountName: kubenova-agent
+      containers:
+        - name: agent
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8082 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /readyz, port: 8082 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          env:
+            - name: MANAGER_URL
+              value: "{{ .Values.manager.url }}"
+            - name: BATCH_INTERVAL_SECONDS
+              value: "{{ .Values.manager.batchIntervalSeconds | quote }}"
+            - name: REDIS_ADDR
+              value: "{{ .Values.redis.addr }}"
+            - name: BATCH_MAX_ITEMS
+              value: "{{ .Values.manager.batchMaxItems | quote }}"
+        {{- if .Values.redis.enabled }}
+        - name: redis
+          image: "{{ .Values.redis.image }}"
+          args: ["--save", "", "--appendonly", "no"]
+        {{- end }}
