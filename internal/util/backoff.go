@@ -11,14 +11,13 @@ import (
 func Retry(max time.Duration, fn func() (bool, error)) error {
     start := time.Now()
     attempt := 0
+    steps := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second}
     for {
         retry, err := fn()
         if !retry || time.Since(start) > max { return err }
-        // exponential + jitter (crypto/rand), cap at 30s, and cap shift to avoid overflow
-        capShift := 5 // 1s << 5 = 32s (~ cap of 30s)
-        if attempt > capShift { attempt = capShift }
-        sleep := time.Second << uint(attempt)
-        if sleep > 30*time.Second { sleep = 30 * time.Second }
+        // exponential + jitter (crypto/rand), via bounded steps slice (no bit shifts)
+        if attempt >= len(steps) { attempt = len(steps) - 1 }
+        sleep := steps[attempt]
         // jitter in [0, sleep/2)
         half := sleep / 2
         var jitter time.Duration
