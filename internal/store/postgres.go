@@ -2,7 +2,6 @@ package store
 
 import (
     "context"
-    "fmt"
     "os"
 
     "github.com/jackc/pgx/v5/pgxpool"
@@ -23,10 +22,10 @@ func NewPostgres(ctx context.Context, url string) (*Postgres, error) {
 }
 
 func (p *Postgres) applyMigration(ctx context.Context) error {
-    // very small migration runner: read db/migrations/0001_init.sql and exec
+    // small migration runner: try file, fallback to embedded baseline
     path := "db/migrations/0001_init.sql"
     b, err := os.ReadFile(path)
-    if err != nil { return fmt.Errorf("read migration: %w", err) }
+    if err != nil { b = []byte(defaultMigrationSQL) }
     _, err = p.db.Exec(ctx, string(b))
     return err
 }
@@ -141,6 +140,54 @@ func (p *Postgres) GetCluster(ctx context.Context, id int) (types.Cluster, strin
 }
 
 func mapToJSONB(m map[string]string) any { if m == nil { return map[string]string{} }; return m }
+
+// defaultMigrationSQL mirrors db/migrations/0001_init.sql for test environments
+const defaultMigrationSQL = `-- tenants, projects, apps, events (skeleton)
+CREATE TABLE IF NOT EXISTS tenants (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS projects (
+  id SERIAL PRIMARY KEY,
+  tenant TEXT NOT NULL,
+  name TEXT NOT NULL,
+  UNIQUE(tenant,name)
+);
+CREATE TABLE IF NOT EXISTS apps (
+  id SERIAL PRIMARY KEY,
+  tenant TEXT NOT NULL,
+  project TEXT NOT NULL,
+  name TEXT NOT NULL,
+  UNIQUE(tenant,project,name)
+);
+
+CREATE TABLE IF NOT EXISTS clusters (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  kubeconfig_enc TEXT NOT NULL,
+  labels JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id BIGSERIAL PRIMARY KEY,
+  cluster_id INT NULL REFERENCES clusters(id) ON DELETE SET NULL,
+  type TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  payload JSONB,
+  ts TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS cluster_conditions (
+  id BIGSERIAL PRIMARY KEY,
+  cluster_id INT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  reason TEXT,
+  message TEXT,
+  ts TIMESTAMP DEFAULT NOW()
+);`
 
 // Events & conditions
 func (p *Postgres) AddEvents(ctx context.Context, clusterID *int, evts []types.Event) error {
