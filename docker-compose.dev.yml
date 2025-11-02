@@ -5,6 +5,11 @@ services:
     ports: ["5432:5432"]
     volumes:
       - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   api:
     build:
@@ -14,7 +19,10 @@ services:
     environment:
       - DATABASE_URL=${KUBENOVA_DB_URL:-postgres://kubenova:kubenova@db:5432/kubenova?sslmode=disable}
     ports: ["8080:8080"]
-    depends_on: [db]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   dbdata:
