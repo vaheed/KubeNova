@@ -17,6 +17,7 @@ import (
     "github.com/vaheed/kubenova/internal/store"
     "github.com/vaheed/kubenova/pkg/types"
     "fmt"
+    "github.com/jackc/pgx/v5/pgxpool"
 )
 
 func startPG(t *testing.T) (string, func()) {
@@ -33,6 +34,18 @@ func startPG(t *testing.T) (string, func()) {
     port, _ := c.MappedPort(ctx, "5432/tcp")
     const host = "127.0.0.1"
     dsn := "postgres://kubenova:pw@" + host + ":" + port.Port() + "/kubenova?sslmode=disable"
+    // Wait until DB accepts connections
+    deadline := time.Now().Add(45 * time.Second)
+    for time.Now().Before(deadline) {
+        cfg, err := pgxpool.ParseConfig(dsn)
+        if err == nil {
+            if db, err := pgxpool.NewWithConfig(ctx, cfg); err == nil {
+                if err = db.Ping(ctx); err == nil { db.Close(); break }
+                db.Close()
+            }
+        }
+        time.Sleep(500 * time.Millisecond)
+    }
     return dsn, func(){ _ = c.Terminate(ctx) }
 }
 

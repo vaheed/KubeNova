@@ -12,6 +12,7 @@ import (
     tc "github.com/testcontainers/testcontainers-go"
     "github.com/testcontainers/testcontainers-go/wait"
     "github.com/vaheed/kubenova/pkg/types"
+    "github.com/jackc/pgx/v5/pgxpool"
 )
 
 func startPostgres(t *testing.T) (dsn string, terminate func()) {
@@ -28,6 +29,18 @@ func startPostgres(t *testing.T) (dsn string, terminate func()) {
     port, _ := c.MappedPort(ctx, "5432/tcp")
     // Prefer IPv4 to avoid ::1 issues on CI
     dsn = fmt.Sprintf("postgres://kubenova:pw@127.0.0.1:%s/kubenova?sslmode=disable", port.Port())
+    // Proactively wait until DB accepts connections (listening isn't enough)
+    deadline := time.Now().Add(45 * time.Second)
+    for time.Now().Before(deadline) {
+        cfg, err := pgxpool.ParseConfig(dsn)
+        if err == nil {
+            if db, err := pgxpool.NewWithConfig(ctx, cfg); err == nil {
+                if err = db.Ping(ctx); err == nil { db.Close(); break }
+                db.Close()
+            }
+        }
+        time.Sleep(500 * time.Millisecond)
+    }
     return dsn, func(){ _ = c.Terminate(ctx) }
 }
 
