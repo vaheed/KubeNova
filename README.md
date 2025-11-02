@@ -44,6 +44,19 @@ helm repo add kubenova-dev https://vaheed.github.io/kubenova/charts/dev
 helm repo add kubenova https://vaheed.github.io/kubenova/charts/stable
 helm repo update
 helm install kubenova-api kubenova/kubenova-api --namespace kubenova --create-namespace
+
+OCI charts in GitHub Packages (GHCR)
+- CI also pushes Helm charts as OCI artifacts to GHCR:
+  - ghcr.io/vaheed/kubenova/kubenova-api
+  - ghcr.io/vaheed/kubenova/kubenova-agent
+- Tags:
+  - develop: semantic version with -dev suffix, plus lightweight alias latest-dev
+  - main: semantic version, plus alias latest
+- Example (OCI):
+```
+helm registry login ghcr.io -u <user> -p <token>
+helm pull oci://ghcr.io/vaheed/kubenova/kubenova-api --version latest
+```
 ```
 
 This document includes:
