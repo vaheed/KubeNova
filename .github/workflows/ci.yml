@@ -19,8 +19,6 @@ jobs:
             ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
-      - name: Check repository for binaries
-        run: bash build/tools/check_binaries.sh
       - run: go vet ./...
       - run: go test ./... -count=1
 

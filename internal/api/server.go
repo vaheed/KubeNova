@@ -38,11 +38,12 @@ type Server struct {
 func NewServer(s store.Store) *Server {
     mux := chi.NewRouter()
     mux.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
-    mux.Use(func(next http.Handler) http.Handler { // zap logging with request_id
+    mux.Use(func(next http.Handler) http.Handler { // zap logging with request_id and traces
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
             reqID := middleware.GetReqID(r.Context())
             ctx := logging.WithRequestID(r.Context(), reqID)
-            logging.FromContext(ctx).Info("http", zap.String("method", r.Method), zap.String("path", r.URL.Path))
+            lg := logging.WithTrace(ctx, logging.FromContext(ctx))
+            lg.Info("http", zap.String("method", r.Method), zap.String("path", r.URL.Path))
             next.ServeHTTP(w, r.WithContext(ctx))
         })
     })
@@ -165,6 +166,7 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
     var t types.Tenant; if err := json.NewDecoder(r.Body).Decode(&t); err != nil { http.Error(w, err.Error(), 400); return }
     t.CreatedAt = time.Now().UTC()
     if !canWriteTenant(s.caller(r), t.Name) { http.Error(w, "forbidden", http.StatusForbidden); return }
+    logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("create_tenant", zap.String("tenant", t.Name))
     err := s.store.CreateTenant(r.Context(), t)
     respond(w, t, err)
 }
@@ -198,6 +200,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
     var p types.Project; if err := json.NewDecoder(r.Body).Decode(&p); err != nil { http.Error(w, err.Error(), 400); return }
     p.CreatedAt = time.Now().UTC()
     if !canDevTenant(s.caller(r), p.Tenant) { http.Error(w, "forbidden", http.StatusForbidden); return }
+    logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("create_project", zap.String("tenant", p.Tenant), zap.String("project", p.Name))
     err := s.store.CreateProject(r.Context(), p)
     respond(w, p, err)
 }
@@ -225,6 +228,7 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
     var a types.App; if err := json.NewDecoder(r.Body).Decode(&a); err != nil { http.Error(w, err.Error(), 400); return }
     a.CreatedAt = time.Now().UTC()
     if !canDevTenant(s.caller(r), a.Tenant) { http.Error(w, "forbidden", http.StatusForbidden); return }
+    logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("create_app", zap.String("tenant", a.Tenant), zap.String("project", a.Project), zap.String("app", a.Name))
     err := s.store.CreateApp(r.Context(), a)
     respond(w, a, err)
 }
@@ -267,6 +271,7 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
     // install agent
     image := getenv("AGENT_IMAGE", "ghcr.io/vaheed/kubenova-agent:dev")
     mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-api.kubenova.svc.cluster.local:8080")
+    logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("install_agent", zap.String("cluster", c.Name), zap.String("image", image))
     if err := InstallAgentFunc(r.Context(), kb, image, mgr); err != nil { http.Error(w, err.Error(), 500); return }
     c.ID = id
     c.KubeconfigB64 = "" // don’t echo
@@ -293,6 +298,7 @@ func (s *Server) ingestEvents(w http.ResponseWriter, r *http.Request) {
     var cid *int
     if v := chi.URLParam(r, "id"); v != "" {}
     if q := r.URL.Query().Get("cluster_id"); q != "" { id := atoi(q); cid = &id }
+    if cid != nil { logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("ingest_events", zap.Int("cluster_id", *cid), zap.Int("count", len(list))) }
     if err := s.store.AddEvents(r.Context(), cid, list); err != nil { http.Error(w, err.Error(), 500); return }
     w.WriteHeader(http.StatusNoContent)
 }

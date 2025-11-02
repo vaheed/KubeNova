@@ -12,6 +12,8 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
     "sigs.k8s.io/controller-runtime/pkg/reconcile"
+    "github.com/vaheed/kubenova/internal/logging"
+    "go.uber.org/zap"
 )
 
 // ProjectReconciler uses a Namespace as the projection for a Project.
@@ -44,8 +46,10 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
         if changed { _ = r.Update(ctx, ns) }
         // ensure Capsule Tenant exists using unstructured
         if err := ensureCapsuleTenant(ctx, r.Client, tenant); err != nil {
+            logging.FromContext(ctx).With(zap.String("adapter","capsule"), zap.String("tenant", tenant)).Error("ensure tenant", zap.Error(err))
             return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
         }
+        logging.FromContext(ctx).With(zap.String("adapter","capsule"), zap.String("tenant", tenant)).Info("tenant ensured")
         return reconcile.Result{}, nil
     }
     // Create namespace if missing

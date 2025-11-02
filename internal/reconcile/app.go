@@ -9,6 +9,8 @@ import (
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/reconcile"
+    "github.com/vaheed/kubenova/internal/logging"
+    "go.uber.org/zap"
 )
 
 // AppReconciler would translate Apps to Vela Applications.
@@ -44,6 +46,7 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconc
         // On conflict try update
         _ = r.Update(ctx, app)
     }
+    logging.FromContext(ctx).With(zap.String("adapter","vela"), zap.String("namespace", cm.Namespace), zap.String("app", name)).Info("application ensured")
     return reconcile.Result{}, nil
 }
 

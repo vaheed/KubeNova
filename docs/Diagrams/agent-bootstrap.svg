@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="280">
+  <text x="20" y="24">Agent Bootstrap Flow</text>
+  <rect x="20" y="40" width="880" height="220" fill="#fff" stroke="#ccc"/>
+  <text x="40" y="80">- Start manager (controller-runtime)</text>
+  <text x="40" y="110">- Create Helm job kubenova-bootstrap</text>
+  <text x="40" y="140">- helm upgrade --install capsule, capsule-proxy, vela-core</text>
+  <text x="40" y="170">- Verify readiness, emit events, heartbeat /sync/metrics</text>
+  <text x="40" y="200">- Reconcilers ensure Capsule Tenant and Vela Application projections</text>
+</svg>
