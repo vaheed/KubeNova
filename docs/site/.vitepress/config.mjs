@@ -10,14 +10,12 @@ export default defineConfig({
       { text: 'Operations', link: '/operations' },
       { text: 'Troubleshooting', link: '/troubleshooting' },
     ],
-    sidebar: {
-      '/': [
-        { text: 'Getting Started', link: '/getting-started' },
-        { text: 'How it Works', link: '/how-it-works' },
-        { text: 'Operations', link: '/operations' },
-        { text: 'Troubleshooting', link: '/troubleshooting' },
-      ]
-    }
+    sidebar: [
+      { text: 'Getting Started', link: '/getting-started' },
+      { text: 'How it Works', link: '/how-it-works' },
+      { text: 'Operations', link: '/operations' },
+      { text: 'Troubleshooting', link: '/troubleshooting' },
+    ]
   }
 })
 
