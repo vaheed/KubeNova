@@ -27,6 +27,7 @@ Scope: Entire repository unless a more specific AGENTS.md exists deeper in the t
   - Follow least‑privilege for RBAC and keep CRDs/permissions minimal.
 - Observability
   - Emit structured logs (zap), metrics, and traces for new components/paths.
+  - For any new API or control‑plane flow, add or update E2E (Kind) smoke coverage to exercise the path, including resilience (manager/API down/up, retry/backoff, idempotency) where applicable.
 
 ## Coding Conventions
 - Go 1.24.x; prefer stdlib first, then minimal dependencies.
