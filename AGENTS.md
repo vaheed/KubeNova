@@ -25,6 +25,7 @@ Scope: Entire repository unless a more specific AGENTS.md exists deeper in the t
   - No TODO stubs left in changed files.
   - No binary artifacts added to the repo (images/docs SVG are ok). Do not commit build outputs.
   - Follow least‑privilege for RBAC and keep CRDs/permissions minimal.
+  - Each top‑level folder MUST contain a `README.md` explaining purpose and usage. When folder contents or conventions change, update the folder README in the same PR.
 - Observability
   - Emit structured logs (zap), metrics, and traces for new components/paths.
   - For any new API or control‑plane flow, add or update E2E (Kind) smoke coverage to exercise the path, including resilience (manager/API down/up, retry/backoff, idempotency) where applicable.
