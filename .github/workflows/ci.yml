@@ -102,6 +102,7 @@ jobs:
         env:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
+          AGENT_IMAGE: ghcr.io/vaheed/kubenova-agent:dev
         run: |
           set -euo pipefail
           docker compose -f docker-compose.dev.yml up -d --build
