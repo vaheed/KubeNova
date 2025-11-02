@@ -14,7 +14,7 @@ Scope: Entire repository unless a more specific AGENTS.md exists deeper in the t
   - When adding features or fixing bugs, add or update unit tests near the code changed.
 - Security checks
   - `gosec ./...` must report no HIGH severity findings. Address or mark explicit, justified `// #nosec` with rationale.
-  - Trivy repo config scan for IaC (Helm/manifests): `trivy config deploy` should have no HIGH/CRITICAL issues for newly added content.
+  - Trivy repo config scan for IaC (Helm/manifests): run `trivy config --severity HIGH,CRITICAL --format table --exit-code 1 deploy` (no `--scanners` flag).
 - API and docs
   - If API routes, request/response, or models change: update `docs/openapi.yaml` and any affected docs under `docs/site`.
   - Keep diagrams in `docs/diagrams` in sync when architecture or flows change.

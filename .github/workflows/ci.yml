@@ -141,11 +141,11 @@ jobs:
           severity: 'HIGH,CRITICAL'
           exit-code: '1'
       - name: Trivy Config scan (Helm, manifests)
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@v0.20.0
         with:
           scan-type: 'config'
-          scanners: 'config'
           scan-ref: 'deploy'
+          severity: 'HIGH,CRITICAL'
           format: 'table'
           exit-code: '1'
       - name: Trivy image scan (API)
