@@ -423,11 +423,14 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          echo ${{ secrets.GITHUB_TOKEN }} | oras login ghcr.io -u ${{ github.actor }} --password-stdin
           for f in out/*.tgz; do
             base=$(basename "$f")
-            name=${base%%-*}
-            ver=${base#${name}-}; ver=${ver%.tgz}
+            nv=${base%.tgz}          # kubenova-agent-0.3.0-dev
+            name=${nv%-*}            # kubenova-agent
+            ver=${nv##*-}            # 0.3.0-dev
             src="ghcr.io/${OWNER}/kubenova/${name}:${ver}"
             if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova/${name}:latest-dev"; else dst="ghcr.io/${OWNER}/kubenova/${name}:latest"; fi
+            echo "Tagging $src -> $dst"
             oras copy "$src" "$dst"
           done
