@@ -14,6 +14,7 @@ import (
     "github.com/go-chi/chi/v5/middleware"
     "github.com/golang-jwt/jwt/v5"
     "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/vaheed/kubenova/internal/metrics"
     "github.com/vaheed/kubenova/internal/logging"
     "github.com/vaheed/kubenova/internal/store"
     "github.com/vaheed/kubenova/internal/cluster"
@@ -59,7 +60,7 @@ func NewServer(s store.Store) *Server {
 
     mux.Route("/sync", func(r chi.Router){
         r.Post("/events", srv.ingestEvents)
-        r.Post("/metrics", srv.accept204)
+        r.Post("/metrics", srv.heartbeat)
         r.Post("/logs", srv.accept204)
     })
 
@@ -102,6 +103,12 @@ func NewServer(s store.Store) *Server {
 func (s *Server) Router() http.Handler { return s.r }
 
 func (s *Server) accept204(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }
+
+func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
+    // increment prometheus heartbeat counter for smoke assertions
+    metrics.HeartbeatsTotal.Inc()
+    w.WriteHeader(http.StatusNoContent)
+}
 
 // --- Auth ---
 type Claims struct {

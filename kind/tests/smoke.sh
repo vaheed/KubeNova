@@ -23,6 +23,20 @@ AGENT_READY=$(jq -r '.conditions[] | select(.type=="AgentReady").status' /tmp/cl
 ADDONS_READY=$(jq -r '.conditions[] | select(.type=="AddonsReady").status' /tmp/cluster.json)
 test "$AGENT_READY" = "True" && test "$ADDONS_READY" = "True"
 
+# Exercise core user endpoints
+echo "[SMOKE] CRUD API endpoints"
+curl -sS -XPOST ${API_URL}/api/v1/tenants -H 'Content-Type: application/json' -d '{"name":"alice"}' | jq .
+curl -sS ${API_URL}/api/v1/tenants | jq .
+curl -sS -XPOST ${API_URL}/api/v1/projects -H 'Content-Type: application/json' -d '{"tenant":"alice","name":"demo"}' | jq .
+curl -sS ${API_URL}/api/v1/tenants/alice/projects | jq .
+curl -sS -XPOST ${API_URL}/api/v1/apps -H 'Content-Type: application/json' -d '{"tenant":"alice","project":"demo","name":"app"}' | jq .
+curl -sS ${API_URL}/api/v1/projects/alice/demo/apps | jq .
+curl -sS -XPOST ${API_URL}/api/v1/kubeconfig-grants -H 'Content-Type: application/json' -d '{"tenant":"alice","role":"tenant-dev"}' | jq .
+
+# Assert heartbeat metric increased
+echo "[SMOKE] Check heartbeat metric"
+curl -sS ${API_URL}/metrics | grep -q '^kubenova_heartbeat_total'
+
 # JUnit-like summary
 mkdir -p artifacts
 cat > artifacts/junit.xml << XML

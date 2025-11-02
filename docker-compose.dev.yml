@@ -12,7 +12,7 @@ services:
       dockerfile: build/Dockerfile.api
     env_file: [ env.example ]
     environment:
-      - DATABASE_URL=${KUBENOVA_DB_URL}
+      - DATABASE_URL=${KUBENOVA_DB_URL:-postgres://kubenova:kubenova@db:5432/kubenova?sslmode=disable}
     ports: ["8080:8080"]
     depends_on: [db]
 

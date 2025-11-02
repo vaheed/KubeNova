@@ -19,9 +19,13 @@ var (
         Name:      "adapter_errors_total",
         Help:      "Adapter translation errors.",
     })
+    HeartbeatsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+        Namespace: "kubenova",
+        Name:      "heartbeat_total",
+        Help:      "Total agent heartbeat posts received.",
+    })
 )
 
 func init(){
-    prometheus.MustRegister(ReconcileSeconds, EventsTotal, AdapterErrorsTotal)
+    prometheus.MustRegister(ReconcileSeconds, EventsTotal, AdapterErrorsTotal, HeartbeatsTotal)
 }
-

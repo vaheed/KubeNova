@@ -126,6 +126,12 @@ jobs:
         with:
           name: e2e-artifacts
           path: artifacts
+      - name: Cleanup cluster install
+        if: always()
+        run: |
+          kubectl delete ns kubenova --ignore-not-found=true --wait=true || true
+          kubectl delete ns capsule-system --ignore-not-found=true || true
+          kubectl delete ns vela-system --ignore-not-found=true || true
       - name: Compose down
         if: always()
         run: docker compose -f docker-compose.dev.yml down -v || true
