@@ -35,6 +35,8 @@ jobs:
 
   build_push:
     runs-on: ubuntu-latest
+    # Build amd64 on all branches; build arm64 only on main
+    if: ${{ github.ref == 'refs/heads/main' || matrix.arch == 'amd64' }}
     needs: [lint_unit, gosec_scan, trivy_fs, trivy_config, trivy_images]
     strategy:
       matrix:
