@@ -11,9 +11,10 @@ services:
       context: .
       dockerfile: build/Dockerfile.api
     env_file: [ env.example ]
+    environment:
+      - DATABASE_URL=${KUBENOVA_DB_URL}
     ports: ["8080:8080"]
     depends_on: [db]
 
 volumes:
   dbdata:
-
