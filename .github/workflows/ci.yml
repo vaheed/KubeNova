@@ -83,18 +83,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - uses: helm/kind-action@v1
-        with:
-          cluster_name: kubenova-e2e
-      - name: Build Agent image (local) and load into kind
-        run: |
-          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      # API-only E2E (fake cluster mode); no Kind required
       - name: Start Manager + Postgres via docker compose
         env:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
-          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+          KUBENOVA_E2E_FAKE: "true"
         run: |
           set -euo pipefail
           docker compose -f docker-compose.dev.yml up -d --build
@@ -133,18 +127,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - uses: helm/kind-action@v1
-        with:
-          cluster_name: kubenova-e2e
-      - name: Build Agent image and load
-        run: |
-          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      # API-only E2E (fake cluster mode); no Kind required
       - name: Start Manager + Postgres
         env:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
-          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+          KUBENOVA_E2E_FAKE: "true"
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
           ok=0
@@ -182,18 +170,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - uses: helm/kind-action@v1
-        with:
-          cluster_name: kubenova-e2e
-      - name: Build Agent image and load
-        run: |
-          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      # API-only E2E (fake cluster mode); no Kind required
       - name: Start Manager + Postgres
         env:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
-          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+          KUBENOVA_E2E_FAKE: "true"
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
           ok=0
@@ -231,18 +213,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - uses: helm/kind-action@v1
-        with:
-          cluster_name: kubenova-e2e
-      - name: Build Agent image and load
-        run: |
-          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      # API-only E2E (fake cluster mode); no Kind required
       - name: Start Manager + Postgres
         env:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
-          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+          KUBENOVA_E2E_FAKE: "true"
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
           ok=0
@@ -280,18 +256,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - uses: helm/kind-action@v1
-        with:
-          cluster_name: kubenova-e2e
-      - name: Build Agent image and load
-        run: |
-          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      # API-only E2E (fake cluster mode); no Kind required
       - name: Start Manager + Postgres
         env:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
-          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+          KUBENOVA_E2E_FAKE: "true"
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
           ok=0
@@ -329,18 +299,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - uses: helm/kind-action@v1
-        with:
-          cluster_name: kubenova-e2e
-      - name: Build Agent image and load
-        run: |
-          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      # API-only E2E (fake cluster mode); no Kind required
       - name: Start Manager + Postgres
         env:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
-          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+          KUBENOVA_E2E_FAKE: "true"
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
           ok=0

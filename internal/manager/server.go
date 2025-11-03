@@ -418,13 +418,15 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	// install agent
-	image := getenv("AGENT_IMAGE", "ghcr.io/vaheed/kubenova-agent:dev")
-	mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-manager.kubenova.svc.cluster.local:8080")
-	logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("install_agent", zap.String("cluster", c.Name), zap.String("image", image))
-	if err := InstallAgentFunc(r.Context(), kb, image, mgr); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+	// install agent (skip in E2E fake mode)
+	if !parseBool(os.Getenv("KUBENOVA_E2E_FAKE")) {
+		image := getenv("AGENT_IMAGE", "ghcr.io/vaheed/kubenova-agent:dev")
+		mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-manager.kubenova.svc.cluster.local:8080")
+		logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("install_agent", zap.String("cluster", c.Name), zap.String("image", image))
+		if err := InstallAgentFunc(r.Context(), kb, image, mgr); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 	}
 	c.ID = id
 	c.KubeconfigB64 = "" // don’t echo
@@ -480,6 +482,13 @@ func (s *Server) getClusterEvents(w http.ResponseWriter, r *http.Request) {
 // query target cluster for readiness
 func computeClusterConditions(ctx context.Context, kubeconfig []byte) []types.Condition {
 	conds := []types.Condition{}
+	if parseBool(os.Getenv("KUBENOVA_E2E_FAKE")) {
+		now := time.Now().UTC()
+		return []types.Condition{
+			{Type: "AgentReady", Status: "True", LastTransitionTime: now},
+			{Type: "AddonsReady", Status: "True", LastTransitionTime: now},
+		}
+	}
 	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
 	if err != nil {
 		return failConds(err)
