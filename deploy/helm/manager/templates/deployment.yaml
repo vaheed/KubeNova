@@ -11,14 +11,17 @@ spec:
     metadata:
       labels: {app: kubenova-manager}
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
-        - name: api
+        - name: manager
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: 8080
           securityContext:
             readOnlyRootFilesystem: true
+            runAsNonRoot: true
           env:
             - name: KUBENOVA_REQUIRE_AUTH
               value: "{{ .Values.env.KUBENOVA_REQUIRE_AUTH }}"

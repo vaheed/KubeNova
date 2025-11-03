@@ -16,9 +16,9 @@ This project ships two layers of E2E validation:
 4. Exercise core user endpoints:
    - Tenants, Projects, Apps CRUD and `kubeconfig-grants`.
 5. Resilience:
-   - Stop API container with `docker compose stop api`.
+   - Stop Manager container with `docker compose stop manager`.
    - Ensure Agent remains healthy in the cluster.
-   - Start API; verify `kubenova_heartbeat_total` increased and `/sync/events` ingestion persists.
+   - Start Manager; verify `kubenova_heartbeat_total` increased and `/sync/events` ingestion persists.
 
 ## Commands
 - CI: see `.github/workflows/ci.yml`, `e2e_kind` job.

@@ -11,10 +11,10 @@ services:
       timeout: 3s
       retries: 20
 
-  api:
+  manager:
     build:
       context: .
-      dockerfile: build/Dockerfile.api
+      dockerfile: build/Dockerfile.manager
     env_file: [ env.example ]
     environment:
       - DATABASE_URL=${KUBENOVA_DB_URL:-postgres://kubenova:kubenova@db:5432/kubenova?sslmode=disable}

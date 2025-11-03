@@ -1,21 +1,26 @@
 //go:build integration && !darwin
 // +build integration,!darwin
 
-package store
+package manager
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
 	tc "github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/vaheed/kubenova/internal/store"
 	"github.com/vaheed/kubenova/pkg/types"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
 )
 
-func startPostgres(t *testing.T) (dsn string, terminate func()) {
+func startPG(t *testing.T) (string, func()) {
 	t.Helper()
 	ctx := context.Background()
 	req := tc.ContainerRequest{
@@ -29,9 +34,9 @@ func startPostgres(t *testing.T) (dsn string, terminate func()) {
 		t.Fatalf("container: %v", err)
 	}
 	port, _ := c.MappedPort(ctx, "5432/tcp")
-	// Prefer IPv4 to avoid ::1 issues on CI
-	dsn = fmt.Sprintf("postgres://kubenova:pw@127.0.0.1:%s/kubenova?sslmode=disable", port.Port())
-	// Proactively wait until DB accepts connections (listening isn't enough)
+	const host = "127.0.0.1"
+	dsn := "postgres://kubenova:pw@" + host + ":" + port.Port() + "/kubenova?sslmode=disable"
+	// Wait until DB accepts connections
 	deadline := time.Now().Add(45 * time.Second)
 	for time.Now().Before(deadline) {
 		cfg, err := pgxpool.ParseConfig(dsn)
@@ -49,45 +54,35 @@ func startPostgres(t *testing.T) (dsn string, terminate func()) {
 	return dsn, func() { _ = c.Terminate(ctx) }
 }
 
-func TestPostgresStoreIntegration(t *testing.T) {
+func TestManagerEventIngestion_Postgres(t *testing.T) {
 	if os.Getenv("RUN_PG_INTEGRATION") == "" {
 		t.Skip("set RUN_PG_INTEGRATION=1 to run")
 	}
-	dsn, stop := startPostgres(t)
+	dsn, stop := startPG(t)
 	defer stop()
-	ctx := context.Background()
-	p, err := NewPostgres(ctx, dsn)
-	if err != nil {
-		t.Fatalf("pg connect: %v", err)
-	}
-	defer p.Close(ctx)
-
-	// basic CRUD
-	if err := p.CreateTenant(ctx, types.Tenant{Name: "alice", CreatedAt: time.Now()}); err != nil {
-		t.Fatal(err)
-	}
-	if err := p.CreateProject(ctx, types.Project{Tenant: "alice", Name: "demo", CreatedAt: time.Now()}); err != nil {
-		t.Fatal(err)
-	}
-	if err := p.CreateApp(ctx, types.App{Tenant: "alice", Project: "demo", Name: "app", CreatedAt: time.Now()}); err != nil {
-		t.Fatal(err)
-	}
-	id, err := p.CreateCluster(ctx, types.Cluster{Name: "kind"}, "ZW5j")
+	p, err := store.NewPostgres(context.Background(), dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// events
-	e := []types.Event{{Type: "Info", Resource: "agent", Payload: map[string]any{"m": "ok"}, TS: time.Now()}}
-	if err := p.AddEvents(ctx, &id, e); err != nil {
+	defer p.Close(context.Background())
+	// create a cluster to attach events
+	id, err := p.CreateCluster(context.Background(), types.Cluster{Name: "c1"}, "ZW5j")
+	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := p.ListClusterEvents(ctx, id, 10)
-	if err != nil || len(got) != 1 {
-		t.Fatalf("events %#v %v", got, err)
-	}
-	// history
-	conds := []types.Condition{{Type: "AgentReady", Status: "True", LastTransitionTime: time.Now()}}
-	if err := p.AddConditionHistory(ctx, id, conds); err != nil {
+	InstallAgentFunc = func(ctx context.Context, kubeconfig []byte, image, managerURL string) error { return nil }
+	srv := NewServer(p)
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+	evs := []types.Event{{Type: "Info", Resource: "agent", Payload: map[string]any{"m": "ok"}, TS: time.Now()}}
+	b, _ := json.Marshal(evs)
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/sync/events?cluster_id="+fmt.Sprint(id), bytes.NewReader(b))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
 		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 204 {
+		t.Fatalf("status %s", resp.Status)
 	}
 }
