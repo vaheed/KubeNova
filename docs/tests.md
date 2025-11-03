@@ -18,7 +18,7 @@ Each file shares the `package e2e` namespace so helpers and tests compose withou
 
 ```mermaid
 graph TD
-    A[make test-e2e] --> B(go test ./tests/e2e/...)
+    A[E2E_RUN=1 make test-e2e] --> B(go test ./tests/e2e/...)
     B --> C{TestMain}
     C -->|Load config| D[Setup.LoadConfig]
     D --> E[Ensure Kind cluster]
@@ -31,7 +31,7 @@ graph TD
     K --> L[Export Kind logs & teardown]
 ```
 
-The flow is idempotent: rerunning the suite reuses the Kind cluster when `E2E_USE_EXISTING_CLUSTER=true`, skips Helm uninstall when `E2E_SKIP_CLEANUP=true`, and always emits `slog` statements for each step.
+The flow is idempotent: rerunning the suite reuses the Kind cluster when `E2E_USE_EXISTING_CLUSTER=true`, skips Helm uninstall when `E2E_SKIP_CLEANUP=true`, and always emits `slog` statements for each step. `go test ./...` skips these scenarios unless `E2E_RUN=1` (or `E2E_SKIP=false`) so lint/unit jobs stay lightweight.
 
 ## CI integration
 

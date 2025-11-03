@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2025-11-05
+### Fixed
+- Default the Go-based E2E suite to skip during lint/unit workflows unless `E2E_RUN=1`, addressing CI feedback that unit tests should not require Kind.
+- Documented the explicit enable flag in `README.md`, `docs/tests.md`, and `docs/site/e2e.md`, and ensured `make test-e2e`/CI set `E2E_RUN` automatically.
+
 ## [0.3.2] - 2025-11-04
 ### Fixed
 - Increased the Kind E2E suite HTTP timeout to respect `E2E_WAIT_TIMEOUT`, preventing cluster registration from failing while the Agent installs.
