@@ -29,12 +29,26 @@ func BootstrapHelmJob(ctx context.Context) error {
 		Image:   "alpine/helm:3.14.4",
 		Command: []string{"/bin/sh", "-c"},
 		Args: []string{`set -e
+# Add repos (cert-manager required by Capsule and capsule-proxy)
+helm repo add jetstack https://charts.jetstack.io
 helm repo add clastix https://clastix.github.io/charts
 helm repo add kubevela https://kubevela.github.io/charts
 helm repo update
-helm upgrade --install capsule clastix/capsule -n capsule-system --create-namespace --set manager.leaderElection=true
-helm upgrade --install capsule-proxy clastix/capsule-proxy -n capsule-system --set service.enabled=true --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}'
-helm upgrade --install vela-core kubevela/vela-core -n vela-system --create-namespace --set admissionWebhooks.enabled=true
+
+# Install cert-manager first and wait for readiness (installs CRDs)
+helm upgrade --install cert-manager jetstack/cert-manager \
+  -n cert-manager --create-namespace --set crds.enabled=true --wait --timeout 10m
+
+# Install Capsule and capsule-proxy (depends on cert-manager certs) and wait
+helm upgrade --install capsule clastix/capsule \
+  -n capsule-system --create-namespace --set manager.leaderElection=true --wait --timeout 10m
+helm upgrade --install capsule-proxy clastix/capsule-proxy \
+  -n capsule-system --set service.enabled=true \
+  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m
+
+# Install KubeVela core and wait
+helm upgrade --install vela-core kubevela/vela-core \
+  -n vela-system --create-namespace --set admissionWebhooks.enabled=true --wait --timeout 10m
 `},
 	}}
 	job.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyNever
