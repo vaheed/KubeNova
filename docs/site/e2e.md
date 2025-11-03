@@ -18,11 +18,14 @@ All tests log every major step via `slog` and run in parallel subtests to keep s
 E2E_BUILD_IMAGES=true make test-e2e
 ```
 
+> **Note:** `make test-e2e` exports `E2E_RUN=1`. Regular `go test ./...` invocations leave the suite skipped so lint/unit loops stay fast.
+
 Key environment flags:
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `E2E_KIND_CLUSTER` | `kubenova-e2e` | Name of the Kind cluster the suite manages. |
+| `E2E_RUN` | `false` | Enable the Go-based E2E scenarios; the suite is skipped by default. |
 | `E2E_BUILD_IMAGES` | `false` | When `true`, builds local Manager/Agent images and loads them into Kind before installation. |
 | `E2E_USE_EXISTING_CLUSTER` | `false` | Reuse an already-provisioned Kind cluster instead of creating/deleting it. |
 | `E2E_SKIP_CLEANUP` | `false` | Preserve the Helm release and Kind cluster for inspection. |

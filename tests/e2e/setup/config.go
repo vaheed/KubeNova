@@ -32,6 +32,14 @@ type Config struct {
 
 func LoadConfig() Config {
 	repoRoot := defaultRepoRoot()
+	runSuite, runSet := lookupEnvBool("E2E_RUN")
+	skipSuite := true
+	if runSet {
+		skipSuite = !runSuite
+	}
+	if skip, ok := lookupEnvBool("E2E_SKIP"); ok {
+		skipSuite = skip
+	}
 	cfg := Config{
 		ClusterName:        getenvDefault("E2E_KIND_CLUSTER", "kubenova-e2e"),
 		KindBinary:         getenvDefault("E2E_KIND_BIN", "kind"),
@@ -47,7 +55,7 @@ func LoadConfig() Config {
 		PortForwardPort:    getenvInt("E2E_MANAGER_PORT", 18080),
 		UseExistingCluster: getenvBool("E2E_USE_EXISTING_CLUSTER"),
 		SkipCleanup:        getenvBool("E2E_SKIP_CLEANUP"),
-		SkipSuite:          getenvBool("E2E_SKIP"),
+		SkipSuite:          skipSuite,
 		BuildImages:        getenvBool("E2E_BUILD_IMAGES"),
 		WaitTimeout:        getenvDuration("E2E_WAIT_TIMEOUT", 20*time.Minute),
 	}
@@ -62,13 +70,22 @@ func getenvDefault(key, def string) string {
 }
 
 func getenvBool(key string) bool {
-	if v := os.Getenv(key); v != "" {
+	b, _ := lookupEnvBool(key)
+	return b
+}
+
+func lookupEnvBool(key string) (bool, bool) {
+	if v, ok := os.LookupEnv(key); ok {
+		if v == "" {
+			return false, false
+		}
 		b, err := strconv.ParseBool(v)
 		if err == nil {
-			return b
+			return b, true
 		}
+		return false, true
 	}
-	return false
+	return false, false
 }
 
 func getenvInt(key string, def int) int {
