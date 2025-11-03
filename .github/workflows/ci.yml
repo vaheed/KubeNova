@@ -426,10 +426,8 @@ jobs:
           set -euo pipefail
           echo ${{ secrets.GITHUB_TOKEN }} | oras login ghcr.io -u ${{ github.actor }} --password-stdin
           for f in out/*.tgz; do
-            base=$(basename "$f")
-            nv=${base%.tgz}          # kubenova-agent-0.3.0-dev
-            name=${nv%-*}            # kubenova-agent
-            ver=${nv##*-}            # 0.3.0-dev
+            name=$(helm show chart "$f" | awk -F': ' '/^name:/{print $2; exit}')
+            ver=$(helm show chart "$f" | awk -F': ' '/^version:/{print $2; exit}')
             src="ghcr.io/${OWNER}/kubenova/${name}:${ver}"
             if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova/${name}:latest-dev"; else dst="ghcr.io/${OWNER}/kubenova/${name}:latest"; fi
             echo "Tagging $src -> $dst"
