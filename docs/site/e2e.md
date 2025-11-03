@@ -1,49 +1,57 @@
-# E2E Tests (Smoke + Kind)
+# End-to-End Tests (Kind)
 
-This project ships two layers of E2E validation:
+The end-to-end suite is implemented in Go under `tests/e2e/` and mirrors the production control-plane flow:
 
-- Smoke (Kind): creates a Kind cluster, runs the Manager API + Postgres via docker compose, registers the cluster through the API, then verifies that the Manager installs the Agent and the Agent bootstraps add‑ons (Capsule, capsule‑proxy, KubeVela).
-- Resilience: stops the API during the run to confirm the Agent continues to function in‑cluster; when the API is restored, verifies heartbeats and event sync resume.
+1. Create a Kind cluster (or reuse an existing cluster when `E2E_USE_EXISTING_CLUSTER=true`).
+2. Optionally build fresh Manager and Agent images (`E2E_BUILD_IMAGES=true`) and load them into the Kind nodes.
+3. Install the Manager chart into the cluster, port-forward the service, and generate a scoped service-account kubeconfig.
+4. Register the cluster through `POST /api/v1/clusters` and wait for the Manager to deploy the Agent.
+5. Assert that the Agent runs with two ready replicas, Capsule/capsule-proxy/KubeVela deployments are healthy, and the Manager reports `AgentReady`/`AddonsReady` conditions as `True`.
+6. Export Kind diagnostics and clean up Helm releases and the cluster (unless `E2E_SKIP_CLEANUP=true`).
 
-## What’s executed
-1. Start Kind (k8s) and docker compose (Manager API + Postgres).
-2. Register the cluster:
-   - `POST /api/v1/clusters` with the kubeconfig from Kind.
-   - Example (run on your host, after compose is up and Kind is ready):
+All tests log every major step via `slog` and run in parallel subtests to keep scenarios isolated.
+
+## Running locally
+
+```bash
+# Build fresh images, create a Kind cluster, run the suite, and clean everything up
+E2E_BUILD_IMAGES=true make test-e2e
 ```
-curl -XPOST localhost:8080/api/v1/clusters -H 'Content-Type: application/json' \
-  -d '{"name":"kind","kubeconfig":"'"$(base64 -w0 ~/.kube/config 2>/dev/null || base64 ~/.kube/config)"'"}'
-```
-   - If Manager runs in Docker and your kubeconfig points to 127.0.0.1/localhost,
-     replace the server host with host.docker.internal before base64‑encoding so the
-     Manager container can reach the Kind API server.
-     For example: `kubectl config view --raw | sed -E 's#server: https://(127\.0\.0\.1|localhost)(:[0-9]+)#server: https://host.docker.internal\2#g' | base64 -w0`
-3. Wait for:
-   - Agent `Deployment` ReadyReplicas >= 2 and HPA present.
-   - Capsule, capsule‑proxy, and KubeVela controllers Ready.
-   - `GET /api/v1/clusters/{id}` shows `AgentReady=True` and `AddonsReady=True`.
-   - Manually inspect at any time:
-```
-curl localhost:8080/api/v1/clusters/1 | jq
-```
-4. Exercise core user endpoints:
-   - Tenants, Projects, Apps CRUD and `kubeconfig-grants`.
-5. Resilience:
-   - Stop Manager container with `docker compose stop manager`.
-   - Ensure Agent remains healthy in the cluster.
-   - Start Manager; verify `kubenova_heartbeat_total` increased and `/sync/events` ingestion persists.
 
-## Commands
-- Local (user‑like flow, recommended):
-  - `bash kind/scripts/run_user_flow.sh`
-- Local (manual):
-  - Start Manager + Postgres: `docker compose -f docker-compose.dev.yml up -d --build`
-  - Register the cluster using the curl command above.
-  - Check conditions via `GET /api/v1/clusters/{id}`.
-  - The Manager installs the Agent automatically; the Agent bootstraps Capsule, capsule‑proxy, and KubeVela.
-- CI: see `.github/workflows/ci.yml` parallel E2E jobs.
+> **Note:** `make test-e2e` exports `E2E_RUN=1`. Regular `go test ./...` invocations leave the suite skipped so lint/unit loops stay fast.
 
-## Extending E2E
-- When adding APIs or flows, update the smoke to exercise them.
-- Include resilience scenarios (API down/up) for control‑plane surfaces.
-- Keep tests idempotent and with bounded timeouts.
+Key environment flags:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `E2E_KIND_CLUSTER` | `kubenova-e2e` | Name of the Kind cluster the suite manages. |
+| `E2E_RUN` | `false` | Enable the Go-based E2E scenarios; the suite is skipped by default. |
+| `E2E_BUILD_IMAGES` | `false` | When `true`, builds local Manager/Agent images and loads them into Kind before installation. |
+| `E2E_USE_EXISTING_CLUSTER` | `false` | Reuse an already-provisioned Kind cluster instead of creating/deleting it. |
+| `E2E_SKIP_CLEANUP` | `false` | Preserve the Helm release and Kind cluster for inspection. |
+| `E2E_MANAGER_PORT` | `18080` | Local port used for `kubectl port-forward` to the Manager service. |
+| `E2E_WAIT_TIMEOUT` | `20m` | Upper bound for suite waits and HTTP calls (for example cluster registration while the Agent installs). |
+| `E2E_REPO_ROOT` | auto-detected | Absolute path to the repository root passed to external commands; override when running from a different working directory. |
+
+To capture logs without running CI, export them manually after the suite completes:
+
+```bash
+kind export logs artifacts/kind --name ${E2E_KIND_CLUSTER:-kubenova-e2e}
+```
+
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs a single `e2e_suite` job on every pull request:
+
+- Installs Kind, kubectl, and Helm.
+- Builds local Manager/Agent images and loads them into Kind.
+- Executes `make test-e2e` with full logging.
+- Uploads the Go test log plus `kind export logs` as artifacts.
+
+The job gates chart publication and OCI pushes, ensuring the real cluster bootstrap path stays healthy.
+
+## Extending the suite
+
+- Add new scenarios in `tests/e2e/scenarios/` and keep them idempotent (`t.Parallel()` in each test function).
+- Share setup helpers from `tests/e2e/setup/` and checks from `tests/e2e/assertions/` so that logging and retries stay consistent.
+- Use environment toggles (for example `E2E_BUILD_IMAGES`) instead of rewriting helper functions when tests need special behavior.
