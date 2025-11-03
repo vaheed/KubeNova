@@ -28,6 +28,19 @@ register_cluster() {
   raw=$(printf "%s" "$raw" | sed -E 's#server: https://(127\.0\.0\.1|localhost)(:[0-9]+)#server: https://host.docker.internal\2#g')
   local kcfg
   kcfg=$(printf "%s" "$raw" | base64 -w0 2>/dev/null || printf "%s" "$raw" | base64)
+  # Retry registration to avoid transient resets during container warm-up
+  for i in {1..30}; do
+    resp=$(curl -sS -m 10 -w "\n%{http_code}" -XPOST "$API_URL/api/v1/clusters" -H 'Content-Type: application/json' \
+      -d '{"name":"'"$name"'","kubeconfig":"'"$kcfg"'"}') || resp=""
+    body=$(printf "%s" "$resp" | sed '$d')
+    code=$(printf "%s" "$resp" | tail -n1)
+    if [[ "$code" == "200" ]]; then
+      printf "%s" "$body"
+      return 0
+    fi
+    sleep 2
+  done
+  # last attempt without swallowing errors
   curl -fsS -XPOST "$API_URL/api/v1/clusters" -H 'Content-Type: application/json' \
     -d '{"name":"'"$name"'","kubeconfig":"'"$kcfg"'"}'
 }
