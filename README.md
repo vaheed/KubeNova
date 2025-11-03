@@ -27,8 +27,8 @@ Configuration
 - AGENT_IMAGE controls the image used for remote install.
 
 Tests
-- make test-unit          # unit tests
-- make test-e2e           # Kind-based e2e smoke
+- `make test-unit` – unit tests and integration stubs
+- `E2E_BUILD_IMAGES=true make test-e2e` – Kind-based end-to-end suite that builds local Manager/Agent images, registers a cluster, and verifies Capsule/capsule-proxy/KubeVela health
 
 Docs
 - VitePress site at `docs/site`. Build with `make docs-build` and serve with `make docs-serve`.
