@@ -376,7 +376,9 @@ jobs:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
-        run: docker compose -f docker-compose.dev.yml up -d --build
+        run: |
+          docker compose -f docker-compose.dev.yml up -d --build
+          curl -fsS http://localhost:8080/wait?timeout=120
       - name: Run conditions suite
         run: |
           set -o pipefail
