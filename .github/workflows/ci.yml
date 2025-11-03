@@ -10,20 +10,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.24' }
-      - name: Clean Go build cache (avoid tar restore conflicts)
-        run: |
-          rm -rf ~/.cache/go-build || true
+        with:
+          go-version: '1.24'
+          cache: true
+          cache-dependency-path: '**/go.sum'
       - name: Docker info
         run: docker info
-      - name: Cache Go build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
       - run: go vet ./...
       - run: go test ./... -count=1
       - name: Integration tests (Postgres via testcontainers)
@@ -435,17 +427,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.24' }
-      - name: Clean Go build cache (avoid tar restore conflicts)
-        run: rm -rf ~/.cache/go-build || true
-      - name: Cache Go build
-        uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          go-version: '1.24'
+          cache: true
+          cache-dependency-path: '**/go.sum'
       - name: Install gosec
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
