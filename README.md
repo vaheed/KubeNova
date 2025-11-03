@@ -10,7 +10,6 @@ It coordinates **Capsule** for multi-tenancy and **KubeVela** for application de
 
 Quick Start (Kind)
 - make kind-up
-- make platform-up     # optional in local dev; Agent can install too
 - make deploy-manager
  - Port-forward Manager and register the cluster:
   - kubectl -n kubenova-system port-forward svc/kubenova-manager 8080:8080 &
