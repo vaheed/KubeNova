@@ -7,6 +7,8 @@ export NAMESPACE=kubenova-system
 wait_api() {
   local url=${1:-$API_URL}
   local tries=${2:-60}
+  # Prefer blocking /wait if available
+  if curl -fsS "$url/wait?timeout=60" >/dev/null 2>&1; then return 0; fi
   for i in $(seq 1 "$tries"); do
     if curl -fsS "$url/healthz" >/dev/null 2>&1; then return 0; fi
     sleep 2

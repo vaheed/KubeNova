@@ -22,11 +22,13 @@ export AGENT_IMAGE
 docker compose -f docker-compose.dev.yml up -d --build
 
 echo "[manager] Wait for /healthz at $API_URL"
-for i in {1..60}; do curl -fsS "$API_URL/healthz" && break || sleep 2; done
+curl -fsS "$API_URL/wait?timeout=60"
 
 echo "[manager] Register the Kind cluster"
+# Get kubeconfig and rewrite server host so Manager-in-Docker can reach Kind API
 KCFG=$(kind get kubeconfig --name "$KIND_CLUSTER")
-KCFG_B64=$(printf "%s" "$KCFG" | base64 -w0 2>/dev/null || printf "%s" "$KCFG" | base64)
+KCFG_REWRITTEN=$(printf "%s" "$KCFG" | sed -E 's#server: https://(127\.0\.0\.1|localhost)(:[0-9]+)#server: https://host.docker.internal\2#g')
+KCFG_B64=$(printf "%s" "$KCFG_REWRITTEN" | base64 -w0 2>/dev/null || printf "%s" "$KCFG_REWRITTEN" | base64)
 RESP=$(curl -sS -XPOST "$API_URL/api/v1/clusters" -H 'Content-Type: application/json' \
   -d '{"name":"'"$KIND_CLUSTER"'","kubeconfig":"'"$KCFG_B64"'"}')
 echo "$RESP"
