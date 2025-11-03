@@ -16,7 +16,7 @@ This folder provides minimal helpers to create a Kind cluster and deploy KubeNov
 make kind-up
 ```
 
-2) Start Manager API + Postgres in Docker Compose:
+2) Start Manager API + Postgres in Docker Compose (or use `make deploy-manager`):
 ```
 docker compose -f docker-compose.dev.yml up -d --build
 for i in {1..60}; do curl -fsS http://localhost:8080/healthz && break || sleep 2; done
@@ -33,17 +33,10 @@ This will:
 - Register the Kind cluster with the Manager API.
 - Wait for Agent 2/2 Ready and HPA; wait for add-ons readiness; assert cluster conditions.
 
-4) (Optional) Manual chart installs for debugging:
-```
-bash kind/scripts/deploy_manager.sh
-bash kind/scripts/deploy_agent.sh
-```
-
-5) Register your cluster via the Manager API manually or run the E2E suites from `e2e/suites/`.
+4) Register your cluster via the Manager API manually or run the E2E suites from `e2e/suites/`.
 
 ## Files
 - `kind-config.yaml` — cluster topology used by `make kind-up`.
-- `scripts/deploy_manager.sh` — installs the Manager chart to `kubenova-system`.
-- `scripts/deploy_agent.sh` — installs the Agent chart to `kubenova-system`.
+- `scripts/run_user_flow.sh` — end‑to‑end user‑like flow (compose manager + register + auto‑install agent).
 
 For end‑to‑end tests, see `e2e/README.md` and the suite scripts under `e2e/suites/`.

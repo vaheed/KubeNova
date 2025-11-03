@@ -28,10 +28,13 @@ collect_artifacts() {
   docker compose -f docker-compose.dev.yml logs --no-color > artifacts/compose.log || true
   kubectl get events -A --sort-by=.lastTimestamp > artifacts/events-all.txt || true
   kubectl get crd > artifacts/crds.txt || true
-  kubectl -n "$NAMESPACE" get all -o wide > artifacts/kubenova.txt || true
-  kubectl -n "$NAMESPACE" describe deploy kubenova-manager > artifacts/desc-manager.txt || true
-  kubectl -n "$NAMESPACE" describe deploy kubenova-agent > artifacts/desc-agent.txt || true
-  kubectl -n "$NAMESPACE" logs deploy/kubenova-manager --tail=1000 > artifacts/manager.log || true
-  kubectl -n "$NAMESPACE" logs deploy/kubenova-agent --tail=1000 > artifacts/agent.log || true
+  if kubectl get ns "$NAMESPACE" >/dev/null 2>&1; then
+    kubectl -n "$NAMESPACE" get all -o wide > artifacts/kubenova.txt || true
+    kubectl -n "$NAMESPACE" describe deploy kubenova-manager > artifacts/desc-manager.txt || true
+    kubectl -n "$NAMESPACE" describe deploy kubenova-agent > artifacts/desc-agent.txt || true
+    kubectl -n "$NAMESPACE" logs deploy/kubenova-manager --tail=1000 > artifacts/manager.log || true
+    kubectl -n "$NAMESPACE" logs deploy/kubenova-agent --tail=1000 > artifacts/agent.log || true
+  else
+    echo "namespace $NAMESPACE not found; skipping ns-scoped logs" > artifacts/kubenova.txt
+  fi
 }
-

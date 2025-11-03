@@ -17,10 +17,10 @@ platform-up:
 	@echo "[platform-up] Add-ons are bootstrapped by the Agent; nothing to do."
 
 deploy-manager:
-	bash kind/scripts/deploy_manager.sh
+	docker compose -f docker-compose.dev.yml up -d --build
 
 deploy-agent:
-	bash kind/scripts/deploy_agent.sh
+	@echo "[deploy-agent] Not required; Manager installs Agent automatically upon cluster registration."
 
 test-unit:
 	go test ./... -count=1

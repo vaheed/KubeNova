@@ -114,7 +114,7 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          source e2e/common.sh; collect_artifacts
+          bash -lc 'source e2e/common.sh; collect_artifacts' || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -152,7 +152,7 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          source e2e/common.sh; collect_artifacts
+          bash -lc 'source e2e/common.sh; collect_artifacts' || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -190,7 +190,7 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          source e2e/common.sh; collect_artifacts
+          bash -lc 'source e2e/common.sh; collect_artifacts' || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -228,7 +228,7 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          source e2e/common.sh; collect_artifacts
+          bash -lc 'source e2e/common.sh; collect_artifacts' || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -266,7 +266,7 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          source e2e/common.sh; collect_artifacts
+          bash -lc 'source e2e/common.sh; collect_artifacts' || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -304,7 +304,7 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          source e2e/common.sh; collect_artifacts
+          bash -lc 'source e2e/common.sh; collect_artifacts' || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -342,7 +342,7 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          source e2e/common.sh; collect_artifacts
+          bash -lc 'source e2e/common.sh; collect_artifacts' || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -380,7 +380,7 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          source e2e/common.sh; collect_artifacts
+          bash -lc 'source e2e/common.sh; collect_artifacts' || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
