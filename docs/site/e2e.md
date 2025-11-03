@@ -24,7 +24,7 @@ This project ships two layers of E2E validation:
 - CI: see `.github/workflows/ci.yml`, `e2e_kind` job.
 - Local: run the same steps from the job, or use `make kind-up` then:
   - `docker compose -f docker-compose.dev.yml up -d --build`
-  - `bash kind/tests/smoke.sh` with `API_URL=http://localhost:8080`.
+  - `bash e2e/suites/end_to_end.sh` with `API_URL=http://localhost:8080`.
 
 ## Extending E2E
 - When adding APIs or flows, update the smoke to exercise them.

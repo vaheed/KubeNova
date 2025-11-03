@@ -14,15 +14,13 @@ kind-up:
 	kubectl cluster-info
 
 platform-up:
-	bash kind/scripts/install_capsule.sh
-	bash kind/scripts/install_capsule_proxy.sh
-	bash kind/scripts/install_kubevela.sh
+	@echo "[platform-up] Add-ons are bootstrapped by the Agent; nothing to do."
 
 deploy-manager:
 	bash kind/scripts/deploy_manager.sh
 
 deploy-agent:
-	bash kind/scripts/deploy_kubenova_agent.sh
+	bash kind/scripts/deploy_agent.sh
 
 test-unit:
 	go test ./... -count=1
