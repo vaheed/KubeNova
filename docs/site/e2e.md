@@ -9,10 +9,23 @@ This project ships two layers of E2E validation:
 1. Start Kind (k8s) and docker compose (Manager API + Postgres).
 2. Register the cluster:
    - `POST /api/v1/clusters` with the kubeconfig from Kind.
+   - Example (run on your host, after compose is up and Kind is ready):
+```
+curl -XPOST localhost:8080/api/v1/clusters -H 'Content-Type: application/json' \
+  -d '{"name":"kind","kubeconfig":"'"$(base64 -w0 ~/.kube/config 2>/dev/null || base64 ~/.kube/config)"'"}'
+```
+   - If Manager runs in Docker and your kubeconfig points to 127.0.0.1/localhost,
+     replace the server host with host.docker.internal before base64‑encoding so the
+     Manager container can reach the Kind API server.
+     For example: `kubectl config view --raw | sed -E 's#server: https://(127\.0\.0\.1|localhost)(:[0-9]+)#server: https://host.docker.internal\2#g' | base64 -w0`
 3. Wait for:
    - Agent `Deployment` ReadyReplicas >= 2 and HPA present.
    - Capsule, capsule‑proxy, and KubeVela controllers Ready.
    - `GET /api/v1/clusters/{id}` shows `AgentReady=True` and `AddonsReady=True`.
+   - Manually inspect at any time:
+```
+curl localhost:8080/api/v1/clusters/1 | jq
+```
 4. Exercise core user endpoints:
    - Tenants, Projects, Apps CRUD and `kubeconfig-grants`.
 5. Resilience:
@@ -21,10 +34,14 @@ This project ships two layers of E2E validation:
    - Start Manager; verify `kubenova_heartbeat_total` increased and `/sync/events` ingestion persists.
 
 ## Commands
-- CI: see `.github/workflows/ci.yml`, `e2e_kind` job.
-- Local: the easiest way is to run the user-like flow script which creates Kind, starts Manager via compose, registers the cluster, installs the Agent and bootstraps add-ons:
+- Local (user‑like flow, recommended):
   - `bash kind/scripts/run_user_flow.sh`
-  - Or run individual suites from `e2e/suites/` with `API_URL=http://localhost:8080`.
+- Local (manual):
+  - Start Manager + Postgres: `docker compose -f docker-compose.dev.yml up -d --build`
+  - Register the cluster using the curl command above.
+  - Check conditions via `GET /api/v1/clusters/{id}`.
+  - The Manager installs the Agent automatically; the Agent bootstraps Capsule, capsule‑proxy, and KubeVela.
+- CI: see `.github/workflows/ci.yml` parallel E2E jobs.
 
 ## Extending E2E
 - When adding APIs or flows, update the smoke to exercise them.

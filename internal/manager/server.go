@@ -59,6 +59,8 @@ func NewServer(s store.Store) *Server {
 	mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
 	mux.Method(http.MethodGet, "/metrics", promhttp.Handler())
 	mux.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "docs/openapi.yaml") })
+	// Wait endpoint: blocks until store is usable (DB ready) or timeout
+	mux.Get("/wait", srv.waitReady)
 
 	mux.Route("/sync", func(r chi.Router) {
 		r.Post("/events", srv.ingestEvents)
@@ -108,6 +110,32 @@ func (s *Server) Router() http.Handler { return s.r }
 
 func (s *Server) accept204(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// waitReady blocks until the underlying store is usable (e.g., DB connected).
+// Query param `timeout` (seconds) can override the default (60s).
+func (s *Server) waitReady(w http.ResponseWriter, r *http.Request) {
+	to := atoi(r.URL.Query().Get("timeout"))
+	if to <= 0 {
+		to = 60
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(to)*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			http.Error(w, "timeout", http.StatusServiceUnavailable)
+			return
+		case <-ticker.C:
+			if _, err := s.store.ListTenants(r.Context()); err == nil {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("ok"))
+				return
+			}
+		}
+	}
 }
 
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {

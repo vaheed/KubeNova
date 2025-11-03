@@ -16,7 +16,7 @@ func BootstrapHelmJob(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ns := "kubenova"
+	ns := "kubenova-system"
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "kubenova-bootstrap", Namespace: ns}}
 	_, err = client.BatchV1().Jobs(ns).Get(ctx, job.Name, metav1.GetOptions{})
 	if err == nil {
