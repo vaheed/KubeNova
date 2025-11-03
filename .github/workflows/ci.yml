@@ -54,9 +54,9 @@ jobs:
       - name: Build images (amd64)
         run: |
           TAG=${GITHUB_REF##*/}
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then EXTRA_TAGS="--tag ghcr.io/vaheed/kubenova-api:$TAG --tag ghcr.io/vaheed/kubenova-agent:$TAG"; fi
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova-api:dev $EXTRA_TAGS --push -f build/Dockerfile.api .
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova-agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then EXTRA_TAGS="--tag ghcr.io/vaheed/kubenova/manager:$TAG --tag ghcr.io/vaheed/kubenova/agent:$TAG"; fi
+          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.api .
+          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
 
   build_push_arm64:
     if: ${{ github.ref == 'refs/heads/main' }}
@@ -80,9 +80,9 @@ jobs:
       - name: Build images (arm64)
         run: |
           TAG=${GITHUB_REF##*/}
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then EXTRA_TAGS="--tag ghcr.io/vaheed/kubenova-api:$TAG --tag ghcr.io/vaheed/kubenova-agent:$TAG"; fi
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova-api:dev $EXTRA_TAGS --push -f build/Dockerfile.api .
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova-agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then EXTRA_TAGS="--tag ghcr.io/vaheed/kubenova/manager:$TAG --tag ghcr.io/vaheed/kubenova/agent:$TAG"; fi
+          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.api .
+          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
 
   e2e_kind:
     runs-on: ubuntu-latest
@@ -96,13 +96,13 @@ jobs:
           cluster_name: kubenova-e2e
       - name: Build Agent image (local) and load into kind
         run: |
-          docker build -t ghcr.io/vaheed/kubenova-agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova-agent:dev --name kubenova-e2e
+          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
+          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
       - name: Start API + Postgres via docker compose
         env:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
-          AGENT_IMAGE: ghcr.io/vaheed/kubenova-agent:dev
+          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: |
           set -euo pipefail
           docker compose -f docker-compose.dev.yml up -d --build
@@ -134,9 +134,9 @@ jobs:
           kubectl get crd > artifacts/crds.txt || true
           # KubeNova namespace
           kubectl -n kubenova get all -o wide > artifacts/kubenova.txt || true
-          kubectl -n kubenova describe deploy kubenova-api > artifacts/desc-api.txt || true
+          kubectl -n kubenova describe deploy kubenova-manager > artifacts/desc-api.txt || true
           kubectl -n kubenova describe deploy kubenova-agent > artifacts/desc-agent.txt || true
-          kubectl -n kubenova logs deploy/kubenova-api --tail=1000 > artifacts/api.log || true
+          kubectl -n kubenova logs deploy/kubenova-manager --tail=1000 > artifacts/api.log || true
           kubectl -n kubenova logs deploy/kubenova-agent --tail=1000 > artifacts/agent.log || true
           # Capsule + Vela namespaces
           kubectl -n capsule-system get all -o wide > artifacts/capsule.txt || true
@@ -418,7 +418,7 @@ jobs:
       - name: Tag charts as latest via ORAS
         if: always()
         uses: oras-project/setup-oras@v1
-      - name: Apply lightweight tags (latest or latest-dev)
+      - name: Apply lightweight tags (latest or dev)
         env:
           OWNER: ${{ github.repository_owner }}
           BRANCH: ${{ github.ref_name }}
@@ -429,7 +429,7 @@ jobs:
             name=$(helm show chart "$f" | awk -F': ' '/^name:/{print $2; exit}')
             ver=$(helm show chart "$f" | awk -F': ' '/^version:/{print $2; exit}')
             src="ghcr.io/${OWNER}/kubenova/${name}:${ver}"
-            if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova/${name}:latest-dev"; else dst="ghcr.io/${OWNER}/kubenova/${name}:latest"; fi
+            if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova/${name}:dev"; else dst="ghcr.io/${OWNER}/kubenova/${name}:latest"; fi
             echo "Tagging $src -> $dst"
             oras copy "$src" "$dst"
           done

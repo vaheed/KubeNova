@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/vaheed/kubenova-api
+  repository: ghcr.io/vaheed/kubenova/manager
   tag: dev
   pullPolicy: IfNotPresent
 
@@ -9,5 +9,5 @@ service:
 
 env:
   KUBENOVA_REQUIRE_AUTH: "true"
-  AGENT_IMAGE: ghcr.io/vaheed/kubenova-agent:dev
-  MANAGER_URL_PUBLIC: http://kubenova-api.kubenova.svc.cluster.local:8080
+  AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+  MANAGER_URL_PUBLIC: http://kubenova-manager.kubenova.svc.cluster.local:8080
