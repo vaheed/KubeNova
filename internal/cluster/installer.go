@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vaheed/kubenova/internal/logging"
 	"github.com/vaheed/kubenova/internal/util"
+	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +29,7 @@ var manifests embed.FS
 // image: agent container image
 // managerURL: base URL of manager for agent HEARTBEAT
 func InstallAgent(ctx context.Context, kubeconfig []byte, image, managerURL string) error {
+	logging.L.Info("agent.install.start", zap.String("image", image), zap.String("manager_url", managerURL))
 	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
 	if err != nil {
 		return err
@@ -39,6 +42,7 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 	if err != nil {
 		return err
 	}
+	logging.L.Info("agent.apply.start")
 	scheme := unstructuredScheme()
 	dec := serializer.NewCodecFactory(scheme).UniversalDeserializer()
 	// Loop embedded files
@@ -56,16 +60,27 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 		}
 		switch o := obj.(type) {
 		case *corev1.Namespace:
+			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name))
 			_, _ = cset.CoreV1().Namespaces().Create(ctx, o, metav1.CreateOptions{})
 		case *corev1.ServiceAccount:
+			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace))
 			_, _ = cset.CoreV1().ServiceAccounts(o.Namespace).Create(ctx, o, metav1.CreateOptions{})
 		case *rbacv1.ClusterRole:
+			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name))
 			_, _ = cset.RbacV1().ClusterRoles().Create(ctx, o, metav1.CreateOptions{})
 		case *rbacv1.ClusterRoleBinding:
+			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name))
 			_, _ = cset.RbacV1().ClusterRoleBindings().Create(ctx, o, metav1.CreateOptions{})
 		case *appsv1.Deployment:
+			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace), zap.Int32("replicas", *o.Spec.Replicas))
 			_, _ = cset.AppsV1().Deployments(o.Namespace).Create(ctx, o, metav1.CreateOptions{})
 		case *autoscalingv2.HorizontalPodAutoscaler:
+			// MinReplicas is optional, guard to avoid nil deref
+			var min int32
+			if o.Spec.MinReplicas != nil {
+				min = *o.Spec.MinReplicas
+			}
+			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace), zap.Int32("min", min))
 			_, _ = cset.AutoscalingV2().HorizontalPodAutoscalers(o.Namespace).Create(ctx, o, metav1.CreateOptions{})
 		default:
 			_ = gvk // ignored
@@ -73,8 +88,9 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 	}
 	// Wait for agent 2/2 ready with backoff
 	var ready bool
+	ns := "kubenova-system"
+	logging.L.Info("agent.wait.ready", zap.String("namespace", ns), zap.String("name", "kubenova-agent"))
 	check := func() (bool, error) {
-		ns := "kubenova-system"
 		dep, err := cset.AppsV1().Deployments(ns).Get(ctx, "kubenova-agent", metav1.GetOptions{})
 		if err == nil && dep.Status.ReadyReplicas >= 2 {
 			if _, err := cset.AutoscalingV2().HorizontalPodAutoscalers(ns).Get(ctx, "kubenova-agent", metav1.GetOptions{}); err == nil {
@@ -86,8 +102,10 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 	}
 	_ = util.Retry(10*time.Minute, check)
 	if !ready {
+		logging.L.Error("agent.wait.timeout")
 		return fmt.Errorf("timeout waiting for agent ready")
 	}
+	logging.L.Info("agent.ready")
 	return nil
 }
 
