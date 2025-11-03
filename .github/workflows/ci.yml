@@ -108,6 +108,8 @@ jobs:
           docker compose -f docker-compose.dev.yml up -d --build
       - name: Run validation suite
         run: |
+          set -o pipefail
+          mkdir -p artifacts
           bash e2e/suites/validation.sh | tee artifacts/validation.log
       - name: Collect artifacts
         if: always()
@@ -143,7 +145,10 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: docker compose -f docker-compose.dev.yml up -d --build
       - name: Run functional suite
-        run: bash e2e/suites/functional.sh | tee artifacts/functional.log
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          bash e2e/suites/functional.sh | tee artifacts/functional.log
       - name: Collect artifacts
         if: always()
         run: |
@@ -178,7 +183,10 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: docker compose -f docker-compose.dev.yml up -d --build
       - name: Run load suite
-        run: bash e2e/suites/load.sh | tee artifacts/load.log
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          bash e2e/suites/load.sh | tee artifacts/load.log
       - name: Collect artifacts
         if: always()
         run: |
@@ -213,7 +221,10 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: docker compose -f docker-compose.dev.yml up -d --build
       - name: Run runtime suite
-        run: bash e2e/suites/runtime.sh | tee artifacts/runtime.log
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          bash e2e/suites/runtime.sh | tee artifacts/runtime.log
       - name: Collect artifacts
         if: always()
         run: |
@@ -248,7 +259,10 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: docker compose -f docker-compose.dev.yml up -d --build
       - name: Run pentest suite
-        run: bash e2e/suites/pentest.sh | tee artifacts/pentest.log
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          bash e2e/suites/pentest.sh | tee artifacts/pentest.log
       - name: Collect artifacts
         if: always()
         run: |
@@ -283,7 +297,10 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: docker compose -f docker-compose.dev.yml up -d --build
       - name: Run e2e suite
-        run: bash e2e/suites/end_to_end.sh | tee artifacts/e2e.log
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          bash e2e/suites/end_to_end.sh | tee artifacts/e2e.log
       - name: Collect artifacts
         if: always()
         run: |
@@ -318,7 +335,10 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: docker compose -f docker-compose.dev.yml up -d --build
       - name: Run user functions suite
-        run: bash e2e/suites/user_functions.sh | tee artifacts/user-functions.log
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          bash e2e/suites/user_functions.sh | tee artifacts/user-functions.log
       - name: Collect artifacts
         if: always()
         run: |
@@ -353,7 +373,10 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: docker compose -f docker-compose.dev.yml up -d --build
       - name: Run conditions suite
-        run: bash e2e/suites/conditions.sh | tee artifacts/conditions.log
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          bash e2e/suites/conditions.sh | tee artifacts/conditions.log
       - name: Collect artifacts
         if: always()
         run: |
@@ -378,6 +401,8 @@ jobs:
         env:
           RUN_PG_INTEGRATION: "1"
         run: |
+          set -o pipefail
+          mkdir -p artifacts
           bash e2e/suites/integration.sh | tee artifacts/integration.log
       - uses: actions/upload-artifact@v4
         if: always()
