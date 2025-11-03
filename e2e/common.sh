@@ -17,8 +17,15 @@ wait_api() {
 
 register_cluster() {
   local name=${1:-kind-e2e}
+  local raw
+  # Obtain current kubeconfig in raw form
+  if raw=$(kubectl config view --raw 2>/dev/null); then :; else raw=""; fi
+  if [[ -z "$raw" && -n "${KUBECONFIG:-}" && -f "$KUBECONFIG" ]]; then raw=$(cat "$KUBECONFIG"); fi
+  if [[ -z "$raw" && -f "$HOME/.kube/config" ]]; then raw=$(cat "$HOME/.kube/config"); fi
+  # Rewrite server host to host.docker.internal so Manager (in Docker) can reach Kind API on host
+  raw=$(printf "%s" "$raw" | sed -E 's#server: https://(127\.0\.0\.1|localhost)(:[0-9]+)#server: https://host.docker.internal\2#g')
   local kcfg
-  kcfg=$(base64 -w0 ~/.kube/config 2>/dev/null || base64 ~/.kube/config)
+  kcfg=$(printf "%s" "$raw" | base64 -w0 2>/dev/null || printf "%s" "$raw" | base64)
   curl -fsS -XPOST "$API_URL/api/v1/clusters" -H 'Content-Type: application/json' \
     -d '{"name":"'"$name"'","kubeconfig":"'"$kcfg"'"}'
 }
