@@ -27,6 +27,7 @@ Key environment flags:
 | `E2E_USE_EXISTING_CLUSTER` | `false` | Reuse an already-provisioned Kind cluster instead of creating/deleting it. |
 | `E2E_SKIP_CLEANUP` | `false` | Preserve the Helm release and Kind cluster for inspection. |
 | `E2E_MANAGER_PORT` | `18080` | Local port used for `kubectl port-forward` to the Manager service. |
+| `E2E_WAIT_TIMEOUT` | `20m` | Upper bound for suite waits and HTTP calls (for example cluster registration while the Agent installs). |
 | `E2E_REPO_ROOT` | auto-detected | Absolute path to the repository root passed to external commands; override when running from a different working directory. |
 
 To capture logs without running CI, export them manually after the suite completes:

@@ -73,7 +73,7 @@ func InitSuiteEnvironment(ctx context.Context, cfg Config) (*Environment, error)
 			suiteEnvErr = ErrSuiteSkipped
 			return
 		}
-		env := &Environment{cfg: cfg, logger: logger, httpClient: &http.Client{Timeout: 30 * time.Second}}
+		env := &Environment{cfg: cfg, logger: logger, httpClient: newHTTPClient(cfg.WaitTimeout)}
 		if err := env.ensureRepoRoot(); err != nil {
 			suiteEnvErr = err
 			return
@@ -556,6 +556,17 @@ func (e *Environment) KubeClient() kubernetes.Interface {
 
 func (e *Environment) Config() Config {
 	return e.cfg
+}
+
+func newHTTPClient(timeout time.Duration) *http.Client {
+	min := time.Minute
+	if timeout <= 0 {
+		timeout = min
+	}
+	if timeout < min {
+		timeout = min
+	}
+	return &http.Client{Timeout: timeout}
 }
 
 func (e *Environment) Logger() *slog.Logger {
