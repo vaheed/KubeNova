@@ -76,382 +76,52 @@ jobs:
           docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.manager .
           docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
 
-  e2e_validation:
+  e2e_suite:
     runs-on: ubuntu-latest
-    needs: build_push_amd64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      # API-only E2E (fake cluster mode); no Kind required
-      - name: Start Manager + Postgres via docker compose
-        env:
-          KUBENOVA_REQUIRE_AUTH: "false"
-          MANAGER_URL_PUBLIC: http://localhost:8080
-          KUBENOVA_E2E_FAKE: "true"
-        run: |
-          set -euo pipefail
-          docker compose -f docker-compose.dev.yml up -d --build
-          ok=0
-          for i in {1..90}; do
-            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
-            sleep 2
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "Manager failed readiness; dumping compose logs" >&2
-            docker compose -f docker-compose.dev.yml logs --no-color || true
-            exit 1
-          fi
-      - name: Run validation suite
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          bash e2e/suites/validation.sh | tee artifacts/validation.log
-      - name: Collect artifacts
-        if: always()
-        run: |
-          bash -lc 'source e2e/common.sh; collect_artifacts' || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-validation
-          path: artifacts
-      - name: Compose down
-        if: always()
-        run: docker compose -f docker-compose.dev.yml down -v || true
-
-  e2e_functional:
-    runs-on: ubuntu-latest
-    needs: build_push_amd64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      # API-only E2E (fake cluster mode); no Kind required
-      - name: Start Manager + Postgres
-        env:
-          KUBENOVA_REQUIRE_AUTH: "false"
-          MANAGER_URL_PUBLIC: http://localhost:8080
-          KUBENOVA_E2E_FAKE: "true"
-        run: |
-          docker compose -f docker-compose.dev.yml up -d --build
-          ok=0
-          for i in {1..90}; do
-            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
-            sleep 2
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "Manager failed readiness; dumping compose logs" >&2
-            docker compose -f docker-compose.dev.yml logs --no-color || true
-            exit 1
-          fi
-      - name: Run functional suite
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          bash e2e/suites/functional.sh | tee artifacts/functional.log
-      - name: Collect artifacts
-        if: always()
-        run: |
-          bash -lc 'source e2e/common.sh; collect_artifacts' || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-functional
-          path: artifacts
-      - name: Compose down
-        if: always()
-        run: docker compose -f docker-compose.dev.yml down -v || true
-
-  e2e_load:
-    runs-on: ubuntu-latest
-    needs: build_push_amd64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      # API-only E2E (fake cluster mode); no Kind required
-      - name: Start Manager + Postgres
-        env:
-          KUBENOVA_REQUIRE_AUTH: "false"
-          MANAGER_URL_PUBLIC: http://localhost:8080
-          KUBENOVA_E2E_FAKE: "true"
-        run: |
-          docker compose -f docker-compose.dev.yml up -d --build
-          ok=0
-          for i in {1..90}; do
-            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
-            sleep 2
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "Manager failed readiness; dumping compose logs" >&2
-            docker compose -f docker-compose.dev.yml logs --no-color || true
-            exit 1
-          fi
-      - name: Run load suite
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          bash e2e/suites/load.sh | tee artifacts/load.log
-      - name: Collect artifacts
-        if: always()
-        run: |
-          bash -lc 'source e2e/common.sh; collect_artifacts' || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-load
-          path: artifacts
-      - name: Compose down
-        if: always()
-        run: docker compose -f docker-compose.dev.yml down -v || true
-
-  e2e_runtime:
-    runs-on: ubuntu-latest
-    needs: build_push_amd64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      # API-only E2E (fake cluster mode); no Kind required
-      - name: Start Manager + Postgres
-        env:
-          KUBENOVA_REQUIRE_AUTH: "false"
-          MANAGER_URL_PUBLIC: http://localhost:8080
-          KUBENOVA_E2E_FAKE: "true"
-        run: |
-          docker compose -f docker-compose.dev.yml up -d --build
-          ok=0
-          for i in {1..90}; do
-            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
-            sleep 2
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "Manager failed readiness; dumping compose logs" >&2
-            docker compose -f docker-compose.dev.yml logs --no-color || true
-            exit 1
-          fi
-      - name: Run runtime suite
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          bash e2e/suites/runtime.sh | tee artifacts/runtime.log
-      - name: Collect artifacts
-        if: always()
-        run: |
-          bash -lc 'source e2e/common.sh; collect_artifacts' || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-runtime
-          path: artifacts
-      - name: Compose down
-        if: always()
-        run: docker compose -f docker-compose.dev.yml down -v || true
-
-  e2e_pentest:
-    runs-on: ubuntu-latest
-    needs: build_push_amd64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      # API-only E2E (fake cluster mode); no Kind required
-      - name: Start Manager + Postgres
-        env:
-          KUBENOVA_REQUIRE_AUTH: "false"
-          MANAGER_URL_PUBLIC: http://localhost:8080
-          KUBENOVA_E2E_FAKE: "true"
-        run: |
-          docker compose -f docker-compose.dev.yml up -d --build
-          ok=0
-          for i in {1..90}; do
-            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
-            sleep 2
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "Manager failed readiness; dumping compose logs" >&2
-            docker compose -f docker-compose.dev.yml logs --no-color || true
-            exit 1
-          fi
-      - name: Run pentest suite
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          bash e2e/suites/pentest.sh | tee artifacts/pentest.log
-      - name: Collect artifacts
-        if: always()
-        run: |
-          bash -lc 'source e2e/common.sh; collect_artifacts' || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-pentest
-          path: artifacts
-      - name: Compose down
-        if: always()
-        run: docker compose -f docker-compose.dev.yml down -v || true
-
-  e2e_end_to_end:
-    runs-on: ubuntu-latest
-    needs: build_push_amd64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      # API-only E2E (fake cluster mode); no Kind required
-      - name: Start Manager + Postgres
-        env:
-          KUBENOVA_REQUIRE_AUTH: "false"
-          MANAGER_URL_PUBLIC: http://localhost:8080
-          KUBENOVA_E2E_FAKE: "true"
-        run: |
-          docker compose -f docker-compose.dev.yml up -d --build
-          ok=0
-          for i in {1..90}; do
-            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
-            sleep 2
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "Manager failed readiness; dumping compose logs" >&2
-            docker compose -f docker-compose.dev.yml logs --no-color || true
-            exit 1
-          fi
-      - name: Run e2e suite
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          bash e2e/suites/end_to_end.sh | tee artifacts/e2e.log
-      - name: Collect artifacts
-        if: always()
-        run: |
-          bash -lc 'source e2e/common.sh; collect_artifacts' || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-end-to-end
-          path: artifacts
-      - name: Compose down
-        if: always()
-        run: docker compose -f docker-compose.dev.yml down -v || true
-
-  e2e_user_functions:
-    runs-on: ubuntu-latest
-    needs: build_push_amd64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - uses: helm/kind-action@v1
-        with:
-          cluster_name: kubenova-e2e
-      - name: Build Agent image and load
-        run: |
-          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
-      - name: Start Manager + Postgres
-        env:
-          KUBENOVA_REQUIRE_AUTH: "false"
-          MANAGER_URL_PUBLIC: http://localhost:8080
-          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
-        run: |
-          docker compose -f docker-compose.dev.yml up -d --build
-          ok=0
-          for i in {1..90}; do
-            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
-            sleep 2
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "Manager failed readiness; dumping compose logs" >&2
-            docker compose -f docker-compose.dev.yml logs --no-color || true
-            exit 1
-          fi
-      - name: Run user functions suite
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          bash e2e/suites/user_functions.sh | tee artifacts/user-functions.log
-      - name: Collect artifacts
-        if: always()
-        run: |
-          bash -lc 'source e2e/common.sh; collect_artifacts' || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-user-functions
-          path: artifacts
-      - name: Compose down
-        if: always()
-        run: docker compose -f docker-compose.dev.yml down -v || true
-
-  e2e_conditions:
-    runs-on: ubuntu-latest
-    needs: build_push_amd64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - uses: helm/kind-action@v1
-        with:
-          cluster_name: kubenova-e2e
-      - name: Build Agent image and load
-        run: |
-          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
-          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
-      - name: Start Manager + Postgres
-        env:
-          KUBENOVA_REQUIRE_AUTH: "false"
-          MANAGER_URL_PUBLIC: http://localhost:8080
-          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
-        run: |
-          docker compose -f docker-compose.dev.yml up -d --build
-          ok=0
-          for i in {1..90}; do
-            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
-            sleep 2
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "Manager failed readiness; dumping compose logs" >&2
-            docker compose -f docker-compose.dev.yml logs --no-color || true
-            exit 1
-          fi
-      - name: Run conditions suite
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          bash e2e/suites/conditions.sh | tee artifacts/conditions.log
-      - name: Collect artifacts
-        if: always()
-        run: |
-          bash -lc 'source e2e/common.sh; collect_artifacts' || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-conditions
-          path: artifacts
-      - name: Compose down
-        if: always()
-        run: docker compose -f docker-compose.dev.yml down -v || true
-
-  e2e_integration:
-    runs-on: ubuntu-latest
-    needs: lint_unit
+    needs: [lint_unit, gosec_scan, trivy_fs, trivy_config, trivy_images]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.24' }
-      - name: Run integration suite (testcontainers)
-        env:
-          RUN_PG_INTEGRATION: "1"
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          bash e2e/suites/integration.sh | tee artifacts/integration.log
-      - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: e2e-integration
-          path: artifacts
+          go-version: '1.24'
+          cache: true
+          cache-dependency-path: '**/go.sum'
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.3
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+      - name: Run end-to-end suite
+        env:
+          E2E_BUILD_IMAGES: "true"
+          E2E_KIND_CLUSTER: kubenova-e2e
+        run: |
+          set -euo pipefail
+          make test-e2e | tee e2e.log
+      - name: Export Kind logs
+        if: always()
+        run: |
+          mkdir -p artifacts
+          kind export logs artifacts/kind --name ${E2E_KIND_CLUSTER:-kubenova-e2e} || true
+      - name: Upload suite artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-suite
+          path: |
+            e2e.log
+            artifacts
+      - name: Cleanup Kind
+        if: always()
+        run: kind delete cluster --name ${E2E_KIND_CLUSTER:-kubenova-e2e} || true
 
   docs_publish:
     runs-on: ubuntu-latest
@@ -597,15 +267,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_push_amd64
-      - e2e_validation
-      - e2e_functional
-      - e2e_load
-      - e2e_runtime
-      - e2e_pentest
-      - e2e_end_to_end
-      - e2e_user_functions
-      - e2e_conditions
-      - e2e_integration
+      - e2e_suite
     permissions:
       contents: write
     steps:
@@ -670,15 +332,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_push_amd64
-      - e2e_validation
-      - e2e_functional
-      - e2e_load
-      - e2e_runtime
-      - e2e_pentest
-      - e2e_end_to_end
-      - e2e_user_functions
-      - e2e_conditions
-      - e2e_integration
+      - e2e_suite
     permissions:
       contents: read
       packages: write

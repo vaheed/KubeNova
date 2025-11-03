@@ -2,6 +2,7 @@ SHELL := /bin/bash
 .ONESHELL:
 
 KIND_CLUSTER ?= kubenova-e2e
+E2E_KIND_CLUSTER ?= $(KIND_CLUSTER)
 
 dev-up:
 	docker compose -f docker-compose.dev.yml up -d --build
@@ -25,10 +26,8 @@ deploy-agent:
 test-unit:
 	go test ./... -count=1
 
-test-e2e: kind-up deploy-manager
-	bash e2e/suites/validation.sh
-	bash e2e/suites/functional.sh
-	bash e2e/suites/end_to_end.sh
+test-e2e:
+	E2E_KIND_CLUSTER=$(E2E_KIND_CLUSTER) go test ./tests/e2e/... -count=1 -timeout=45m
 
 kind-flow:
 	bash kind/scripts/run_user_flow.sh

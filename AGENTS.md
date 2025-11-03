@@ -49,7 +49,7 @@ Scope: Entire repository unless a more specific AGENTS.md exists deeper in the t
 
 ## Helpful Commands
 - Unit: `make test-unit`
-- E2E smoke (Kind): `make test-smoke`
+- E2E (Kind): `E2E_BUILD_IMAGES=true make test-e2e`
 - Docs: `make docs-build`
 
 By committing, an agent asserts the checklist has been followed.
