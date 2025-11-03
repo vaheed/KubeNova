@@ -22,9 +22,9 @@ This project ships two layers of E2E validation:
 
 ## Commands
 - CI: see `.github/workflows/ci.yml`, `e2e_kind` job.
-- Local: run the same steps from the job, or use `make kind-up` then:
-  - `docker compose -f docker-compose.dev.yml up -d --build`
-  - `bash e2e/suites/end_to_end.sh` with `API_URL=http://localhost:8080`.
+- Local: the easiest way is to run the user-like flow script which creates Kind, starts Manager via compose, registers the cluster, installs the Agent and bootstraps add-ons:
+  - `bash kind/scripts/run_user_flow.sh`
+  - Or run individual suites from `e2e/suites/` with `API_URL=http://localhost:8080`.
 
 ## Extending E2E
 - When adding APIs or flows, update the smoke to exercise them.

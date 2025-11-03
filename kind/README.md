@@ -22,13 +22,24 @@ docker compose -f docker-compose.dev.yml up -d --build
 for i in {1..60}; do curl -fsS http://localhost:8080/healthz && break || sleep 2; done
 ```
 
-3) Deploy KubeNova components into the cluster (optional — Manager normally installs Agent automatically when a cluster is registered):
+3) Full user-like flow (register, auto-install Agent, bootstrap add-ons):
+```
+bash kind/scripts/run_user_flow.sh
+```
+
+This will:
+- Build and load the Agent image into Kind.
+- Start Manager + Postgres via Docker Compose.
+- Register the Kind cluster with the Manager API.
+- Wait for Agent 2/2 Ready and HPA; wait for add-ons readiness; assert cluster conditions.
+
+4) (Optional) Manual chart installs for debugging:
 ```
 bash kind/scripts/deploy_manager.sh
 bash kind/scripts/deploy_agent.sh
 ```
 
-4) Register your cluster via the Manager API and exercise flows or run the E2E suites from `e2e/suites/`.
+5) Register your cluster via the Manager API manually or run the E2E suites from `e2e/suites/`.
 
 ## Files
 - `kind-config.yaml` — cluster topology used by `make kind-up`.
