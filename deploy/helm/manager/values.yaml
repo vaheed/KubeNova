@@ -6,4 +6,4 @@ image:
 env:
   KUBENOVA_REQUIRE_AUTH: "true"
   AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
-  MANAGER_URL_PUBLIC: http://kubenova-manager.kubenova.svc.cluster.local:8080
+  MANAGER_URL_PUBLIC: http://kubenova-manager.kubenova-system.svc.cluster.local:8080

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kubenova-agent
-  namespace: kubenova
+  namespace: kubenova-system
   labels: { app: kubenova-agent }
 spec:
   replicas: 2
@@ -29,4 +29,3 @@ spec:
             httpGet: { path: /readyz, port: 8082 }
             initialDelaySeconds: 10
             periodSeconds: 10
-

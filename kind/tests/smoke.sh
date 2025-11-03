@@ -9,8 +9,8 @@ echo "$RESP"
 CID=$(echo "$RESP" | jq -r .id)
 
 echo "[SMOKE] Wait for Agent 2/2 Ready"
-kubectl -n kubenova rollout status deploy/kubenova-agent --timeout=5m
-kubectl -n kubenova get hpa kubenova-agent
+kubectl -n kubenova-system rollout status deploy/kubenova-agent --timeout=5m
+kubectl -n kubenova-system get hpa kubenova-agent
 
 echo "[SMOKE] Wait for Addons Ready"
 kubectl -n capsule-system rollout status deploy/capsule-controller-manager --timeout=10m
@@ -53,7 +53,7 @@ fi
 echo "[SMOKE] Stop Manager (docker compose)"
 docker compose -f docker-compose.dev.yml stop manager
 sleep 5
-kubectl -n kubenova rollout status deploy/kubenova-agent --timeout=2m
+kubectl -n kubenova-system rollout status deploy/kubenova-agent --timeout=2m
 
 echo "[SMOKE] Start Manager (docker compose)"
 docker compose -f docker-compose.dev.yml start manager
