@@ -418,15 +418,22 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	// install agent (skip in E2E fake mode)
+	// install agent (skip in E2E fake mode). Do this asynchronously so the
+	// registration call returns immediately and callers can poll readiness.
 	if !parseBool(os.Getenv("KUBENOVA_E2E_FAKE")) {
-		image := getenv("AGENT_IMAGE", "ghcr.io/vaheed/kubenova-agent:dev")
-		mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-manager.kubenova.svc.cluster.local:8080")
-		logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("install_agent", zap.String("cluster", c.Name), zap.String("image", image))
-		if err := InstallAgentFunc(r.Context(), kb, image, mgr); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
+		image := getenv("AGENT_IMAGE", "ghcr.io/vaheed/kubenova/agent:dev")
+		mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-manager.kubenova-system.svc.cluster.local:8080")
+		logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("install_agent_start", zap.String("cluster", c.Name), zap.String("image", image))
+		kbCopy := append([]byte(nil), kb...)
+		go func(clusterID int, clusterName string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			if err := InstallAgentFunc(ctx, kbCopy, image, mgr); err != nil {
+				logging.L.Error("install_agent_error", zap.String("cluster", clusterName), zap.Error(err))
+			} else {
+				logging.L.Info("install_agent_done", zap.String("cluster", clusterName))
+			}
+		}(id, c.Name)
 	}
 	c.ID = id
 	c.KubeconfigB64 = "" // don’t echo
