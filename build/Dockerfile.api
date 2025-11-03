@@ -3,11 +3,11 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /out/kubenova-api ./cmd/api
+RUN CGO_ENABLED=0 go build -o /out/manager ./cmd/api
 
 FROM gcr.io/distroless/base-debian12
 WORKDIR /
-COPY --from=builder /out/kubenova-api /kubenova-api
+COPY --from=builder /out/manager /manager
 EXPOSE 8080
 USER 65532:65532
-ENTRYPOINT ["/kubenova-api"]
+ENTRYPOINT ["/manager"]
