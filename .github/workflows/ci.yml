@@ -98,7 +98,16 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f docker-compose.dev.yml up -d --build
-          curl -fsS http://localhost:8080/wait?timeout=120
+          ok=0
+          for i in {1..90}; do
+            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Manager failed readiness; dumping compose logs" >&2
+            docker compose -f docker-compose.dev.yml logs --no-color || true
+            exit 1
+          fi
       - name: Run validation suite
         run: |
           set -o pipefail
@@ -138,7 +147,16 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
-          curl -fsS http://localhost:8080/wait?timeout=120
+          ok=0
+          for i in {1..90}; do
+            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Manager failed readiness; dumping compose logs" >&2
+            docker compose -f docker-compose.dev.yml logs --no-color || true
+            exit 1
+          fi
       - name: Run functional suite
         run: |
           set -o pipefail
@@ -178,7 +196,16 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
-          curl -fsS http://localhost:8080/wait?timeout=120
+          ok=0
+          for i in {1..90}; do
+            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Manager failed readiness; dumping compose logs" >&2
+            docker compose -f docker-compose.dev.yml logs --no-color || true
+            exit 1
+          fi
       - name: Run load suite
         run: |
           set -o pipefail
@@ -218,7 +245,16 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
-          curl -fsS http://localhost:8080/wait?timeout=120
+          ok=0
+          for i in {1..90}; do
+            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Manager failed readiness; dumping compose logs" >&2
+            docker compose -f docker-compose.dev.yml logs --no-color || true
+            exit 1
+          fi
       - name: Run runtime suite
         run: |
           set -o pipefail
@@ -258,7 +294,16 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
-          curl -fsS http://localhost:8080/wait?timeout=120
+          ok=0
+          for i in {1..90}; do
+            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Manager failed readiness; dumping compose logs" >&2
+            docker compose -f docker-compose.dev.yml logs --no-color || true
+            exit 1
+          fi
       - name: Run pentest suite
         run: |
           set -o pipefail
@@ -298,7 +343,16 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
-          curl -fsS http://localhost:8080/wait?timeout=120
+          ok=0
+          for i in {1..90}; do
+            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Manager failed readiness; dumping compose logs" >&2
+            docker compose -f docker-compose.dev.yml logs --no-color || true
+            exit 1
+          fi
       - name: Run e2e suite
         run: |
           set -o pipefail
@@ -338,7 +392,16 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
-          curl -fsS http://localhost:8080/wait?timeout=120
+          ok=0
+          for i in {1..90}; do
+            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Manager failed readiness; dumping compose logs" >&2
+            docker compose -f docker-compose.dev.yml logs --no-color || true
+            exit 1
+          fi
       - name: Run user functions suite
         run: |
           set -o pipefail
@@ -378,7 +441,16 @@ jobs:
           AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
         run: |
           docker compose -f docker-compose.dev.yml up -d --build
-          curl -fsS http://localhost:8080/wait?timeout=120
+          ok=0
+          for i in {1..90}; do
+            if curl -sS -m 5 http://localhost:8080/wait?timeout=2 >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Manager failed readiness; dumping compose logs" >&2
+            docker compose -f docker-compose.dev.yml logs --no-color || true
+            exit 1
+          fi
       - name: Run conditions suite
         run: |
           set -o pipefail
