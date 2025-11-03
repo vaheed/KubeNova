@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2025-11-04
+### Fixed
+- Increased the Kind E2E suite HTTP timeout to respect `E2E_WAIT_TIMEOUT`, preventing cluster registration from failing while the Agent installs.
+- Documented the extended timeout behaviour across README and testing guides.
+
 ## [0.3.1] - 2025-11-03
 ### Changed
 - Replaced legacy shell-based E2E and smoke suites with a Go-based Kind test harness that provisions clusters, deploys Manager/Agent, registers clusters, and validates Capsule/capsule-proxy/KubeVela health.

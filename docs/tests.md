@@ -42,6 +42,6 @@ The flow is idempotent: rerunning the suite reuses the Kind cluster when `E2E_US
 ## Local tips
 
 - Set `E2E_BUILD_IMAGES=false` to use the published `ghcr.io/vaheed/kubenova/*:dev` images when you only need API regression coverage.
-- Increase `E2E_WAIT_TIMEOUT` (default `20m`) if running on slow machines or when debugging add-on installs.
+- Increase `E2E_WAIT_TIMEOUT` (default `20m`) if running on slow machines or when debugging add-on installs; the same value now governs HTTP calls such as cluster registration so they won't time out before the agent comes up.
 - Use `E2E_MANAGER_PORT` to avoid clashes when multiple suites run side-by-side (for example in development containers).
 - Override `E2E_REPO_ROOT` when invoking `go test` from outside the repository root (the suite defaults to auto-detecting the monorepo path using the helper package location).
