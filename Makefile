@@ -30,6 +30,9 @@ test-e2e: kind-up deploy-manager
 	bash e2e/suites/functional.sh
 	bash e2e/suites/end_to_end.sh
 
+kind-flow:
+	bash kind/scripts/run_user_flow.sh
+
 manager-up:
 	docker compose -f docker-compose.dev.yml up -d --build manager db
 
