@@ -51,7 +51,7 @@ func NewServer(s store.Store) *Server {
             next.ServeHTTP(w, r.WithContext(ctx))
         })
     })
-    srv := &Server{r: mux, store: s, jwtKey: []byte(os.Getenv("JWT_SIGNING_KEY")), requireAuth: os.Getenv("KUBENOVA_REQUIRE_AUTH") == "true"}
+    srv := &Server{r: mux, store: s, jwtKey: []byte(os.Getenv("JWT_SIGNING_KEY")), requireAuth: parseBool(os.Getenv("KUBENOVA_REQUIRE_AUTH"))}
 
     mux.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
     mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
@@ -359,6 +359,15 @@ func computeClusterConditions(ctx context.Context, kubeconfig []byte) []types.Co
 
 func boolstr(b bool) string { if b { return "True" }; return "False" }
 func failConds(err error) []types.Condition { return []types.Condition{{Type:"AgentReady", Status:"False", Reason:"Error"}, {Type:"AddonsReady", Status:"False", Reason:"Error"}} }
+
+func parseBool(v string) bool {
+    switch strings.ToLower(strings.TrimSpace(v)) {
+    case "1", "t", "true", "y", "yes", "on":
+        return true
+    default:
+        return false
+    }
+}
 
 func respond(w http.ResponseWriter, v any, err error) {
     if err != nil {
