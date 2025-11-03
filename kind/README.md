@@ -75,7 +75,7 @@ make down
 - `scripts/install_capsule_proxy.sh` – Installs capsule‑proxy via Helm
 - `scripts/install_kubevela.sh` – Installs KubeVela via Helm
 - `scripts/deploy_kubenova_agent.sh` – Helm chart for Agent (for manual flows)
-- `scripts/deploy_kubenova_api.sh` – Helm chart for API (for manual flows)
+- `scripts/deploy_manager.sh` – Helm chart for Manager (for manual flows)
 
 You can still use the scripts to install add‑ons manually for debugging, but the E2E smoke relies on the Agent to bootstrap them automatically.
 

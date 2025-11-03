@@ -19,7 +19,7 @@ platform-up:
 	bash kind/scripts/install_kubevela.sh
 
 deploy-manager:
-	bash kind/scripts/deploy_kubenova_api.sh
+	bash kind/scripts/deploy_manager.sh
 
 deploy-agent:
 	bash kind/scripts/deploy_kubenova_agent.sh
