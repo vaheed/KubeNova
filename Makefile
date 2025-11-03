@@ -24,14 +24,13 @@ deploy-manager:
 deploy-agent:
 	bash kind/scripts/deploy_kubenova_agent.sh
 
-test-smoke:
-	bash kind/tests/smoke.sh
-
 test-unit:
 	go test ./... -count=1
 
-test-e2e: kind-up platform-up deploy-manager
-	$(MAKE) test-smoke
+test-e2e: kind-up deploy-manager
+	bash e2e/suites/validation.sh
+	bash e2e/suites/functional.sh
+	bash e2e/suites/end_to_end.sh
 
 manager-up:
 	docker compose -f docker-compose.dev.yml up -d --build manager db

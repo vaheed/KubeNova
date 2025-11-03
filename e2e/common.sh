@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export API_URL=${API_URL:-http://localhost:8080}
+export NAMESPACE=kubenova-system
+
+wait_api() {
+  local url=${1:-$API_URL}
+  local tries=${2:-60}
+  for i in $(seq 1 "$tries"); do
+    if curl -fsS "$url/healthz" >/dev/null 2>&1; then return 0; fi
+    sleep 2
+  done
+  echo "[common] API failed readiness at $url" >&2
+  return 1
+}
+
+register_cluster() {
+  local name=${1:-kind-e2e}
+  local kcfg
+  kcfg=$(base64 -w0 ~/.kube/config 2>/dev/null || base64 ~/.kube/config)
+  curl -fsS -XPOST "$API_URL/api/v1/clusters" -H 'Content-Type: application/json' \
+    -d '{"name":"'"$name"'","kubeconfig":"'"$kcfg"'"}'
+}
+
+collect_artifacts() {
+  mkdir -p artifacts
+  docker compose -f docker-compose.dev.yml logs --no-color > artifacts/compose.log || true
+  kubectl get events -A --sort-by=.lastTimestamp > artifacts/events-all.txt || true
+  kubectl get crd > artifacts/crds.txt || true
+  kubectl -n "$NAMESPACE" get all -o wide > artifacts/kubenova.txt || true
+  kubectl -n "$NAMESPACE" describe deploy kubenova-manager > artifacts/desc-manager.txt || true
+  kubectl -n "$NAMESPACE" describe deploy kubenova-agent > artifacts/desc-agent.txt || true
+  kubectl -n "$NAMESPACE" logs deploy/kubenova-manager --tail=1000 > artifacts/manager.log || true
+  kubectl -n "$NAMESPACE" logs deploy/kubenova-agent --tail=1000 > artifacts/agent.log || true
+}
+

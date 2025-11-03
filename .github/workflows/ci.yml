@@ -84,7 +84,7 @@ jobs:
           docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.manager .
           docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
 
-  e2e_kind:
+  e2e_validation:
     runs-on: ubuntu-latest
     needs: build_push_amd64
     steps:
@@ -106,63 +106,284 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f docker-compose.dev.yml up -d --build
-          ok=0
-          for i in {1..60}; do
-            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then ok=1; break; fi
-            sleep 2
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "API failed to become ready; compose logs:" >&2
-            docker compose -f docker-compose.dev.yml logs --no-color || true
-            exit 1
-          fi
-      - name: Smoke
-        env:
-          API_URL: http://localhost:8080
+      - name: Run validation suite
         run: |
-          set -euo pipefail
-          set -o pipefail
-          mkdir -p artifacts
-          bash kind/tests/smoke.sh | tee artifacts/smoke.log
-      - name: Collect cluster and compose logs
+          bash e2e/suites/validation.sh | tee artifacts/validation.log
+      - name: Collect artifacts
         if: always()
         run: |
-          mkdir -p artifacts
-          # Cluster-wide
-          kubectl get pods -A -o wide > artifacts/pods-all.txt || true
-          kubectl get events -A --sort-by=.lastTimestamp > artifacts/events-all.txt || true
-          kubectl get crd > artifacts/crds.txt || true
-          # KubeNova namespace (kubenova-system)
-          kubectl -n kubenova-system get all -o wide > artifacts/kubenova.txt || true
-          kubectl -n kubenova-system describe deploy kubenova-manager > artifacts/desc-manager.txt || true
-          kubectl -n kubenova-system describe deploy kubenova-agent > artifacts/desc-agent.txt || true
-          kubectl -n kubenova-system logs deploy/kubenova-manager --tail=1000 > artifacts/manager.log || true
-          kubectl -n kubenova-system logs deploy/kubenova-agent --tail=1000 > artifacts/agent.log || true
-          # Capsule + Vela namespaces
-          kubectl -n capsule-system get all -o wide > artifacts/capsule.txt || true
-          kubectl -n capsule-system logs deploy/capsule-controller-manager --tail=1000 > artifacts/capsule-controller.log || true
-          kubectl -n capsule-system logs deploy/capsule-proxy --tail=1000 > artifacts/capsule-proxy.log || true
-          kubectl -n vela-system get all -o wide > artifacts/vela.txt || true
-          kubectl -n vela-system logs deploy/vela-core --tail=1000 > artifacts/vela-core.log || true
-          # Docker compose services (API + DB)
-          docker compose -f docker-compose.dev.yml ps > artifacts/compose-ps.txt || true
-          docker compose -f docker-compose.dev.yml logs --no-color > artifacts/compose-all.log || true
-          docker compose -f docker-compose.dev.yml logs manager --no-color > artifacts/manager-compose.log || true
-          docker compose -f docker-compose.dev.yml logs db --no-color > artifacts/db-compose.log || true
+          source e2e/common.sh; collect_artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: e2e-artifacts
+          name: e2e-validation
           path: artifacts
-      - name: Cleanup cluster install
-        if: always()
-        run: |
-          kubectl delete ns kubenova --ignore-not-found=true --wait=true || true
-          kubectl delete ns capsule-system --ignore-not-found=true || true
-          kubectl delete ns vela-system --ignore-not-found=true || true
       - name: Compose down
         if: always()
         run: docker compose -f docker-compose.dev.yml down -v || true
+
+  e2e_functional:
+    runs-on: ubuntu-latest
+    needs: build_push_amd64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kubenova-e2e
+      - name: Build Agent image and load
+        run: |
+          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
+          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      - name: Start Manager + Postgres
+        env:
+          KUBENOVA_REQUIRE_AUTH: "false"
+          MANAGER_URL_PUBLIC: http://localhost:8080
+          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+        run: docker compose -f docker-compose.dev.yml up -d --build
+      - name: Run functional suite
+        run: bash e2e/suites/functional.sh | tee artifacts/functional.log
+      - name: Collect artifacts
+        if: always()
+        run: |
+          source e2e/common.sh; collect_artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-functional
+          path: artifacts
+      - name: Compose down
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v || true
+
+  e2e_load:
+    runs-on: ubuntu-latest
+    needs: build_push_amd64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kubenova-e2e
+      - name: Build Agent image and load
+        run: |
+          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
+          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      - name: Start Manager + Postgres
+        env:
+          KUBENOVA_REQUIRE_AUTH: "false"
+          MANAGER_URL_PUBLIC: http://localhost:8080
+          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+        run: docker compose -f docker-compose.dev.yml up -d --build
+      - name: Run load suite
+        run: bash e2e/suites/load.sh | tee artifacts/load.log
+      - name: Collect artifacts
+        if: always()
+        run: |
+          source e2e/common.sh; collect_artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-load
+          path: artifacts
+      - name: Compose down
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v || true
+
+  e2e_runtime:
+    runs-on: ubuntu-latest
+    needs: build_push_amd64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kubenova-e2e
+      - name: Build Agent image and load
+        run: |
+          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
+          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      - name: Start Manager + Postgres
+        env:
+          KUBENOVA_REQUIRE_AUTH: "false"
+          MANAGER_URL_PUBLIC: http://localhost:8080
+          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+        run: docker compose -f docker-compose.dev.yml up -d --build
+      - name: Run runtime suite
+        run: bash e2e/suites/runtime.sh | tee artifacts/runtime.log
+      - name: Collect artifacts
+        if: always()
+        run: |
+          source e2e/common.sh; collect_artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-runtime
+          path: artifacts
+      - name: Compose down
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v || true
+
+  e2e_pentest:
+    runs-on: ubuntu-latest
+    needs: build_push_amd64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kubenova-e2e
+      - name: Build Agent image and load
+        run: |
+          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
+          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      - name: Start Manager + Postgres
+        env:
+          KUBENOVA_REQUIRE_AUTH: "false"
+          MANAGER_URL_PUBLIC: http://localhost:8080
+          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+        run: docker compose -f docker-compose.dev.yml up -d --build
+      - name: Run pentest suite
+        run: bash e2e/suites/pentest.sh | tee artifacts/pentest.log
+      - name: Collect artifacts
+        if: always()
+        run: |
+          source e2e/common.sh; collect_artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-pentest
+          path: artifacts
+      - name: Compose down
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v || true
+
+  e2e_end_to_end:
+    runs-on: ubuntu-latest
+    needs: build_push_amd64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kubenova-e2e
+      - name: Build Agent image and load
+        run: |
+          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
+          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      - name: Start Manager + Postgres
+        env:
+          KUBENOVA_REQUIRE_AUTH: "false"
+          MANAGER_URL_PUBLIC: http://localhost:8080
+          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+        run: docker compose -f docker-compose.dev.yml up -d --build
+      - name: Run e2e suite
+        run: bash e2e/suites/end_to_end.sh | tee artifacts/e2e.log
+      - name: Collect artifacts
+        if: always()
+        run: |
+          source e2e/common.sh; collect_artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-end-to-end
+          path: artifacts
+      - name: Compose down
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v || true
+
+  e2e_user_functions:
+    runs-on: ubuntu-latest
+    needs: build_push_amd64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kubenova-e2e
+      - name: Build Agent image and load
+        run: |
+          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
+          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      - name: Start Manager + Postgres
+        env:
+          KUBENOVA_REQUIRE_AUTH: "false"
+          MANAGER_URL_PUBLIC: http://localhost:8080
+          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+        run: docker compose -f docker-compose.dev.yml up -d --build
+      - name: Run user functions suite
+        run: bash e2e/suites/user_functions.sh | tee artifacts/user-functions.log
+      - name: Collect artifacts
+        if: always()
+        run: |
+          source e2e/common.sh; collect_artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-user-functions
+          path: artifacts
+      - name: Compose down
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v || true
+
+  e2e_conditions:
+    runs-on: ubuntu-latest
+    needs: build_push_amd64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kubenova-e2e
+      - name: Build Agent image and load
+        run: |
+          docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
+          kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
+      - name: Start Manager + Postgres
+        env:
+          KUBENOVA_REQUIRE_AUTH: "false"
+          MANAGER_URL_PUBLIC: http://localhost:8080
+          AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
+        run: docker compose -f docker-compose.dev.yml up -d --build
+      - name: Run conditions suite
+        run: bash e2e/suites/conditions.sh | tee artifacts/conditions.log
+      - name: Collect artifacts
+        if: always()
+        run: |
+          source e2e/common.sh; collect_artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-conditions
+          path: artifacts
+      - name: Compose down
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v || true
+
+  e2e_integration:
+    runs-on: ubuntu-latest
+    needs: lint_unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.24' }
+      - name: Run integration suite (testcontainers)
+        env:
+          RUN_PG_INTEGRATION: "1"
+        run: |
+          bash e2e/suites/integration.sh | tee artifacts/integration.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-integration
+          path: artifacts
 
   docs_publish:
     runs-on: ubuntu-latest
@@ -313,7 +534,17 @@ jobs:
 
   charts_publish:
     runs-on: ubuntu-latest
-    needs: build_push_amd64
+    needs:
+      - build_push_amd64
+      - e2e_validation
+      - e2e_functional
+      - e2e_load
+      - e2e_runtime
+      - e2e_pentest
+      - e2e_end_to_end
+      - e2e_user_functions
+      - e2e_conditions
+      - e2e_integration
     permissions:
       contents: write
     steps:
@@ -376,7 +607,17 @@ jobs:
 
   charts_push_oci:
     runs-on: ubuntu-latest
-    needs: build_push_amd64
+    needs:
+      - build_push_amd64
+      - e2e_validation
+      - e2e_functional
+      - e2e_load
+      - e2e_runtime
+      - e2e_pentest
+      - e2e_end_to_end
+      - e2e_user_functions
+      - e2e_conditions
+      - e2e_integration
     permissions:
       contents: read
       packages: write
