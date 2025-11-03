@@ -31,7 +31,7 @@ jobs:
           RUN_PG_INTEGRATION: "1"
         run: |
           go test -tags=integration ./internal/store -count=1
-          go test -tags=integration ./internal/api -count=1
+          go test -tags=integration ./internal/manager -count=1
 
   build_push_amd64:
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
         run: |
           TAG=${GITHUB_REF##*/}
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then EXTRA_TAGS="--tag ghcr.io/vaheed/kubenova/manager:$TAG --tag ghcr.io/vaheed/kubenova/agent:$TAG"; fi
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.api .
+          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.manager .
           docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
 
   build_push_arm64:
@@ -81,7 +81,7 @@ jobs:
         run: |
           TAG=${GITHUB_REF##*/}
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then EXTRA_TAGS="--tag ghcr.io/vaheed/kubenova/manager:$TAG --tag ghcr.io/vaheed/kubenova/agent:$TAG"; fi
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.api .
+          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.manager .
           docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
 
   e2e_kind:
@@ -98,7 +98,7 @@ jobs:
         run: |
           docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
           kind load docker-image ghcr.io/vaheed/kubenova/agent:dev --name kubenova-e2e
-      - name: Start API + Postgres via docker compose
+      - name: Start Manager + Postgres via docker compose
         env:
           KUBENOVA_REQUIRE_AUTH: "false"
           MANAGER_URL_PUBLIC: http://localhost:8080
@@ -147,7 +147,7 @@ jobs:
           # Docker compose services (API + DB)
           docker compose -f docker-compose.dev.yml ps > artifacts/compose-ps.txt || true
           docker compose -f docker-compose.dev.yml logs --no-color > artifacts/compose-all.log || true
-          docker compose -f docker-compose.dev.yml logs api --no-color > artifacts/api-compose.log || true
+          docker compose -f docker-compose.dev.yml logs manager --no-color > artifacts/manager-compose.log || true
           docker compose -f docker-compose.dev.yml logs db --no-color > artifacts/db-compose.log || true
       - uses: actions/upload-artifact@v4
         if: always()
@@ -215,7 +215,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - name: Build scan images
         run: |
-          docker buildx build -t manager:scan -f build/Dockerfile.api --load .
+          docker buildx build -t manager:scan -f build/Dockerfile.manager --load .
           docker buildx build -t kubenova-agent:scan -f build/Dockerfile.agent --load .
           docker save manager:scan -o api-image.tar
           docker save kubenova-agent:scan -o agent-image.tar

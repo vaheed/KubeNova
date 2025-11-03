@@ -2,7 +2,7 @@
 
 Private packages for the KubeNova Manager and Agent.
 
-- `api/` – HTTP server, routes, auth, handlers
+- `manager/` – HTTP server, routes, auth, handlers
 - `cluster/` – Manager-side agent installer (embedded manifests)
 - `reconcile/` – Agent reconcilers (Projects→Namespaces, Apps→Vela, bootstrap job)
 - `adapters/` – Translators to Capsule and KubeVela CRDs (unstructured)

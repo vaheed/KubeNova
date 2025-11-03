@@ -50,13 +50,13 @@ if [[ "$HB_BEFORE" == "0" || -z "$HB_BEFORE" ]]; then
   exit 1
 fi
 
-echo "[SMOKE] Stop API (docker compose)"
-docker compose -f docker-compose.dev.yml stop api
+echo "[SMOKE] Stop Manager (docker compose)"
+docker compose -f docker-compose.dev.yml stop manager
 sleep 5
 kubectl -n kubenova rollout status deploy/kubenova-agent --timeout=2m
 
-echo "[SMOKE] Start API (docker compose)"
-docker compose -f docker-compose.dev.yml start api
+echo "[SMOKE] Start Manager (docker compose)"
+docker compose -f docker-compose.dev.yml start manager
 for i in {1..30}; do curl -fsS ${API_URL}/healthz && break || sleep 2; done
 
 echo "[SMOKE] Wait for heartbeat to increase"

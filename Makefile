@@ -18,7 +18,7 @@ platform-up:
 	bash kind/scripts/install_capsule_proxy.sh
 	bash kind/scripts/install_kubevela.sh
 
-deploy-api:
+deploy-manager:
 	bash kind/scripts/deploy_kubenova_api.sh
 
 deploy-agent:
@@ -30,11 +30,11 @@ test-smoke:
 test-unit:
 	go test ./... -count=1
 
-test-e2e: kind-up platform-up deploy-api
+test-e2e: kind-up platform-up deploy-manager
 	$(MAKE) test-smoke
 
 manager-up:
-	docker compose -f docker-compose.dev.yml up -d --build api db
+	docker compose -f docker-compose.dev.yml up -d --build manager db
 
 agent-build:
 	docker build -t ghcr.io/vaheed/kubenova-agent:dev -f build/Dockerfile.agent .

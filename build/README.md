@@ -2,7 +2,7 @@
 
 Container build assets.
 
-- `Dockerfile.api` – multi-stage build for the Manager API (distroless runtime).
+- `Dockerfile.manager` – multi-stage build for the Manager service (distroless runtime).
 - `Dockerfile.agent` – multi-stage build for the in-cluster Agent (distroless runtime).
 
 Notes

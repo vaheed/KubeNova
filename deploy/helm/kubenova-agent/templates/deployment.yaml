@@ -11,11 +11,16 @@ spec:
     metadata:
       labels: {app: kubenova-agent}
     spec:
+      securityContext:
+        runAsNonRoot: true
       serviceAccountName: kubenova-agent
       containers:
         - name: agent
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
           readinessProbe:
             httpGet: { path: /healthz, port: 8082 }
             initialDelaySeconds: 5
@@ -28,13 +33,16 @@ spec:
             - name: MANAGER_URL
               value: "{{ .Values.manager.url }}"
             - name: BATCH_INTERVAL_SECONDS
-              value: "{{ .Values.manager.batchIntervalSeconds | quote }}"
+              value: {{ .Values.manager.batchIntervalSeconds | quote }}
             - name: REDIS_ADDR
               value: "{{ .Values.redis.addr }}"
             - name: BATCH_MAX_ITEMS
-              value: "{{ .Values.manager.batchMaxItems | quote }}"
+              value: {{ .Values.manager.batchMaxItems | quote }}
         {{- if .Values.redis.enabled }}
         - name: redis
           image: "{{ .Values.redis.image }}"
           args: ["--save", "", "--appendonly", "no"]
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
         {{- end }}
