@@ -2,7 +2,7 @@
 
 - Provision a Kind cluster: `make kind-up`
 - Deploy the Manager API: `make deploy-api`
-- Port-forward: `kubectl -n kubenova port-forward svc/kubenova-api 8080:8080 &`
+- Port-forward: `kubectl -n kubenova port-forward svc/kubenova-manager 8080:8080 &`
 - Register the cluster:
 ```
 curl -XPOST localhost:8080/api/v1/clusters -H 'Content-Type: application/json' \

@@ -9,6 +9,6 @@ redis:
   addr: redis:6379
 
 manager:
-  url: http://kubenova-api.kubenova.svc.cluster.local:8080
+  url: http://kubenova-manager.kubenova.svc.cluster.local:8080
   batchIntervalSeconds: 10
   batchMaxItems: 100

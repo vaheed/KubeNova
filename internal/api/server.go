@@ -280,7 +280,7 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
     if err != nil { http.Error(w, err.Error(), 500); return }
     // install agent
     image := getenv("AGENT_IMAGE", "ghcr.io/vaheed/kubenova-agent:dev")
-    mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-api.kubenova.svc.cluster.local:8080")
+    mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-manager.kubenova.svc.cluster.local:8080")
     logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("install_agent", zap.String("cluster", c.Name), zap.String("image", image))
     if err := InstallAgentFunc(r.Context(), kb, image, mgr); err != nil { http.Error(w, err.Error(), 500); return }
     c.ID = id
