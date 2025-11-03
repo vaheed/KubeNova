@@ -27,10 +27,10 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: kubenova-agent
-    namespace: kubenova
+    namespace: kubenova-system
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kubenova-agent
-  namespace: kubenova
+  namespace: kubenova-system

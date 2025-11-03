@@ -2,7 +2,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: kubenova-agent
-  namespace: kubenova
+  namespace: kubenova-system
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -17,4 +17,3 @@ spec:
         target:
           type: Utilization
           averageUtilization: 70
-

@@ -132,12 +132,12 @@ jobs:
           kubectl get pods -A -o wide > artifacts/pods-all.txt || true
           kubectl get events -A --sort-by=.lastTimestamp > artifacts/events-all.txt || true
           kubectl get crd > artifacts/crds.txt || true
-          # KubeNova namespace
-          kubectl -n kubenova get all -o wide > artifacts/kubenova.txt || true
-          kubectl -n kubenova describe deploy kubenova-manager > artifacts/desc-manager.txt || true
-          kubectl -n kubenova describe deploy kubenova-agent > artifacts/desc-agent.txt || true
-          kubectl -n kubenova logs deploy/kubenova-manager --tail=1000 > artifacts/manager.log || true
-          kubectl -n kubenova logs deploy/kubenova-agent --tail=1000 > artifacts/agent.log || true
+          # KubeNova namespace (kubenova-system)
+          kubectl -n kubenova-system get all -o wide > artifacts/kubenova.txt || true
+          kubectl -n kubenova-system describe deploy kubenova-manager > artifacts/desc-manager.txt || true
+          kubectl -n kubenova-system describe deploy kubenova-agent > artifacts/desc-agent.txt || true
+          kubectl -n kubenova-system logs deploy/kubenova-manager --tail=1000 > artifacts/manager.log || true
+          kubectl -n kubenova-system logs deploy/kubenova-agent --tail=1000 > artifacts/agent.log || true
           # Capsule + Vela namespaces
           kubectl -n capsule-system get all -o wide > artifacts/capsule.txt || true
           kubectl -n capsule-system logs deploy/capsule-controller-manager --tail=1000 > artifacts/capsule-controller.log || true

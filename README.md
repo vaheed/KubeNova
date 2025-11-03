@@ -13,7 +13,7 @@ Quick Start (Kind)
 - make platform-up     # optional in local dev; Agent can install too
 - make deploy-manager
  - Port-forward Manager and register the cluster:
-  - kubectl -n kubenova port-forward svc/kubenova-manager 8080:8080 &
+  - kubectl -n kubenova-system port-forward svc/kubenova-manager 8080:8080 &
   - curl -XPOST localhost:8080/api/v1/clusters -H 'Content-Type: application/json' \
     -d '{"name":"kind","kubeconfig":"'"$(base64 -w0 ~/.kube/config 2>/dev/null || base64 ~/.kube/config)"'"}'
 
@@ -43,7 +43,7 @@ Helm charts
 helm repo add kubenova-dev https://vaheed.github.io/kubenova/charts/dev
 helm repo add kubenova https://vaheed.github.io/kubenova/charts/stable
 helm repo update
-helm install manager kubenova/manager --namespace kubenova --create-namespace
+helm install manager kubenova/manager --namespace kubenova-system --create-namespace
 
 OCI charts in GitHub Packages (GHCR)
 - CI also pushes Helm charts as OCI artifacts to GHCR:

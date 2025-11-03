@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-helm upgrade --install manager ./deploy/helm/manager -n kubenova --create-namespace
-kubectl -n kubenova rollout status deploy/kubenova-manager
+helm upgrade --install manager ./deploy/helm/manager -n kubenova-system --create-namespace
+kubectl -n kubenova-system rollout status deploy/kubenova-manager

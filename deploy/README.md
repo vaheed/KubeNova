@@ -14,7 +14,7 @@ Publishing
 Install (Helm repo)
 ```
 helm repo add kubenova https://vaheed.github.io/kubenova/charts/stable
-helm install manager kubenova/manager -n kubenova --create-namespace
+helm install manager kubenova/manager -n kubenova-system --create-namespace
 ```
 
 Install (OCI)

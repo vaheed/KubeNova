@@ -58,7 +58,7 @@ Artifacts (if you run in CI) include logs from compose services and cluster name
 5) Cleanup:
 ```
 # Remove add‑ons and agent
-kubectl delete ns kubenova --ignore-not-found=true --wait=true || true
+kubectl delete ns kubenova-system --ignore-not-found=true --wait=true || true
 kubectl delete ns capsule-system --ignore-not-found=true || true
 kubectl delete ns vela-system --ignore-not-found=true || true
 # Stop Manager API + Postgres
