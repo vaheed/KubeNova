@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/vaheed/kubenova-agent
+  repository: ghcr.io/vaheed/kubenova/agent
   tag: dev
   pullPolicy: IfNotPresent
 

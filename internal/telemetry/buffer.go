@@ -25,7 +25,7 @@ type RedisBuffer struct {
 func NewRedisBuffer() *RedisBuffer {
     addr := getenv("REDIS_ADDR", "redis:6379")
     rdb := redis.NewClient(&redis.Options{Addr: addr})
-    base := getenv("MANAGER_URL", "http://kubenova-api.kubenova.svc.cluster.local:8080")
+    base := getenv("MANAGER_URL", "http://kubenova-manager.kubenova.svc.cluster.local:8080")
     max := getenvInt("BATCH_MAX_ITEMS", 100)
     iv := time.Duration(getenvInt("BATCH_INTERVAL_SECONDS", 10)) * time.Second
     return &RedisBuffer{rdb: rdb, http: http.DefaultClient, base: base, max: max, tick: iv, stop: make(chan struct{})}
@@ -77,4 +77,3 @@ func (b *RedisBuffer) flush(kind string) {
         _ = resp.Body.Close()
     }
 }
-

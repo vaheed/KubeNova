@@ -1,15 +1,15 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kubenova-api
-  labels: { app: kubenova-api }
+  name: kubenova-manager
+  labels: { app: kubenova-manager }
 spec:
   replicas: 1
   selector:
-    matchLabels: {app: kubenova-api}
+    matchLabels: {app: kubenova-manager}
   template:
     metadata:
-      labels: {app: kubenova-api}
+      labels: {app: kubenova-manager}
     spec:
       containers:
         - name: api

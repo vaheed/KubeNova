@@ -1,4 +1,4 @@
 apiVersion: v2
-name: kubenova-api
+name: manager
 version: 0.3.0
 type: application
