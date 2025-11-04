@@ -172,3 +172,6 @@ func unstructuredScheme() *runtime.Scheme {
 	_ = metav1.AddMetaToScheme(s)
 	return s
 }
+
+// no env toggles required; installer applies least-privilege runtime RBAC,
+// a dedicated cluster-admin bootstrap SA, and upserts resources idempotently.
