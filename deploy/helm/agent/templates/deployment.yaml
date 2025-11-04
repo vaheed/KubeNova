@@ -34,6 +34,12 @@ spec:
               value: "{{ .Values.manager.url }}"
             - name: BATCH_INTERVAL_SECONDS
               value: {{ .Values.manager.batchIntervalSeconds | quote }}
+            - name: CAPSULE_VERSION
+              value: {{ .Values.bootstrap.capsuleVersion | quote }}
+            - name: CAPSULE_PROXY_VERSION
+              value: {{ .Values.bootstrap.capsuleProxyVersion | quote }}
+            - name: VELA_CORE_VERSION
+              value: {{ .Values.bootstrap.velaCoreVersion | quote }}
             - name: REDIS_ADDR
               value: "{{ .Values.redis.addr }}"
             - name: BATCH_MAX_ITEMS

@@ -6,6 +6,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -37,6 +38,11 @@ func BootstrapHelmJob(ctx context.Context) error {
 			AllowPrivilegeEscalation: boolPtr(false),
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 			RunAsNonRoot:             boolPtr(true),
+		},
+		Env: []corev1.EnvVar{
+			{Name: "CAPSULE_VERSION", Value: os.Getenv("CAPSULE_VERSION")},
+			{Name: "CAPSULE_PROXY_VERSION", Value: os.Getenv("CAPSULE_PROXY_VERSION")},
+			{Name: "VELA_CORE_VERSION", Value: os.Getenv("VELA_CORE_VERSION")},
 		},
 		Command: []string{"/bin/sh", "-c"},
 		Args: []string{`set -Eeuo pipefail
@@ -78,13 +84,13 @@ wait_crd tenants.capsule.clastix.io
 CAPSULE_PROXY_VER="${CAPSULE_PROXY_VERSION:-0.9.13}"
 helm upgrade --install capsule-proxy oci://ghcr.io/projectcapsule/charts/capsule-proxy \
   --version "$CAPSULE_PROXY_VER" \
-  -n capsule-system --set service.enabled=true \
+  -n capsule-system --set service.enabled=true --set service.type=LoadBalancer \
   --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m \
   || helm upgrade --install capsule-proxy clastix/capsule-proxy \
-  -n capsule-system --set service.enabled=true \
+  -n capsule-system --set service.enabled=true --set service.type=LoadBalancer \
   --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m \
   || helm upgrade --install capsule-proxy oci://ghcr.io/clastix/charts/capsule-proxy \
-  -n capsule-system --set service.enabled=true \
+  -n capsule-system --set service.enabled=true --set service.type=LoadBalancer \
   --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m
 rollout capsule-system capsule-proxy
 

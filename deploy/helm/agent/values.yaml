@@ -12,3 +12,8 @@ manager:
   url: http://kubenova-manager.kubenova.svc.cluster.local:8080
   batchIntervalSeconds: 10
   batchMaxItems: 100
+
+bootstrap:
+  capsuleVersion: 0.10.6
+  capsuleProxyVersion: 0.9.13
+  velaCoreVersion: ""

@@ -1,0 +1,24 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tenant-discovery
+rules:
+  - nonResourceURLs:
+      - /api
+      - /api/*
+      - /apis
+      - /apis/apps
+      - /apis/apps/*
+      - /apis/batch
+      - /apis/batch/*
+      - /apis/autoscaling
+      - /apis/autoscaling/*
+      - /apis/networking.k8s.io
+      - /apis/networking.k8s.io/*
+      - /openapi
+      - /version
+      - /healthz
+      - /livez
+      - /readyz
+    verbs: ["get"]
+

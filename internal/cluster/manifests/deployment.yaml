@@ -37,6 +37,12 @@ spec:
               value: "{{MANAGER_URL}}"
             - name: BATCH_INTERVAL_SECONDS
               value: "10"
+            - name: CAPSULE_VERSION
+              value: "{{CAPSULE_VERSION}}"
+            - name: CAPSULE_PROXY_VERSION
+              value: "{{CAPSULE_PROXY_VERSION}}"
+            - name: VELA_CORE_VERSION
+              value: "{{VELA_CORE_VERSION}}"
           readinessProbe:
             httpGet: { path: /healthz, port: 8082 }
             initialDelaySeconds: 5
