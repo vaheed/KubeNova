@@ -5,6 +5,7 @@ import (
 	"github.com/vaheed/kubenova/internal/logging"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -13,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"strings"
 	"time"
 )
 
@@ -59,6 +61,11 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		}
 		// ensure Capsule Tenant exists using unstructured
 		if err := ensureCapsuleTenant(ctx, r.Client, tenant); err != nil {
+			// If Capsule CRDs are not yet installed, surface a friendly message and requeue without erroring
+			if apierrors.IsNoMatchError(err) || strings.Contains(err.Error(), "no matches for kind \"Tenant\"") {
+				logging.FromContext(ctx).With(zap.String("adapter", "capsule"), zap.String("tenant", tenant)).Info("capsule CRDs not ready; will retry")
+				return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
+			}
 			logging.FromContext(ctx).With(zap.String("adapter", "capsule"), zap.String("tenant", tenant)).Error("ensure tenant", zap.Error(err))
 			return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
 		}

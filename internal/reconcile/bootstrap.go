@@ -24,10 +24,20 @@ func BootstrapHelmJob(ctx context.Context) error {
 	}
 	// Use a dedicated SA with elevated rights for bootstrap; runtime agent stays least-privileged
 	job.Spec.Template.Spec.ServiceAccountName = "agent-bootstrap"
+	// Harden pod security context for PodSecurity restricted
+	job.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+		RunAsNonRoot:   boolPtr(true),
+	}
 	job.Spec.BackoffLimit = int32ptr(1)
 	job.Spec.Template.Spec.Containers = []corev1.Container{{
-		Name:    "helm",
-		Image:   "dtzar/helm-kubectl:3.14.4",
+		Name:  "helm",
+		Image: "dtzar/helm-kubectl:3.14.4",
+		SecurityContext: &corev1.SecurityContext{
+			AllowPrivilegeEscalation: boolPtr(false),
+			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+			RunAsNonRoot:             boolPtr(true),
+		},
 		Command: []string{"/bin/sh", "-c"},
 		Args: []string{`set -Eeuo pipefail
 # helper funcs
@@ -64,20 +74,24 @@ helm upgrade --install capsule projectcapsule/capsule \
 rollout capsule-system capsule-controller-manager
 wait_crd tenants.capsule.clastix.io
 
-# 3) Install capsule-proxy and wait
-helm upgrade --install capsule-proxy clastix/capsule-proxy \
+# 3) Install capsule-proxy (prefer official OCI with pinned version) and wait
+CAPSULE_PROXY_VER="${CAPSULE_PROXY_VERSION:-0.9.13}"
+helm upgrade --install capsule-proxy oci://ghcr.io/projectcapsule/charts/capsule-proxy \
+  --version "$CAPSULE_PROXY_VER" \
+  -n capsule-system --set service.enabled=true \
+  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m \
+  || helm upgrade --install capsule-proxy clastix/capsule-proxy \
   -n capsule-system --set service.enabled=true \
   --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m \
   || helm upgrade --install capsule-proxy oci://ghcr.io/clastix/charts/capsule-proxy \
-  -n capsule-system --set service.enabled=true \
-  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m \
-  || helm upgrade --install capsule-proxy oci://ghcr.io/projectcapsule/charts/capsule-proxy \
   -n capsule-system --set service.enabled=true \
   --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m
 rollout capsule-system capsule-proxy
 
 # 4) Install KubeVela core and wait (admission webhooks enabled per docs)
-helm upgrade --install vela-core kubevela/vela-core \
+VELA_VER="${VELA_CORE_VERSION:-}"
+if [ -n "$VELA_VER" ]; then VE_OPTS="--version $VELA_VER"; else VE_OPTS=""; fi
+helm upgrade --install vela-core kubevela/vela-core $VE_OPTS \
   -n vela-system --create-namespace --set admissionWebhooks.enabled=true --wait --timeout 10m
 rollout vela-system vela-core
 wait_crd applications.core.oam.dev
@@ -89,3 +103,4 @@ wait_crd applications.core.oam.dev
 }
 
 func int32ptr(i int32) *int32 { return &i }
+func boolPtr(b bool) *bool    { return &b }
