@@ -241,6 +241,30 @@ kind/scripts/onboard_tenant.sh \
 
 It prints the export line for KUBECONFIG and basic kubectl commands. When `KUBENOVA_REQUIRE_AUTH` is true, pass a Bearer token via `--token` or set `KUBENOVA_TOKEN`.
 
+### Capsule CRUD quick examples
+
+- Tenant Resource Quotas:
+```
+CID=1
+curl -sS -XPOST "$API/api/v1/tenant-quotas?cluster_id=$CID" -H 'Content-Type: application/json' \
+  -d '{"apiVersion":"capsule.clastix.io/v1beta2","kind":"TenantResourceQuota","metadata":{"name":"default"},"spec":{"hard":{"pods":"100"}}}' | jq .
+curl -sS "$API/api/v1/tenant-quotas?cluster_id=$CID" | jq '.items[].metadata.name'
+```
+
+- Namespace Options:
+```
+curl -sS -XPOST "$API/api/v1/namespace-options?cluster_id=$CID" -H 'Content-Type: application/json' \
+  -d '{"apiVersion":"capsule.clastix.io/v1beta2","kind":"NamespaceOptions","metadata":{"name":"defaults"},"spec":{"allowUserDefinedLabels":true}}' | jq .
+curl -sS "$API/api/v1/namespace-options?cluster_id=$CID" | jq .
+```
+
+- Capsule Configurations:
+```
+curl -sS -XPOST "$API/api/v1/configurations?cluster_id=$CID" -H 'Content-Type: application/json' \
+  -d '{"apiVersion":"capsule.clastix.io/v1beta2","kind":"CapsuleConfiguration","metadata":{"name":"default"},"spec":{"userGroups":["tenant-admins","tenant-maintainers"]}}' | jq .
+curl -sS "$API/api/v1/configurations?cluster_id=$CID" | jq .
+```
+
 
 ## 4. Bootstrap KubeVela Core
 
