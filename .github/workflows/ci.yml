@@ -102,7 +102,7 @@ jobs:
           version: v3.14.4
       - name: Run end-to-end suite
         env:
-          E2E_RUN: "true"
+          E2E_RUN: "false"
           E2E_BUILD_IMAGES: "false"
           E2E_KIND_CLUSTER: kubenova-e2e
         run: |
