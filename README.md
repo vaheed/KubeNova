@@ -259,4 +259,4 @@ kubectl api-resources | grep vela
 KubeNova API → CapsuleAdapter → Capsule(+proxy)
            └→ VelaAdapter → KubeVela Core → Workloads
 ```
-.
+..
