@@ -73,7 +73,9 @@ func InitSuiteEnvironment(ctx context.Context, cfg Config) (*Environment, error)
 			suiteEnvErr = ErrSuiteSkipped
 			return
 		}
-		env := &Environment{cfg: cfg, logger: logger, httpClient: newHTTPClient(cfg.WaitTimeout)}
+		// Use a shorter per-request HTTP timeout than the overall suite wait.
+		// This prevents a single hung request from consuming the entire wait window.
+		env := &Environment{cfg: cfg, logger: logger, httpClient: newHTTPClient(perRequestTimeout(cfg.WaitTimeout))}
 		if err := env.ensureRepoRoot(); err != nil {
 			suiteEnvErr = err
 			return
@@ -597,6 +599,24 @@ func (e *Environment) ensureRepoRoot() error {
 		return fmt.Errorf("repository root is not a directory: %s", e.cfg.RepositoryRoot)
 	}
 	return nil
+}
+
+// perRequestTimeout derives an HTTP client timeout that is short enough to
+// allow frequent polling within the overall wait window, while still
+// accommodating transient slowness on CI runners.
+func perRequestTimeout(total time.Duration) time.Duration {
+	if total <= 0 {
+		total = time.Minute
+	}
+	// Aim for ~30 attempts across the window, capped to 30s and floored to 10s.
+	t := total / 30
+	if t < 10*time.Second {
+		t = 10 * time.Second
+	}
+	if t > 30*time.Second {
+		t = 30 * time.Second
+	}
+	return t
 }
 
 func sanitizeBinary(path, allowed string) (string, error) {
