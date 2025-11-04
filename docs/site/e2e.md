@@ -15,10 +15,10 @@ All tests log every major step via `slog` and run in parallel subtests to keep s
 
 ```bash
 # Build fresh images, create a Kind cluster, run the suite, and clean everything up
-E2E_BUILD_IMAGES=true make test-e2e
+E2E_RUN=1 E2E_BUILD_IMAGES=true make test-e2e
 ```
 
-> **Note:** `make test-e2e` exports `E2E_RUN=1`. Regular `go test ./...` invocations leave the suite skipped so lint/unit loops stay fast.
+> **Note:** The suite runs only when `E2E_RUN=1` is set. Regular `go test ./...` leaves E2E skipped so lint/unit loops stay fast.
 
 Key environment flags:
 
@@ -41,12 +41,7 @@ kind export logs artifacts/kind --name ${E2E_KIND_CLUSTER:-kubenova-e2e}
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs a single `e2e_suite` job on every pull request:
-
-- Installs Kind, kubectl, and Helm.
-- Builds local Manager/Agent images and loads them into Kind.
-- Executes `make test-e2e` with full logging.
-- Uploads the Go test log plus `kind export logs` as artifacts.
+`.github/workflows/ci.yml` includes an `e2e_suite` job. It invokes `make test-e2e` without forcing `E2E_RUN=1`, so the suite stays disabled unless explicitly enabled via environment.
 
 The job gates chart publication and OCI pushes, ensuring the real cluster bootstrap path stays healthy.
 

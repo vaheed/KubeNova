@@ -35,8 +35,8 @@ The flow is idempotent: rerunning the suite reuses the Kind cluster when `E2E_US
 
 ## CI integration
 
-- `make test-e2e` is wired into `.github/workflows/ci.yml` as the `e2e_suite` job.
-- The job installs Kind/kubectl/Helm, sets `E2E_BUILD_IMAGES=true`, and uploads the Go test log plus `kind export logs` artifacts.
+- `make test-e2e` is used by `.github/workflows/ci.yml` in the `e2e_suite` job.
+- The job installs Kind/kubectl/Helm, and uploads the Go test log plus `kind export logs` artifacts. It does not force `E2E_RUN=1`, so the suite remains disabled unless explicitly enabled via environment.
 - `charts_publish` and `charts_push_oci` depend on `e2e_suite`, so failing infrastructure tests block chart publication.
 
 ## Local tips

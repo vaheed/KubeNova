@@ -11,11 +11,27 @@ spec:
     metadata:
       labels: { app: kubenova-agent }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: kubenova-agent
       containers:
         - name: agent
           image: "{{IMAGE}}"
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
             - name: MANAGER_URL
               value: "{{MANAGER_URL}}"
