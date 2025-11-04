@@ -46,7 +46,18 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 	scheme := unstructuredScheme()
 	dec := serializer.NewCodecFactory(scheme).UniversalDeserializer()
 	// Loop embedded files
-	items := []string{"namespace.yaml", "serviceaccount.yaml", "clusterrole.yaml", "clusterrolebinding.yaml", "deployment.yaml", "hpa.yaml"}
+	items := []string{
+		"namespace.yaml",
+		"serviceaccount.yaml",
+		"clusterrole.yaml",
+		"clusterrolebinding.yaml",
+		"role.yaml",
+		"rolebinding.yaml",
+		"bootstrap-serviceaccount.yaml",
+		"bootstrap-clusterrolebinding.yaml",
+		"deployment.yaml",
+		"hpa.yaml",
+	}
 	for _, name := range items {
 		b, err := manifests.ReadFile("manifests/" + name)
 		if err != nil {
@@ -61,19 +72,57 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 		switch o := obj.(type) {
 		case *corev1.Namespace:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name))
-			_, _ = cset.CoreV1().Namespaces().Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.CoreV1().Namespaces().Create(ctx, o, metav1.CreateOptions{}); err != nil {
+				_ = err
+			}
 		case *corev1.ServiceAccount:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace))
-			_, _ = cset.CoreV1().ServiceAccounts(o.Namespace).Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.CoreV1().ServiceAccounts(o.Namespace).Create(ctx, o, metav1.CreateOptions{}); err != nil {
+				if existing, getErr := cset.CoreV1().ServiceAccounts(o.Namespace).Get(ctx, o.Name, metav1.GetOptions{}); getErr == nil {
+					o.ResourceVersion = existing.ResourceVersion
+					_, _ = cset.CoreV1().ServiceAccounts(o.Namespace).Update(ctx, o, metav1.UpdateOptions{})
+				}
+			}
 		case *rbacv1.ClusterRole:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name))
-			_, _ = cset.RbacV1().ClusterRoles().Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.RbacV1().ClusterRoles().Create(ctx, o, metav1.CreateOptions{}); err != nil {
+				if existing, getErr := cset.RbacV1().ClusterRoles().Get(ctx, o.Name, metav1.GetOptions{}); getErr == nil {
+					o.ResourceVersion = existing.ResourceVersion
+					_, _ = cset.RbacV1().ClusterRoles().Update(ctx, o, metav1.UpdateOptions{})
+				}
+			}
 		case *rbacv1.ClusterRoleBinding:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name))
-			_, _ = cset.RbacV1().ClusterRoleBindings().Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.RbacV1().ClusterRoleBindings().Create(ctx, o, metav1.CreateOptions{}); err != nil {
+				if existing, getErr := cset.RbacV1().ClusterRoleBindings().Get(ctx, o.Name, metav1.GetOptions{}); getErr == nil {
+					o.ResourceVersion = existing.ResourceVersion
+					_, _ = cset.RbacV1().ClusterRoleBindings().Update(ctx, o, metav1.UpdateOptions{})
+				}
+			}
+		case *rbacv1.Role:
+			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace))
+			if _, err := cset.RbacV1().Roles(o.Namespace).Create(ctx, o, metav1.CreateOptions{}); err != nil {
+				if existing, getErr := cset.RbacV1().Roles(o.Namespace).Get(ctx, o.Name, metav1.GetOptions{}); getErr == nil {
+					o.ResourceVersion = existing.ResourceVersion
+					_, _ = cset.RbacV1().Roles(o.Namespace).Update(ctx, o, metav1.UpdateOptions{})
+				}
+			}
+		case *rbacv1.RoleBinding:
+			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace))
+			if _, err := cset.RbacV1().RoleBindings(o.Namespace).Create(ctx, o, metav1.CreateOptions{}); err != nil {
+				if existing, getErr := cset.RbacV1().RoleBindings(o.Namespace).Get(ctx, o.Name, metav1.GetOptions{}); getErr == nil {
+					o.ResourceVersion = existing.ResourceVersion
+					_, _ = cset.RbacV1().RoleBindings(o.Namespace).Update(ctx, o, metav1.UpdateOptions{})
+				}
+			}
 		case *appsv1.Deployment:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace), zap.Int32("replicas", *o.Spec.Replicas))
-			_, _ = cset.AppsV1().Deployments(o.Namespace).Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.AppsV1().Deployments(o.Namespace).Create(ctx, o, metav1.CreateOptions{}); err != nil {
+				if existing, getErr := cset.AppsV1().Deployments(o.Namespace).Get(ctx, o.Name, metav1.GetOptions{}); getErr == nil {
+					o.ResourceVersion = existing.ResourceVersion
+					_, _ = cset.AppsV1().Deployments(o.Namespace).Update(ctx, o, metav1.UpdateOptions{})
+				}
+			}
 		case *autoscalingv2.HorizontalPodAutoscaler:
 			// MinReplicas is optional, guard to avoid nil deref
 			var min int32
@@ -81,7 +130,12 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 				min = *o.Spec.MinReplicas
 			}
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace), zap.Int32("min", min))
-			_, _ = cset.AutoscalingV2().HorizontalPodAutoscalers(o.Namespace).Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.AutoscalingV2().HorizontalPodAutoscalers(o.Namespace).Create(ctx, o, metav1.CreateOptions{}); err != nil {
+				if existing, getErr := cset.AutoscalingV2().HorizontalPodAutoscalers(o.Namespace).Get(ctx, o.Name, metav1.GetOptions{}); getErr == nil {
+					o.ResourceVersion = existing.ResourceVersion
+					_, _ = cset.AutoscalingV2().HorizontalPodAutoscalers(o.Namespace).Update(ctx, o, metav1.UpdateOptions{})
+				}
+			}
 		default:
 			_ = gvk // ignored
 		}
