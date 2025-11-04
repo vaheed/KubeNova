@@ -33,6 +33,7 @@ func BootstrapHelmJob(ctx context.Context) error {
 # Add repos (cert-manager required by Capsule and capsule-proxy)
 helm repo add jetstack https://charts.jetstack.io >/dev/null 2>&1 || true
 helm repo add clastix https://clastix.github.io/charts >/dev/null 2>&1 || true
+helm repo add projectcapsule https://projectcapsule.github.io/charts >/dev/null 2>&1 || true
 helm repo add kubevela https://kubevela.github.io/charts >/dev/null 2>&1 || true
 helm repo update
 
@@ -41,8 +42,16 @@ helm upgrade --install cert-manager jetstack/cert-manager \
   -n cert-manager --create-namespace --set crds.enabled=true --wait --timeout 10m
 
 # Install Capsule and capsule-proxy (depends on cert-manager certs) and wait
-# Try community repo first; fall back to public OCI if chart not found.
-helm upgrade --install capsule clastix/capsule \
+# Prefer the projectcapsule Helm repo with a pinned version; fall back to OCI in projectcapsule,
+# then to legacy clastix paths as a last resort.
+CAPSULE_VER="${CAPSULE_VERSION:-0.10.6}"
+helm upgrade --install capsule projectcapsule/capsule \
+  --version "$CAPSULE_VER" \
+  -n capsule-system --create-namespace --set manager.leaderElection=true --wait --timeout 10m \
+  || helm upgrade --install capsule oci://ghcr.io/projectcapsule/charts/capsule \
+  --version "$CAPSULE_VER" \
+  -n capsule-system --create-namespace --set manager.leaderElection=true --wait --timeout 10m \
+  || helm upgrade --install capsule clastix/capsule \
   -n capsule-system --create-namespace --set manager.leaderElection=true --wait --timeout 10m \
   || helm upgrade --install capsule oci://ghcr.io/clastix/charts/capsule \
   -n capsule-system --create-namespace --set manager.leaderElection=true --wait --timeout 10m
@@ -51,6 +60,9 @@ helm upgrade --install capsule-proxy clastix/capsule-proxy \
   -n capsule-system --set service.enabled=true \
   --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m \
   || helm upgrade --install capsule-proxy oci://ghcr.io/clastix/charts/capsule-proxy \
+  -n capsule-system --set service.enabled=true \
+  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m \
+  || helm upgrade --install capsule-proxy oci://ghcr.io/projectcapsule/charts/capsule-proxy \
   -n capsule-system --set service.enabled=true \
   --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' --wait --timeout 10m
 
