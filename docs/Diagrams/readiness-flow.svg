@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="260">
+  <text x="20" y="24">Readiness and Health Checks</text>
+  <rect x="20" y="40" width="880" height="200" fill="#fff" stroke="#ccc"/>
+  <text x="40" y="80">1. Agent Deployment 2/2 Ready + HPA present</text>
+  <text x="40" y="110">2. Capsule controller + proxy Deployments Ready</text>
+  <text x="40" y="140">3. KubeVela controllers Ready</text>
+  <text x="40" y="170">4. CRDs served: capsule.clastix.io/v1beta2, core.oam.dev/v1beta1</text>
+  <text x="40" y="200">Manager GET /api/v1/clusters/{id} → AgentReady, AddonsReady</text>
+</svg>

@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:16
+    env_file: [ env.example ]
+    ports: ["5432:5432"]
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  manager:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.manager
+    env_file: [ env.example ]
+    environment:
+      - DATABASE_URL=${KUBENOVA_DB_URL:-postgres://kubenova:kubenova@db:5432/kubenova?sslmode=disable}
+      - KUBENOVA_REQUIRE_AUTH=${KUBENOVA_REQUIRE_AUTH:-false}
+      - AGENT_IMAGE=${AGENT_IMAGE:-ghcr.io/vaheed/kubenova/agent:dev}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: ["8080:8080"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  dbdata:

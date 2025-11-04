@@ -6,7 +6,59 @@
 ## Overview
 
 KubeNova acts as a **central control plane** for multi-tenant Kubernetes environments.  
-It coordinates **Capsule** for multi-tenancy and **KubeVela** for application delivery.  
+It coordinates **Capsule** for multi-tenancy and **KubeVela** for application delivery. 
+
+Quick Start (Kind)
+- make kind-up
+- make deploy-manager
+ - Port-forward Manager and register the cluster:
+  - kubectl -n kubenova-system port-forward svc/kubenova-manager 8080:8080 &
+  - curl -XPOST localhost:8080/api/v1/clusters -H 'Content-Type: application/json' \
+    -d '{"name":"kind","kubeconfig":"'"$(base64 -w0 ~/.kube/config 2>/dev/null || base64 ~/.kube/config)"'"}'
+
+What happens
+- Manager stores the Cluster and installs the in-cluster Agent Deployment (replicas=2) and HPA.
+- Agent starts with leader election, installs/validates add-ons in order: Capsule → capsule-proxy → KubeVela.
+- Manager exposes status at GET /api/v1/clusters/{id} with Conditions: AgentReady, AddonsReady.
+- Both components expose /healthz and /readyz and publish Prometheus metrics and OpenTelemetry traces.
+
+Configuration
+- env.example documents DATABASE_URL, JWT, and deployment image versions.
+- AGENT_IMAGE controls the image used for remote install.
+
+Tests
+- `make test-unit` – unit tests and integration stubs (the Go E2E suite is disabled by default).
+- `E2E_RUN=1 E2E_BUILD_IMAGES=true make test-e2e` – Kind-based end-to-end suite that builds local Manager/Agent images, registers a cluster, and verifies Capsule/capsule-proxy/KubeVela health. When `E2E_RUN=1` is omitted, the suite is skipped.
+  - Use `E2E_WAIT_TIMEOUT` to extend the suite's wait budget and HTTP timeouts when agent installation or add-on bootstrapping needs longer than the default 20 minutes.
+
+Docs
+- VitePress site at `docs/site`. Build with `make docs-build` and serve with `make docs-serve`.
+
+Helm charts
+- CI publishes packaged charts to GitHub Pages:
+  - develop → https://vaheed.github.io/kubenova/charts/dev
+  - main → https://vaheed.github.io/kubenova/charts/stable
+- Add repo and install:
+```
+helm repo add kubenova-dev https://vaheed.github.io/kubenova/charts/dev
+helm repo add kubenova https://vaheed.github.io/kubenova/charts/stable
+helm repo update
+helm install manager kubenova/manager --namespace kubenova-system --create-namespace
+
+OCI charts in GitHub Packages (GHCR)
+- CI pushes Helm charts as OCI artifacts to a separate repo namespace to avoid container tag collisions:
+  - ghcr.io/vaheed/kubenova-charts/manager
+  - ghcr.io/vaheed/kubenova-charts/agent
+- Tags:
+  - develop: semantic version with -dev suffix, plus alias dev
+  - main: semantic version, plus alias latest
+- Example (OCI):
+```
+helm registry login ghcr.io -u <user> -p <token>
+helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version latest
+helm pull oci://ghcr.io/vaheed/kubenova-charts/agent --version latest
+```
+```
 
 This document includes:
 - Capsule & capsule-proxy bootstrap instructions  
