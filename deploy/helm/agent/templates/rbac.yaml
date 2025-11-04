@@ -3,6 +3,9 @@ kind: ClusterRole
 metadata:
   name: agent
 rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get","list","watch","create","update","patch"]
   - apiGroups: [""]
     resources: ["namespaces","configmaps","events"]
     verbs: ["get","list","watch","create","update","patch"]
