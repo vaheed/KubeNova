@@ -613,7 +613,7 @@ func boolstr(b bool) string {
 	}
 	return "False"
 }
-func failConds(err error) []types.Condition {
+func failConds(_ error) []types.Condition {
 	return []types.Condition{{Type: "AgentReady", Status: "False", Reason: "Error"}, {Type: "AddonsReady", Status: "False", Reason: "Error"}}
 }
 
@@ -646,7 +646,7 @@ func respond(w http.ResponseWriter, v any, err error) {
 // Build a minimal kubeconfig string bound to the capsule-proxy URL and JWT token
 func GenerateKubeconfig(g types.KubeconfigGrant, server string) ([]byte, error) {
 	if server == "" {
-		server = "https://capsule-proxy.kubenova.svc"
+		server = "https://capsule-proxy.capsule-system.svc"
 	}
 	// token is NOT issued here for real clusters; we return a placeholder to keep the example
 	token := "placeholder"

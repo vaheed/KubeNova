@@ -1,4 +1,4 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: KubeNova API
   version: 0.2.0
@@ -69,17 +69,44 @@ paths:
       security: [ { bearerAuth: [] } ]
       parameters:
         - { name: cluster_id, in: query, required: false, schema: { type: integer }, description: "When set, proxies to Capsule Tenants on the given cluster" }
+      description: |
+        Lists tenants.
+        - Without `cluster_id`: returns the Manager store list (array).
+        - With `cluster_id`: proxies to Capsule and returns a Kubernetes list object with `items`.
       responses:
         '200':
           description: list tenants
-          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Tenant' } } } }
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Tenant' } }
+              examples:
+                manager_list:
+                  summary: Manager store response
+                  value:
+                    - { name: "alice", owners: ["user1@example.com"], createdAt: "2025-01-01T00:00:00Z" }
+                    - { name: "acme", owners: [], createdAt: "2025-01-02T00:00:00Z" }
+                capsule_proxy_list:
+                  summary: Capsule proxy response (when cluster_id is provided)
+                  value:
+                    apiVersion: capsule.clastix.io/v1beta2
+                    kind: TenantList
+                    items:
+                      - apiVersion: capsule.clastix.io/v1beta2
+                        kind: Tenant
+                        metadata: { name: acme }
+                        spec: { owners: [] }
     post:
       security: [ { bearerAuth: [] } ]
       parameters:
         - { name: cluster_id, in: query, required: false, schema: { type: integer } }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } }
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Tenant' }
+            example:
+              name: acme
+              owners: ["user1@example.com","user2@example.com"]
       responses: { '200': { description: created } }
   /api/v1/tenants/{name}:
     get:
@@ -87,13 +114,28 @@ paths:
       parameters:
         - { name: name, in: path, required: true, schema: { type: string } }
         - { name: cluster_id, in: query, required: false, schema: { type: integer } }
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+              example:
+                name: acme
+                owners: ["user1@example.com"]
     put:
       security: [ { bearerAuth: [] } ]
       parameters:
         - { name: name, in: path, required: true, schema: { type: string } }
         - { name: cluster_id, in: query, required: false, schema: { type: integer } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Tenant' }
+            example:
+              name: acme
+              owners: ["user1@example.com","user3@example.com"]
       responses: { '200': { description: ok } }
     delete:
       security: [ { bearerAuth: [] } ]
@@ -109,11 +151,31 @@ paths:
         - { name: cluster_id, in: query, required: true, schema: { type: integer } }
         - { name: labelSelector, in: query, required: false, schema: { type: string } }
         - { name: fieldSelector, in: query, required: false, schema: { type: string } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              example:
+                apiVersion: capsule.clastix.io/v1beta2
+                kind: TenantResourceQuotaList
+                items:
+                  - apiVersion: capsule.clastix.io/v1beta2
+                    kind: TenantResourceQuota
+                    metadata: { name: default }
+                    spec: { hard: { pods: "100" } }
     post:
       parameters:
         - { name: cluster_id, in: query, required: true, schema: { type: integer } }
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              apiVersion: capsule.clastix.io/v1beta2
+              kind: TenantResourceQuota
+              metadata: { name: default }
+              spec: { hard: { pods: "100" } }
       responses: { '200': { description: created } }
   /api/v1/tenant-quotas/{name}:
     get:
@@ -137,11 +199,31 @@ paths:
     get:
       parameters:
         - { name: cluster_id, in: query, required: true, schema: { type: integer } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              example:
+                apiVersion: capsule.clastix.io/v1beta2
+                kind: NamespaceOptionsList
+                items:
+                  - apiVersion: capsule.clastix.io/v1beta2
+                    kind: NamespaceOptions
+                    metadata: { name: defaults }
+                    spec: { allowUserDefinedLabels: true }
     post:
       parameters:
         - { name: cluster_id, in: query, required: true, schema: { type: integer } }
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              apiVersion: capsule.clastix.io/v1beta2
+              kind: NamespaceOptions
+              metadata: { name: defaults }
+              spec: { allowUserDefinedLabels: true }
       responses: { '200': { description: created } }
   /api/v1/namespace-options/{name}:
     get:
@@ -165,11 +247,31 @@ paths:
     get:
       parameters:
         - { name: cluster_id, in: query, required: true, schema: { type: integer } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              example:
+                apiVersion: capsule.clastix.io/v1beta2
+                kind: CapsuleConfigurationList
+                items:
+                  - apiVersion: capsule.clastix.io/v1beta2
+                    kind: CapsuleConfiguration
+                    metadata: { name: default }
+                    spec: { userGroups: ["tenant-admins","tenant-maintainers"] }
     post:
       parameters:
         - { name: cluster_id, in: query, required: true, schema: { type: integer } }
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              apiVersion: capsule.clastix.io/v1beta2
+              kind: CapsuleConfiguration
+              metadata: { name: default }
+              spec: { userGroups: ["tenant-admins","tenant-maintainers"] }
       responses: { '200': { description: created } }
   /api/v1/configurations/{name}:
     get:
@@ -191,7 +293,15 @@ paths:
   /api/v1/projects:
     post:
       security: [ { bearerAuth: [] } ]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Project' }
+            example:
+              tenant: acme
+              name: web
+              labels: { env: prod }
       responses: { '200': { description: ok } }
   /api/v1/projects/{tenant}/{name}:
     get:
@@ -199,7 +309,16 @@ paths:
       parameters:
         - { name: tenant, in: path, required: true, schema: { type: string } }
         - { name: name, in: path, required: true, schema: { type: string } }
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+              example:
+                tenant: acme
+                name: web
+                labels: { env: prod }
     delete:
       security: [ { bearerAuth: [] } ]
       parameters:
@@ -212,7 +331,16 @@ paths:
   /api/v1/apps:
     post:
       security: [ { bearerAuth: [] } ]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/App' }
+            example:
+              tenant: acme
+              project: web
+              name: api
+              image: ghcr.io/acme/api:1.0.0
       responses: { '200': { description: ok } }
   /api/v1/apps/{tenant}/{project}/{name}:
     get:
@@ -221,7 +349,17 @@ paths:
         - { name: tenant, in: path, required: true, schema: { type: string } }
         - { name: project, in: path, required: true, schema: { type: string } }
         - { name: name, in: path, required: true, schema: { type: string } }
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+              example:
+                tenant: acme
+                project: web
+                name: api
+                image: ghcr.io/acme/api:1.0.0
     delete:
       security: [ { bearerAuth: [] } ]
       parameters:
@@ -232,9 +370,41 @@ paths:
   /api/v1/kubeconfig-grants:
     post:
       security: [ { bearerAuth: [] } ]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KubeconfigGrant' } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KubeconfigGrant' }
+            example:
+              tenant: acme
+              role: tenant-admin
       responses:
-        '200': { description: kubeconfig issued, content: { application/json: { schema: { $ref: '#/components/schemas/KubeconfigGrant' } } } }
+        '200':
+          description: kubeconfig issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KubeconfigGrant' }
+              example:
+                tenant: acme
+                role: tenant-admin
+                kubeconfig: |
+                  apiVersion: v1
+                  kind: Config
+                  clusters:
+                  - name: capsule
+                    cluster:
+                      insecure-skip-tls-verify: true
+                      server: https://cproxy.example.com
+                  contexts:
+                  - name: tenant
+                    context:
+                      cluster: capsule
+                      user: tenant-user
+                  current-context: tenant
+                  users:
+                  - name: tenant-user
+                    user:
+                      token: PLACEHOLDER
   /api/v1/clusters:
     post:
       security: [ { bearerAuth: [] } ]
@@ -249,17 +419,43 @@ paths:
                 kubeconfig: { type: string, format: byte }
                 labels: { type: object, additionalProperties: { type: string } }
               required: [name, kubeconfig]
+            example:
+              name: kind
+              kubeconfig: ZmFrZS1iYXNlNjQ=
       responses:
-        '200': { description: cluster registered, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } }
+        '200':
+          description: cluster registered
+          content:
+            application/json:
+              schema: { type: object }
+              example:
+                id: 1
+                name: kind
   /api/v1/clusters/{id}:
     get:
       security: [ { bearerAuth: [] } ]
       parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
       responses:
-        '200': { description: cluster status, content: { application/json: { schema: { type: object } } } }
+        '200':
+          description: cluster status
+          content:
+            application/json:
+              schema: { type: object }
+              example:
+                id: 1
+                name: kind
+                conditions:
+                  - { type: AgentReady, status: True, lastTransitionTime: "2025-01-01T00:00:00Z" }
+                  - { type: AddonsReady, status: True, lastTransitionTime: "2025-01-01T00:00:00Z" }
   /api/v1/clusters/{id}/events:
     get:
       security: [ { bearerAuth: [] } ]
       parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
       responses:
-        '200': { description: events, content: { application/json: { schema: { type: array, items: { type: object } } } } }
+        '200':
+          description: events
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+              example:
+                - { type: Normal, reason: agent_started, message: "Agent started" }

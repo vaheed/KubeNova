@@ -179,6 +179,69 @@ Each object supports CRUD verbs (`create|get|list|update|delete`).
 
 ---
 
+### Practical Examples (curl)
+
+- Register a cluster and get its ID:
+```
+CLUSTER_B64=$(base64 -w0 ~/.kube/config 2>/dev/null || base64 ~/.kube/config)
+curl -sS -XPOST $API/api/v1/clusters -H 'Content-Type: application/json' \
+  -d '{"name":"kind","kubeconfig":"'$CLUSTER_B64'"}' | jq .id
+```
+
+- Create a Capsule Tenant on a registered cluster:
+```
+curl -sS -XPOST "$API/api/v1/tenants?cluster_id=$CID" -H 'Content-Type: application/json' -d '
+{
+  "apiVersion":"capsule.clastix.io/v1beta2",
+  "kind":"Tenant",
+  "metadata": {"name": "acme"},
+  "spec": {"owners": []}
+}
+'
+```
+
+- List Capsule Tenants on the cluster:
+```
+curl -sS "$API/api/v1/tenants?cluster_id=$CID" | jq '.items[].metadata.name'
+```
+
+- Create NamespaceOptions:
+```
+curl -sS -XPOST "$API/api/v1/namespace-options?cluster_id=$CID" -H 'Content-Type: application/json' -d '
+{"apiVersion":"capsule.clastix.io/v1beta2","kind":"NamespaceOptions","metadata":{"name":"defaults"},"spec":{}}
+'
+```
+
+- Issue a kubeconfig for capsule-proxy access (uses CAPSULE_PROXY_URL):
+```
+curl -sS -XPOST $API/api/v1/kubeconfig-grants -H 'Content-Type: application/json' \
+  -d '{"tenant":"acme","role":"tenant-admin"}' | jq -r .kubeconfig > acme.kubeconfig
+```
+Export KUBECONFIG=./acme.kubeconfig and use kubectl to access via capsule-proxy.
+
+Hiding backend details from tenants
+- KubeNova installs a ClusterRole/Binding that limits API discovery to core groups and omits Capsule endpoints. Tenant `kubectl api-resources` output won’t include `capsule.clastix.io`.
+- Tenants should use KubeNova routes (and optionally the issued kubeconfig to your `CAPSULE_PROXY_URL` domain) without direct access to Capsule CRDs.
+
+### One‑line Tenant On‑boarding
+
+Use the helper to create a Tenant on a specific cluster and issue a kubeconfig targeting your CAPSULE_PROXY_URL domain:
+
+```
+API=http://localhost:8080 \
+kind/scripts/onboard_tenant.sh \
+  --api "$API" \
+  --cluster-id 1 \
+  --tenant acme \
+  --owners user1@example.com,user2@example.com \
+  --role tenant-admin \
+  --kubeconfig ./acme.kubeconfig \
+  --token "$KUBENOVA_TOKEN"
+```
+
+It prints the export line for KUBECONFIG and basic kubectl commands. When `KUBENOVA_REQUIRE_AUTH` is true, pass a Bearer token via `--token` or set `KUBENOVA_TOKEN`.
+
+
 ## 4. Bootstrap KubeVela Core
 
 ```bash
