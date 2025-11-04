@@ -19,7 +19,6 @@ services:
     environment:
       - DATABASE_URL=${KUBENOVA_DB_URL:-postgres://kubenova:kubenova@db:5432/kubenova?sslmode=disable}
       - KUBENOVA_REQUIRE_AUTH=${KUBENOVA_REQUIRE_AUTH:-false}
-      - MANAGER_URL_PUBLIC=${MANAGER_URL_PUBLIC:-http://localhost:8080}
       - AGENT_IMAGE=${AGENT_IMAGE:-ghcr.io/vaheed/kubenova/agent:dev}
     extra_hosts:
       - "host.docker.internal:host-gateway"
