@@ -22,7 +22,8 @@ func BootstrapHelmJob(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	job.Spec.Template.Spec.ServiceAccountName = "agent"
+	// Use a dedicated SA with elevated rights for bootstrap; runtime agent stays least-privileged
+	job.Spec.Template.Spec.ServiceAccountName = "agent-bootstrap"
 	job.Spec.BackoffLimit = int32ptr(1)
 	job.Spec.Template.Spec.Containers = []corev1.Container{{
 		Name:    "helm",
