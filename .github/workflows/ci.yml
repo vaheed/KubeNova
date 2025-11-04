@@ -170,9 +170,9 @@ jobs:
       - name: Build scan images
         run: |
           docker buildx build -t manager:scan -f build/Dockerfile.manager --load .
-          docker buildx build -t kubenova-agent:scan -f build/Dockerfile.agent --load .
+          docker buildx build -t kubenova/agent:scan -f build/Dockerfile.agent --load .
           docker save manager:scan -o api-image.tar
-          docker save kubenova-agent:scan -o agent-image.tar
+          docker save kubenova/agent:scan -o agent-image.tar
       - uses: actions/upload-artifact@v4
         with:
           name: scan-images
@@ -255,7 +255,7 @@ jobs:
       - name: Trivy image scan (Agent)
         uses: aquasecurity/trivy-action@0.20.0
         with:
-          image-ref: 'kubenova-agent:scan'
+          image-ref: 'kubenova/agent:scan'
           format: 'table'
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
