@@ -38,10 +38,10 @@ manager-up:
 	docker compose -f docker-compose.dev.yml up -d --build manager db
 
 agent-build:
-	docker build -t ghcr.io/vaheed/kubenova-agent:dev -f build/Dockerfile.agent .
+	docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
 
 agent-push:
-	docker push ghcr.io/vaheed/kubenova-agent:dev
+	docker push ghcr.io/vaheed/kubenova/agent:dev
 
 docs-build:
 	cd docs/site && npm ci || npm install
