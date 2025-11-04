@@ -22,6 +22,7 @@ import (
 	"github.com/vaheed/kubenova/pkg/types"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -34,6 +35,7 @@ type Server struct {
 	store       store.Store
 	jwtKey      []byte
 	requireAuth bool
+	dynFactory  func(ctx context.Context, kubeconfig []byte) (dynamic.Interface, error)
 }
 
 func NewServer(s store.Store) *Server {
@@ -53,7 +55,7 @@ func NewServer(s store.Store) *Server {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	})
-	srv := &Server{r: mux, store: s, jwtKey: []byte(os.Getenv("JWT_SIGNING_KEY")), requireAuth: parseBool(os.Getenv("KUBENOVA_REQUIRE_AUTH"))}
+	srv := &Server{r: mux, store: s, jwtKey: []byte(os.Getenv("JWT_SIGNING_KEY")), requireAuth: parseBool(os.Getenv("KUBENOVA_REQUIRE_AUTH")), dynFactory: defaultDynFactory}
 
 	mux.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
 	mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
@@ -80,6 +82,49 @@ func NewServer(s store.Store) *Server {
 			r.Put("/", srv.updateTenant)
 			r.Delete("/", srv.deleteTenant)
 			r.Get("/projects", srv.listProjects)
+		})
+
+		// Capsule CRDs (cluster_id required)
+		r.Get("/tenant-quotas", func(w http.ResponseWriter, r *http.Request) { srv.capsuleList(w, r, gvrTenantResourceQuota) })
+		r.Post("/tenant-quotas", func(w http.ResponseWriter, r *http.Request) { srv.capsuleCreate(w, r, gvrTenantResourceQuota) })
+		r.Route("/tenant-quotas/{name}", func(r chi.Router) {
+			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+				srv.capsuleGet(w, r, gvrTenantResourceQuota, chi.URLParam(r, "name"))
+			})
+			r.Put("/", func(w http.ResponseWriter, r *http.Request) {
+				srv.capsuleUpdate(w, r, gvrTenantResourceQuota, chi.URLParam(r, "name"))
+			})
+			r.Delete("/", func(w http.ResponseWriter, r *http.Request) {
+				srv.capsuleDelete(w, r, gvrTenantResourceQuota, chi.URLParam(r, "name"))
+			})
+		})
+
+		r.Get("/namespace-options", func(w http.ResponseWriter, r *http.Request) { srv.capsuleList(w, r, gvrNamespaceOptions) })
+		r.Post("/namespace-options", func(w http.ResponseWriter, r *http.Request) { srv.capsuleCreate(w, r, gvrNamespaceOptions) })
+		r.Route("/namespace-options/{name}", func(r chi.Router) {
+			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+				srv.capsuleGet(w, r, gvrNamespaceOptions, chi.URLParam(r, "name"))
+			})
+			r.Put("/", func(w http.ResponseWriter, r *http.Request) {
+				srv.capsuleUpdate(w, r, gvrNamespaceOptions, chi.URLParam(r, "name"))
+			})
+			r.Delete("/", func(w http.ResponseWriter, r *http.Request) {
+				srv.capsuleDelete(w, r, gvrNamespaceOptions, chi.URLParam(r, "name"))
+			})
+		})
+
+		r.Get("/configurations", func(w http.ResponseWriter, r *http.Request) { srv.capsuleList(w, r, gvrCapsuleConfig) })
+		r.Post("/configurations", func(w http.ResponseWriter, r *http.Request) { srv.capsuleCreate(w, r, gvrCapsuleConfig) })
+		r.Route("/configurations/{name}", func(r chi.Router) {
+			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+				srv.capsuleGet(w, r, gvrCapsuleConfig, chi.URLParam(r, "name"))
+			})
+			r.Put("/", func(w http.ResponseWriter, r *http.Request) {
+				srv.capsuleUpdate(w, r, gvrCapsuleConfig, chi.URLParam(r, "name"))
+			})
+			r.Delete("/", func(w http.ResponseWriter, r *http.Request) {
+				srv.capsuleDelete(w, r, gvrCapsuleConfig, chi.URLParam(r, "name"))
+			})
 		})
 
 		r.Post("/projects", srv.createProject)
@@ -226,6 +271,10 @@ func decodeB64(s string) ([]byte, error) { return base64.StdEncoding.DecodeStrin
 
 // --- Tenants ---
 func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) {
+	if _, has, _ := s.parseClusterID(r); has {
+		s.capsuleList(w, r, gvrTenants)
+		return
+	}
 	items, err := s.store.ListTenants(r.Context())
 	// RBAC filter: tenant roles only see their own
 	c := s.caller(r)
@@ -241,6 +290,10 @@ func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) {
 	respond(w, items, err)
 }
 func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
+	if _, has, _ := s.parseClusterID(r); has {
+		s.capsuleCreate(w, r, gvrTenants)
+		return
+	}
 	var t types.Tenant
 	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
 		http.Error(w, err.Error(), 400)
@@ -257,6 +310,10 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
+	if _, has, _ := s.parseClusterID(r); has {
+		s.capsuleGet(w, r, gvrTenants, name)
+		return
+	}
 	if !canReadTenant(s.caller(r), name) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -265,6 +322,10 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
 	respond(w, t, err)
 }
 func (s *Server) updateTenant(w http.ResponseWriter, r *http.Request) {
+	if _, has, _ := s.parseClusterID(r); has {
+		s.capsuleUpdate(w, r, gvrTenants, chi.URLParam(r, "name"))
+		return
+	}
 	var t types.Tenant
 	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
 		http.Error(w, err.Error(), 400)
@@ -279,6 +340,10 @@ func (s *Server) updateTenant(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
+	if _, has, _ := s.parseClusterID(r); has {
+		s.capsuleDelete(w, r, gvrTenants, name)
+		return
+	}
 	if !canWriteTenant(s.caller(r), name) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return

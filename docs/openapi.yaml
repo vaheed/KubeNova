@@ -67,12 +67,16 @@ paths:
   /api/v1/tenants:
     get:
       security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: cluster_id, in: query, required: false, schema: { type: integer }, description: "When set, proxies to Capsule Tenants on the given cluster" }
       responses:
         '200':
           description: list tenants
           content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Tenant' } } } }
     post:
       security: [ { bearerAuth: [] } ]
+      parameters:
+        - { name: cluster_id, in: query, required: false, schema: { type: integer } }
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } }
@@ -80,16 +84,109 @@ paths:
   /api/v1/tenants/{name}:
     get:
       security: [ { bearerAuth: [] } ]
-      parameters: [ { name: name, in: path, required: true, schema: { type: string } } ]
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: false, schema: { type: integer } }
       responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } } }
     put:
       security: [ { bearerAuth: [] } ]
-      parameters: [ { name: name, in: path, required: true, schema: { type: string } } ]
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: false, schema: { type: integer } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } }
       responses: { '200': { description: ok } }
     delete:
       security: [ { bearerAuth: [] } ]
-      parameters: [ { name: name, in: path, required: true, schema: { type: string } } ]
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: false, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+
+  # Capsule CRDs via cluster_id
+  /api/v1/tenant-quotas:
+    get:
+      parameters:
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+        - { name: labelSelector, in: query, required: false, schema: { type: string } }
+        - { name: fieldSelector, in: query, required: false, schema: { type: string } }
+      responses: { '200': { description: ok } }
+    post:
+      parameters:
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: created } }
+  /api/v1/tenant-quotas/{name}:
+    get:
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+    put:
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: ok } }
+    delete:
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+
+  /api/v1/namespace-options:
+    get:
+      parameters:
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+    post:
+      parameters:
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: created } }
+  /api/v1/namespace-options/{name}:
+    get:
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+    put:
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: ok } }
+    delete:
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+
+  /api/v1/configurations:
+    get:
+      parameters:
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+    post:
+      parameters:
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: created } }
+  /api/v1/configurations/{name}:
+    get:
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+    put:
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: ok } }
+    delete:
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: cluster_id, in: query, required: true, schema: { type: integer } }
       responses: { '200': { description: ok } }
   /api/v1/projects:
     post:
