@@ -371,7 +371,7 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          REPO="oci://ghcr.io/${OWNER}/kubenova"
+          REPO="oci://ghcr.io/${OWNER}/kubenova-charts"
           for f in out/*.tgz; do echo pushing "$f"; helm push "$f" "$REPO"; done
       - name: Tag charts as latest via ORAS
         if: always()
@@ -386,8 +386,8 @@ jobs:
           for f in out/*.tgz; do
             name=$(helm show chart "$f" | awk -F': ' '/^name:/{print $2; exit}')
             ver=$(helm show chart "$f" | awk -F': ' '/^version:/{print $2; exit}')
-            src="ghcr.io/${OWNER}/kubenova/${name}:${ver}"
-            if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova/${name}:dev"; else dst="ghcr.io/${OWNER}/kubenova/${name}:latest"; fi
+            src="ghcr.io/${OWNER}/kubenova-charts/${name}:${ver}"
+            if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova-charts/${name}:dev"; else dst="ghcr.io/${OWNER}/kubenova-charts/${name}:latest"; fi
             echo "Tagging $src -> $dst"
             oras copy "$src" "$dst"
           done
