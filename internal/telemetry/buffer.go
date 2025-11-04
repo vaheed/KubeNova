@@ -20,10 +20,16 @@ type RedisBuffer struct {
 	max  int
 	tick time.Duration
 	stop chan struct{}
+	noop bool
 }
 
 func NewRedisBuffer() *RedisBuffer {
-	addr := getenv("REDIS_ADDR", "redis:6379")
+	// If REDIS_ADDR is not set, operate in no-op mode to avoid DNS errors
+	// on clusters where Redis is not deployed with the Agent.
+	addr := os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		return &RedisBuffer{noop: true, http: http.DefaultClient, base: getenv("MANAGER_URL", "http://kubenova-manager.kubenova.svc.cluster.local:8080"), max: getenvInt("BATCH_MAX_ITEMS", 100), tick: time.Duration(getenvInt("BATCH_INTERVAL_SECONDS", 10)) * time.Second, stop: make(chan struct{})}
+	}
 	rdb := redis.NewClient(&redis.Options{Addr: addr})
 	base := getenv("MANAGER_URL", "http://kubenova-manager.kubenova.svc.cluster.local:8080")
 	max := getenvInt("BATCH_MAX_ITEMS", 100)
@@ -63,6 +69,9 @@ func fmtSscanf(s string, n *int) (int, error) {
 }
 
 func (b *RedisBuffer) Enqueue(kind string, payload any) {
+	if b.noop {
+		return
+	}
 	raw, _ := json.Marshal(payload)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -72,6 +81,9 @@ func (b *RedisBuffer) Enqueue(kind string, payload any) {
 }
 
 func (b *RedisBuffer) Run() {
+	if b.noop {
+		return
+	}
 	go b.loop("events")
 	go b.loop("metrics")
 	go b.loop("logs")
@@ -93,6 +105,9 @@ func (b *RedisBuffer) loop(kind string) {
 }
 
 func (b *RedisBuffer) flush(kind string) {
+	if b.noop {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	key := "kubenova:" + kind
