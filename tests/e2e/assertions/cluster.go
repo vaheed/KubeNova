@@ -77,7 +77,7 @@ func RequireAgentDeploymentReady(t *testing.T, env *setup.Environment, replicas 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.WaitTimeout)
 	defer cancel()
 	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, cfg.WaitTimeout, true, func(ctx context.Context) (bool, error) {
-		dep, err := env.KubeClient().AppsV1().Deployments(cfg.ManagerNamespace).Get(ctx, "kubenova-agent", metav1.GetOptions{})
+		dep, err := env.KubeClient().AppsV1().Deployments(cfg.ManagerNamespace).Get(ctx, "agent", metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return false, nil
