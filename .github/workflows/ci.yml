@@ -299,7 +299,7 @@ jobs:
             helm package "$TMP" -d out
           }
           package_chart deploy/helm/manager
-          package_chart deploy/helm/kubenova-agent
+          package_chart deploy/helm/agent
           ls -la out
           # create latest copies (for direct downloads convenience)
           for f in out/*.tgz; do cp "$f" "out/$(basename "$f" | sed 's/-[0-9].*/-latest.tgz/')"; done
@@ -363,7 +363,7 @@ jobs:
             helm package "$TMP" -d out
           }
           package_chart deploy/helm/manager
-          package_chart deploy/helm/kubenova-agent
+          package_chart deploy/helm/agent
           ls -la out
       - name: Push charts to GHCR (OCI)
         env:

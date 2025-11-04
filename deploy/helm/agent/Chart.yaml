@@ -1,4 +1,4 @@
 apiVersion: v2
-name: kubenova-agent
+name: agent
 version: 0.3.3
 type: application

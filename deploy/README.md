@@ -3,12 +3,12 @@
 Helm charts and deployment assets.
 
 - `helm/manager` – chart for Manager (API)
-- `helm/kubenova-agent` – chart for Agent
+- `helm/agent` – chart for Agent
 
 Publishing
 - CI publishes charts in two formats:
   - GitHub Pages: charts/dev (develop) and charts/stable (main)
-- OCI (GHCR): oci://ghcr.io/<owner>/kubenova-charts/{manager,kubenova-agent}
+- OCI (GHCR): oci://ghcr.io/<owner>/kubenova-charts/{manager,agent}
     - lightweight tags: dev (develop) and latest (main)
 
 Install (Helm repo)
@@ -21,4 +21,5 @@ Install (OCI)
 ```
 helm registry login ghcr.io -u <user> -p <token>
 helm pull oci://ghcr.io/<owner>/kubenova-charts/manager --version latest
+helm pull oci://ghcr.io/<owner>/kubenova-charts/agent --version latest
 ```

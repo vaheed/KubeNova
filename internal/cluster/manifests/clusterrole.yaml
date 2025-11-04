@@ -1,7 +1,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kubenova-agent
+  name: agent
 rules:
   - apiGroups: ["", "apps", "batch", "networking.k8s.io"]
     resources: ["namespaces","resourcequotas","roles","rolebindings","networkpolicies","services","deployments","jobs","cronjobs","events","configmaps"]
@@ -15,4 +15,3 @@ rules:
   - apiGroups: ["core.oam.dev","workflow.vela.io"]
     resources: ["applications","applicationrevisions","workflowruns","componentdefinitions","traitdefinitions","policydefinitions"]
     verbs: ["get","list","watch","create","update","patch","delete"]
-
