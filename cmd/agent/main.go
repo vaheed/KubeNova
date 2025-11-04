@@ -60,15 +60,18 @@ func main() {
 	defer buf.Stop()
 	buf.Enqueue("events", map[string]string{"event": "agent_started"})
 
+	// Single shared context for shutdown
+	ctx := ctrl.SetupSignalHandler()
+
 	// Bootstrap addons via a Helm job if not present; then verify readiness
 	go func() {
-		if err := reconcile.BootstrapHelmJob(ctrl.SetupSignalHandler()); err != nil {
+		if err := reconcile.BootstrapHelmJob(ctx); err != nil {
 			logging.L.Error("bootstrap error", zap.Error(err))
 		}
 	}()
 
 	logging.L.Info("KubeNova Agent starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		logging.L.Fatal("manager stopped", zap.Error(err))
 	}
 }
