@@ -42,6 +42,16 @@ func TestContract_ClustersAndTenants(t *testing.T) {
     if resp.StatusCode != http.StatusOK { t.Fatalf("capabilities: %s", resp.Status) }
     resp.Body.Close()
 
+    // Cluster status (use E2E fake to ensure ready)
+    t.Setenv("KUBENOVA_E2E_FAKE", "1")
+    resp, err = http.Get(ts.URL+"/api/v1/clusters/"+c.Name)
+    if err != nil { t.Fatal(err) }
+    if resp.StatusCode != http.StatusOK { t.Fatalf("cluster get: %s", resp.Status) }
+    var cobj Cluster
+    _ = json.NewDecoder(resp.Body).Decode(&cobj)
+    resp.Body.Close()
+    if cobj.Conditions == nil || len(*cobj.Conditions) == 0 { t.Fatalf("expected conditions, got %#v", cobj) }
+
     // Tenants create
     tnt := Tenant{Name: "acme"}
     tb, _ := json.Marshal(tnt)
@@ -87,4 +97,3 @@ func TestContract_ClusterRegistrationBase64(t *testing.T) {
     if resp.StatusCode != http.StatusOK { t.Fatalf("status: %s", resp.Status) }
     resp.Body.Close()
 }
-

@@ -186,6 +186,21 @@ func (p *Postgres) GetCluster(ctx context.Context, id int) (types.Cluster, strin
 	return c, enc, nil
 }
 
+func (p *Postgres) GetClusterByName(ctx context.Context, name string) (types.Cluster, string, error) {
+    var c types.Cluster
+    var enc string
+    var labels map[string]string
+    var id int
+    err := p.db.QueryRow(ctx, `SELECT id, kubeconfig_enc, labels, created_at FROM clusters WHERE name=$1`, name).Scan(&id, &enc, &labels, &c.CreatedAt)
+    if err != nil {
+        return types.Cluster{}, "", ErrNotFound
+    }
+    c.ID = id
+    c.Name = name
+    c.Labels = labels
+    return c, enc, nil
+}
+
 func mapToJSONB(m map[string]string) any {
 	if m == nil {
 		return map[string]string{}

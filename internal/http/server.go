@@ -10,6 +10,8 @@ import (
 
     "github.com/vaheed/kubenova/internal/store"
     kn "github.com/vaheed/kubenova/pkg/types"
+    clusterpkg "github.com/vaheed/kubenova/internal/cluster"
+    capib "github.com/vaheed/kubenova/internal/backends/capsule"
 )
 
 // APIServer implements a subset of the contract (Clusters + Tenants) and embeds
@@ -19,6 +21,7 @@ type APIServer struct {
     st          store.Store
     requireAuth bool
     jwtKey      []byte
+    newCapsule  func([]byte) capib.Client
 }
 
 func NewAPIServer(st store.Store) *APIServer {
@@ -26,6 +29,7 @@ func NewAPIServer(st store.Store) *APIServer {
         st:          st,
         requireAuth: parseBool(os.Getenv("KUBENOVA_REQUIRE_AUTH")),
         jwtKey:      []byte(getenv("JWT_SIGNING_KEY", "dev")),
+        newCapsule:  capib.New,
     }
 }
 
@@ -119,9 +123,24 @@ func (s *APIServer) GetApiV1Clusters(w http.ResponseWriter, r *http.Request, par
 func (s *APIServer) GetApiV1ClustersC(w http.ResponseWriter, r *http.Request, c ClusterParam) {
     if !s.requireRoles(w, r, "admin", "ops") { return }
     name := string(c)
-    // Minimal implementation: return a shell cluster object; readiness computed elsewhere.
+    cl, enc, err := s.st.GetClusterByName(r.Context(), name)
+    if err != nil { s.writeError(w, http.StatusNotFound, "KN-404", "not found"); return }
+    kb, _ := base64.StdEncoding.DecodeString(enc)
+    conds := clusterpkg.ComputeClusterConditions(r.Context(), kb, parseBool(os.Getenv("KUBENOVA_E2E_FAKE")))
+    // map to DTO
+    out := Cluster{Name: cl.Name}
+    outConds := make([]Condition, 0, len(conds))
+    for _, x := range conds {
+        typ := x.Type
+        st := ConditionStatus(x.Status)
+        t := x.LastTransitionTime
+        reason := x.Reason
+        message := x.Message
+        outConds = append(outConds, Condition{Type: &typ, Status: &st, LastTransitionTime: &t, Reason: &reason, Message: &message})
+    }
+    if len(outConds) > 0 { out.Conditions = &outConds }
     w.Header().Set("Content-Type", "application/json")
-    _ = json.NewEncoder(w).Encode(Cluster{Name: name})
+    _ = json.NewEncoder(w).Encode(out)
 }
 
 // (GET /api/v1/clusters/{c}/capabilities)
@@ -198,18 +217,36 @@ func (s *APIServer) PutApiV1ClustersCTenantsTOwners(w http.ResponseWriter, r *ht
 // (PUT /api/v1/clusters/{c}/tenants/{t}/quotas)
 func (s *APIServer) PutApiV1ClustersCTenantsTQuotas(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam) {
     if !s.requireRoles(w, r, "admin", "ops") { return }
+    var body map[string]string
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil { s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload"); return }
+    _, enc, err := s.st.GetClusterByName(r.Context(), string(c))
+    if err != nil { s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found"); return }
+    kb, _ := base64.StdEncoding.DecodeString(enc)
+    if err := s.newCapsule(kb).SetTenantQuotas(r.Context(), string(t), body); err != nil { s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error()); return }
     w.WriteHeader(http.StatusOK)
 }
 
 // (PUT /api/v1/clusters/{c}/tenants/{t}/limits)
 func (s *APIServer) PutApiV1ClustersCTenantsTLimits(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam) {
     if !s.requireRoles(w, r, "admin", "ops") { return }
+    var body map[string]string
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil { s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload"); return }
+    _, enc, err := s.st.GetClusterByName(r.Context(), string(c))
+    if err != nil { s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found"); return }
+    kb, _ := base64.StdEncoding.DecodeString(enc)
+    if err := s.newCapsule(kb).SetTenantLimits(r.Context(), string(t), body); err != nil { s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error()); return }
     w.WriteHeader(http.StatusOK)
 }
 
 // (PUT /api/v1/clusters/{c}/tenants/{t}/network-policies)
 func (s *APIServer) PutApiV1ClustersCTenantsTNetworkPolicies(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam) {
     if !s.requireRoles(w, r, "admin", "ops") { return }
+    var body map[string]any
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil { s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload"); return }
+    _, enc, err := s.st.GetClusterByName(r.Context(), string(c))
+    if err != nil { s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found"); return }
+    kb, _ := base64.StdEncoding.DecodeString(enc)
+    if err := s.newCapsule(kb).SetTenantNetworkPolicies(r.Context(), string(t), body); err != nil { s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error()); return }
     w.WriteHeader(http.StatusOK)
 }
 

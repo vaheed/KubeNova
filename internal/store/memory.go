@@ -13,13 +13,14 @@ type Memory struct {
 	tenants  map[string]types.Tenant
 	projects map[string]map[string]types.Project        // tenant -> name
 	apps     map[string]map[string]map[string]types.App // tenant -> project -> name
-	clusters map[int]memCluster
+    clusters map[int]memCluster
+    byName   map[string]int
 	nextID   int
 	evts     []memEvent
 }
 
 func NewMemory() *Memory {
-	return &Memory{tenants: map[string]types.Tenant{}, projects: map[string]map[string]types.Project{}, apps: map[string]map[string]map[string]types.App{}, clusters: map[int]memCluster{}, nextID: 1}
+    return &Memory{tenants: map[string]types.Tenant{}, projects: map[string]map[string]types.Project{}, apps: map[string]map[string]map[string]types.App{}, clusters: map[int]memCluster{}, byName: map[string]int{}, nextID: 1}
 }
 
 func (m *Memory) Close(ctx context.Context) error { return nil }
@@ -190,23 +191,34 @@ type memCluster struct {
 }
 
 func (m *Memory) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	id := m.nextID
-	m.nextID++
-	c.ID = id
-	m.clusters[id] = memCluster{c: c, enc: kubeconfigEnc}
-	return id, nil
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    id := m.nextID
+    m.nextID++
+    c.ID = id
+    m.clusters[id] = memCluster{c: c, enc: kubeconfigEnc}
+    m.byName[c.Name] = id
+    return id, nil
 }
 
 func (m *Memory) GetCluster(ctx context.Context, id int) (types.Cluster, string, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	mc, ok := m.clusters[id]
-	if !ok {
-		return types.Cluster{}, "", ErrNotFound
-	}
-	return mc.c, mc.enc, nil
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    mc, ok := m.clusters[id]
+    if !ok {
+        return types.Cluster{}, "", ErrNotFound
+    }
+    return mc.c, mc.enc, nil
+}
+
+func (m *Memory) GetClusterByName(ctx context.Context, name string) (types.Cluster, string, error) {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    if id, ok := m.byName[name]; ok {
+        mc := m.clusters[id]
+        return mc.c, mc.enc, nil
+    }
+    return types.Cluster{}, "", ErrNotFound
 }
 
 type memEvent struct {

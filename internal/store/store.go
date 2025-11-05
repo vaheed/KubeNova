@@ -32,9 +32,11 @@ type Store interface {
 	UpdateApp(ctx context.Context, a types.App) error
 	DeleteApp(ctx context.Context, tenant, project, name string) error
 
-	// Clusters
-	CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (int, error)
-	GetCluster(ctx context.Context, id int) (types.Cluster, string, error)
+    // Clusters
+    CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (int, error)
+    GetCluster(ctx context.Context, id int) (types.Cluster, string, error)
+    // GetClusterByName returns cluster by name with stored kubeconfig encoding.
+    GetClusterByName(ctx context.Context, name string) (types.Cluster, string, error)
 
 	// Events & condition history
 	AddEvents(ctx context.Context, clusterID *int, evts []types.Event) error
