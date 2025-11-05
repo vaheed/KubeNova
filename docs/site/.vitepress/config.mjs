@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
+  // GitHub Pages project site requires base to be the repo name
+  // e.g. https://<owner>.github.io/KubeNova/ -> base '/KubeNova/'
+  base: '/KubeNova/',
   title: 'KubeNova',
   description: 'Manager + Agent for Capsule + KubeVela',
   themeConfig: {
