@@ -58,7 +58,7 @@ func NewServer(s store.Store) *Server {
 	mux.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
 	mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
 	mux.Method(http.MethodGet, "/metrics", promhttp.Handler())
-	mux.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "docs/openapi.yaml") })
+	mux.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "docs/openapi/openapi.yaml") })
 	// Wait endpoint: blocks until store is usable (DB ready) or timeout
 	mux.Get("/wait", srv.waitReady)
 
@@ -72,6 +72,22 @@ func NewServer(s store.Store) *Server {
 		if srv.requireAuth {
 			r.Use(srv.jwtMiddleware)
 		}
+
+		// System endpoints (version/features under /api/v1 for consistency)
+		r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
+		r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
+		r.Get("/version", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"version":"1.0.0"}`))
+		})
+		r.Get("/features", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tenancy":true,"vela":true,"proxy":true}`))
+		})
+
+		// Access & Tokens
+		r.Post("/tokens", srv.issueToken)
+		r.Get("/me", srv.getMe)
 
 		r.Get("/tenants", srv.listTenants)
 		r.Post("/tenants", srv.createTenant)
@@ -96,6 +112,8 @@ func NewServer(s store.Store) *Server {
 		})
 
 		r.Post("/kubeconfig-grants", srv.issueKubeconfig)
+		// Also expose new scoped kubeconfig path (tenant-focused)
+		r.Post("/tenants/{name}/kubeconfig", srv.issueKubeconfigTenantScoped)
 
 		// clusters
 		r.Post("/clusters", srv.createCluster)
@@ -602,4 +620,90 @@ func StartHTTP(ctx context.Context, srv *http.Server) error {
 	c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return srv.Shutdown(c)
+}
+
+// --- Access & Tokens ---
+type tokenReq struct {
+	Subject    string   `json:"subject"`
+	Roles      []string `json:"roles"`
+	TTLSeconds int      `json:"ttlSeconds"`
+}
+
+func (s *Server) issueToken(w http.ResponseWriter, r *http.Request) {
+	var req tokenReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "KN-422: invalid payload", http.StatusUnprocessableEntity)
+		return
+	}
+	if req.Subject == "" {
+		http.Error(w, "KN-422: subject required", http.StatusUnprocessableEntity)
+		return
+	}
+	if len(req.Roles) == 0 {
+		req.Roles = []string{"read-only"}
+	}
+	ttl := req.TTLSeconds
+	if ttl <= 0 || ttl > 2592000 {
+		ttl = 3600
+	}
+	// Compose claims compatible with existing Claims struct
+	role := req.Roles[0]
+	c := jwt.MapClaims{
+		"sub":   req.Subject,
+		"role":  role,
+		"roles": req.Roles,
+		"exp":   time.Now().Add(time.Duration(ttl) * time.Second).Unix(),
+	}
+	key := s.jwtKey
+	if len(key) == 0 {
+		key = []byte("dev")
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	ss, err := tok.SignedString(key)
+	if err != nil {
+		http.Error(w, "KN-500: sign failure", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"token": ss, "expiresAt": time.Now().Add(time.Duration(ttl) * time.Second).UTC()})
+}
+
+func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
+	c := s.caller(r)
+	roles := []string{c.Role}
+	if roles[0] == "" {
+		roles = []string{"read-only"}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"subject": "", "roles": roles})
+}
+
+// Tenant-scoped kubeconfig issuance mapped to existing generator; proxy binding handled server-side.
+func (s *Server) issueKubeconfigTenantScoped(w http.ResponseWriter, r *http.Request) {
+	tenant := chi.URLParam(r, "name")
+	if tenant == "" {
+		http.Error(w, "KN-422: tenant required", 422)
+		return
+	}
+	var in struct {
+		Project    string `json:"project"`
+		Role       string `json:"role"`
+		TTLSeconds int    `json:"ttlSeconds"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	if in.Role == "" {
+		in.Role = "read-only"
+	}
+	if !canReadTenant(s.caller(r), tenant) {
+		http.Error(w, "KN-403: forbidden", http.StatusForbidden)
+		return
+	}
+	g := types.KubeconfigGrant{Tenant: tenant, Project: in.Project, Role: in.Role, Expires: time.Now().Add(1 * time.Hour)}
+	cfg, err := GenerateKubeconfig(g, "")
+	if err != nil {
+		http.Error(w, "KN-500: kubeconfig", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"kubeconfig": encodeB64(cfg), "expiresAt": g.Expires})
 }

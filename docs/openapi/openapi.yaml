@@ -1,0 +1,623 @@
+openapi: 3.0.3
+info:
+  title: KubeNova API
+  version: 1.0.0
+  description: |
+    Single KubeNova REST API surface for multi-cluster tenancy and app delivery.
+    Notes:
+    - JWT (HS256) is required for most endpoints.
+    - No vendor resource kinds or URLs are exposed.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ClusterParam:
+      name: c
+      in: path
+      required: true
+      schema: { type: string }
+    TenantParam:
+      name: t
+      in: path
+      required: true
+      schema: { type: string }
+    ProjectParam:
+      name: p
+      in: path
+      required: true
+      schema: { type: string }
+    AppParam:
+      name: a
+      in: path
+      required: true
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    LabelSelector:
+      name: labelSelector
+      in: query
+      schema: { type: string }
+    OwnerFilter:
+      name: owner
+      in: query
+      schema: { type: string }
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: KN-400, KN-401, KN-403, KN-404, KN-409, KN-422, KN-500
+        message: { type: string }
+        details: {}
+    Page:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: {} }
+        nextCursor: { type: string, nullable: true }
+    Condition:
+      type: object
+      properties:
+        type: { type: string }
+        status: { type: string, enum: [True, False, Unknown] }
+        reason: { type: string }
+        message: { type: string }
+        lastTransitionTime: { type: string, format: date-time }
+    Cluster:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        displayName: { type: string }
+        labels: { type: object, additionalProperties: { type: string } }
+        createdAt: { type: string, format: date-time }
+        conditions: { type: array, items: { $ref: '#/components/schemas/Condition' } }
+    ClusterRegistration:
+      type: object
+      required: [name, kubeconfig]
+      properties:
+        name: { type: string }
+        kubeconfig: { type: string, format: byte }
+        labels: { type: object, additionalProperties: { type: string } }
+    ClusterCapabilities:
+      type: object
+      properties:
+        tenancy: { type: boolean }
+        vela: { type: boolean }
+        proxy: { type: boolean }
+    Tenant:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        owners: { type: array, items: { type: string } }
+        labels: { type: object, additionalProperties: { type: string } }
+        annotations: { type: object, additionalProperties: { type: string } }
+        createdAt: { type: string, format: date-time }
+    TenantSummary:
+      type: object
+      properties:
+        namespaces: { type: array, items: { type: string } }
+        quotas: { type: object, additionalProperties: { type: string } }
+        usages: { type: object, additionalProperties: { type: string } }
+    Project:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        labels: { type: object, additionalProperties: { type: string } }
+        annotations: { type: object, additionalProperties: { type: string } }
+        createdAt: { type: string, format: date-time }
+    ProjectAccess:
+      type: object
+      properties:
+        members:
+          type: array
+          items:
+            type: object
+            required: [subject, role]
+            properties:
+              subject: { type: string }
+              role: { type: string, enum: [tenantOwner, projectDev, readOnly] }
+    PolicySet:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        rules: { type: array, items: { type: object } }
+        attachedTo:
+          type: array
+          items:
+            type: object
+            properties:
+              tenant: { type: string }
+              project: { type: string }
+    App:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        components: { type: array, items: { type: object } }
+        traits: { type: array, items: { type: object } }
+        policies: { type: array, items: { type: object } }
+        createdAt: { type: string, format: date-time }
+    AppStatus:
+      type: object
+      properties:
+        phase: { type: string, enum: [Pending, Deploying, Running, Suspended, Failed] }
+        healthy: { type: boolean }
+        conditions: { type: array, items: { $ref: '#/components/schemas/Condition' } }
+        lastUpdated: { type: string, format: date-time }
+    AppRevision:
+      type: object
+      properties:
+        revision: { type: integer }
+        createdAt: { type: string, format: date-time }
+        summary: { type: object }
+    AppDiff:
+      type: object
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+        changes: { type: array, items: { type: object } }
+    LogLine:
+      type: object
+      properties:
+        ts: { type: string, format: date-time }
+        component: { type: string }
+        message: { type: string }
+    CatalogItem:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [component, trait, workflow] }
+        description: { type: string }
+        schema: { type: object }
+    WorkflowRun:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [Running, Succeeded, Failed] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+    UsageReport:
+      type: object
+      properties:
+        window: { type: string }
+        cpu: { type: string }
+        memory: { type: string }
+        pods: { type: integer }
+    TokenRequest:
+      type: object
+      required: [subject]
+      properties:
+        subject: { type: string }
+        roles: { type: array, items: { type: string, enum: [admin, ops, tenantOwner, projectDev, readOnly] } }
+        ttlSeconds: { type: integer, minimum: 60, maximum: 2592000, default: 3600 }
+    TokenResponse:
+      type: object
+      properties:
+        token: { type: string }
+        expiresAt: { type: string, format: date-time }
+    MeResponse:
+      type: object
+      properties:
+        subject: { type: string }
+        roles: { type: array, items: { type: string } }
+    KubeconfigResponse:
+      type: object
+      properties:
+        kubeconfig: { type: string, format: byte }
+        expiresAt: { type: string, format: date-time }
+
+paths:
+  # System
+  /api/v1/healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        '200': { description: ok }
+  /api/v1/readyz:
+    get:
+      summary: Readiness probe
+      responses:
+        '200': { description: ok }
+  /api/v1/version:
+    get:
+      summary: Version info
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { type: object } } } }
+  /api/v1/features:
+    get:
+      summary: Feature flags
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { type: object } } } }
+
+  # Access & Tokens
+  /api/v1/tokens:
+    post:
+      summary: Issue a JWT for API access
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TokenRequest' } } }
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/TokenResponse' } } } }
+        '401': { description: unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /api/v1/me:
+    get:
+      summary: Return subject and roles of the caller
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/MeResponse' } } } }
+
+  # Clusters
+  /api/v1/clusters:
+    get:
+      summary: List clusters
+      parameters: [ { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/LabelSelector' } ]
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Cluster' } } } } }
+    post:
+      summary: Register a cluster using kubeconfig
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ClusterRegistration' } } }
+      responses:
+        '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/Cluster' } } } }
+        '422': { description: validation error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /api/v1/clusters/{c}:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    get:
+      summary: Get cluster
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Cluster' } } } }
+        '404': { description: not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      summary: Delete cluster
+      responses:
+        '204': { description: deleted }
+  /api/v1/clusters/{c}/bootstrap/{component}:
+    parameters:
+      - { $ref: '#/components/parameters/ClusterParam' }
+      - name: component
+        in: path
+        required: true
+        schema: { type: string, enum: [capsule, capsule-proxy, kubevela] }
+    post:
+      summary: Bootstrap a system component on the cluster
+      responses:
+        '202': { description: started }
+  /api/v1/clusters/{c}/capabilities:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    get:
+      summary: Get cluster capabilities
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/ClusterCapabilities' } } } }
+
+  # Tenants
+  /api/v1/clusters/{c}/tenants:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/LabelSelector' }, { $ref: '#/components/parameters/OwnerFilter' } ]
+    get:
+      summary: List tenants
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Tenant' } } } } } }
+    post:
+      summary: Create tenant
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } }
+      responses: { '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } } }
+  /api/v1/clusters/{c}/tenants/{t}:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+    get:
+      summary: Get tenant
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } } }
+    delete:
+      summary: Delete tenant
+      responses: { '204': { description: deleted } }
+  /api/v1/clusters/{c}/tenants/{t}/owners:
+    put:
+      summary: Replace tenant owners
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owners: { type: array, items: { type: string } }
+      responses: { '200': { description: ok } }
+  /api/v1/clusters/{c}/tenants/{t}/quotas:
+    put:
+      summary: Set tenant quotas
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
+      responses: { '200': { description: ok } }
+  /api/v1/clusters/{c}/tenants/{t}/limits:
+    put:
+      summary: Set tenant resource limits
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
+      responses: { '200': { description: ok } }
+  /api/v1/clusters/{c}/tenants/{t}/network-policies:
+    put:
+      summary: Configure default network policies for tenant
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: ok } }
+  /api/v1/clusters/{c}/tenants/{t}/summary:
+    get:
+      summary: Summary of tenant resources and usage
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/TenantSummary' } } } } }
+
+  # Projects
+  /api/v1/clusters/{c}/tenants/{t}/projects:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+    get:
+      summary: List projects for tenant
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Project' } } } } } }
+    post:
+      summary: Create project
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+      responses: { '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
+    get:
+      summary: Get project
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } } }
+    put:
+      summary: Update project
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+      responses: { '200': { description: ok } }
+    delete:
+      summary: Delete project
+      responses: { '204': { description: deleted } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access:
+    put:
+      summary: Set project access members and roles
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectAccess' } } } }
+      responses: { '200': { description: ok } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig:
+    get:
+      summary: Issue a short-lived kubeconfig scoped to tenant/project via proxy
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/KubeconfigResponse' } } } } }
+
+  # PolicySets
+  /api/v1/clusters/{c}/tenants/{t}/policysets:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+    get:
+      summary: List PolicySets
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } } } } } }
+    post:
+      summary: Create PolicySet
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PolicySet' } } } }
+      responses: { '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/PolicySet' } } } } }
+  /api/v1/clusters/{c}/tenants/{t}/policysets/{name}:
+    parameters:
+      - { $ref: '#/components/parameters/ClusterParam' }
+      - { $ref: '#/components/parameters/TenantParam' }
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Get PolicySet
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/PolicySet' } } } } }
+    put:
+      summary: Update PolicySet
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PolicySet' } } } }
+      responses: { '200': { description: ok } }
+    delete:
+      summary: Delete PolicySet
+      responses: { '204': { description: deleted } }
+  /api/v1/clusters/{c}/policysets/catalog:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    get:
+      summary: Get curated PolicySet catalog
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } } } } } }
+
+  # Apps
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
+    get:
+      summary: List apps
+      parameters: [ { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/App' } } } } } }
+    post:
+      summary: Create app
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } }
+      responses: { '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+    get:
+      summary: Get app
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } } }
+    put:
+      summary: Update app
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } }
+      responses: { '200': { description: ok } }
+    delete:
+      summary: Delete app
+      responses: { '202': { description: deletion started } }
+
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:deploy:
+    post:
+      summary: Deploy app
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses: { '202': { description: started } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:suspend:
+    post:
+      summary: Suspend app
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses: { '202': { description: started } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:resume:
+    post:
+      summary: Resume app
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses: { '202': { description: started } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:rollback:
+    post:
+      summary: Roll back app to previous revision
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, properties: { toRevision: { type: integer } } } } }
+      responses: { '202': { description: started } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:delete:
+    post:
+      summary: Delete app (idempotent)
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses: { '202': { description: started } }
+
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/status:
+    get:
+      summary: Get app status
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/AppStatus' } } } } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/revisions:
+    get:
+      summary: List app revisions
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AppRevision' } } } } } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/diff/{revA}/{revB}:
+    get:
+      summary: Diff between two app revisions
+      parameters:
+        - { $ref: '#/components/parameters/ClusterParam' }
+        - { $ref: '#/components/parameters/TenantParam' }
+        - { $ref: '#/components/parameters/ProjectParam' }
+        - { $ref: '#/components/parameters/AppParam' }
+        - name: revA
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: revB
+          in: path
+          required: true
+          schema: { type: integer }
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/AppDiff' } } } } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/logs/{component}:
+    get:
+      summary: Stream or fetch component logs
+      parameters:
+        - { $ref: '#/components/parameters/ClusterParam' }
+        - { $ref: '#/components/parameters/TenantParam' }
+        - { $ref: '#/components/parameters/ProjectParam' }
+        - { $ref: '#/components/parameters/AppParam' }
+        - name: component
+          in: path
+          required: true
+          schema: { type: string }
+        - name: follow
+          in: query
+          schema: { type: boolean, default: false }
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/LogLine' } } } } } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits:
+    put:
+      summary: Replace app traits
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: array, items: { type: object } } } } }
+      responses: { '200': { description: ok } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/policies:
+    put:
+      summary: Replace app policies
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: array, items: { type: object } } } } }
+      responses: { '200': { description: ok } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/image-update:
+    post:
+      summary: Update image for an app component
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { component: { type: string }, image: { type: string }, tag: { type: string } }, required: [component, image] } } } }
+      responses: { '202': { description: started } }
+
+  # Catalog
+  /api/v1/catalog/components:
+    get:
+      summary: List component definitions
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } } } } } }
+  /api/v1/catalog/traits:
+    get:
+      summary: List trait definitions
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } } } } } }
+  /api/v1/catalog/workflows:
+    get:
+      summary: List workflow definitions
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } } } } } }
+
+  # Workflows/Operations
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/run:
+    post:
+      summary: Run workflow with optional steps
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { steps: { type: array, items: { type: string } } } } } } }
+      responses: { '202': { description: started, content: { application/json: { schema: { $ref: '#/components/schemas/WorkflowRun' } } } } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/runs:
+    get:
+      summary: List workflow runs
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/WorkflowRun' } } } } } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/runs/{id}:
+    get:
+      summary: Get workflow run by id
+      parameters:
+        - { $ref: '#/components/parameters/ClusterParam' }
+        - { $ref: '#/components/parameters/TenantParam' }
+        - { $ref: '#/components/parameters/ProjectParam' }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/WorkflowRun' } } } } }
+
+  # Usage & Quota
+  /api/v1/tenants/{t}/usage:
+    get:
+      summary: Usage report for a tenant
+      parameters:
+        - { $ref: '#/components/parameters/TenantParam' }
+        - name: range
+          in: query
+          schema: { type: string, enum: [1h, 24h, 7d, 30d], default: 24h }
+        - name: cluster
+          in: query
+          schema: { type: string, nullable: true }
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/UsageReport' } } } } }
+  /api/v1/projects/{p}/usage:
+    get:
+      summary: Usage report for a project
+      parameters:
+        - { $ref: '#/components/parameters/ProjectParam' }
+        - name: range
+          in: query
+          schema: { type: string, enum: [1h, 24h, 7d, 30d], default: 24h }
+        - name: cluster
+          in: query
+          schema: { type: string, nullable: true }
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/UsageReport' } } } } }
+
+  # Access & Tokens (kubeconfig issuance)
+  /api/v1/tenants/{t}/kubeconfig:
+    post:
+      summary: Issue a tenant-scoped kubeconfig via proxy
+      parameters: [ { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { project: { type: string }, role: { type: string, enum: [tenantOwner, projectDev, readOnly], default: readOnly }, ttlSeconds: { type: integer, minimum: 60, maximum: 86400, default: 3600 } } } } } }
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/KubeconfigResponse' } } } } }
+

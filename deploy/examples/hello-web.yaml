@@ -1,0 +1,18 @@
+# KubeNova App manifest (vendor-neutral)
+apiVersion: kubenova.io/v1
+kind: App
+metadata:
+  name: hello-web
+spec:
+  description: Simple web service
+  components:
+    - name: web
+      type: webservice
+      properties:
+        image: ghcr.io/kubenova/examples/hello-web:latest
+        port: 8080
+  traits:
+    - type: scaler
+      properties:
+        replicas: 1
+
