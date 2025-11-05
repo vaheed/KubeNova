@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/vaheed/kubenova/pkg/types"
 )
 
@@ -195,6 +196,9 @@ func (m *Memory) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigE
 	id := m.nextID
 	m.nextID++
 	c.ID = id
+	if c.UID == "" {
+		c.UID = uuid.NewString()
+	}
 	m.clusters[id] = memCluster{c: c, enc: kubeconfigEnc}
 	return id, nil
 }
@@ -207,6 +211,17 @@ func (m *Memory) GetCluster(ctx context.Context, id int) (types.Cluster, string,
 		return types.Cluster{}, "", ErrNotFound
 	}
 	return mc.c, mc.enc, nil
+}
+
+func (m *Memory) GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, mc := range m.clusters {
+		if mc.c.UID == uid {
+			return mc.c, mc.enc, nil
+		}
+	}
+	return types.Cluster{}, "", ErrNotFound
 }
 
 type memEvent struct {

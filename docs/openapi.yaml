@@ -69,6 +69,7 @@ paths:
       security: [ { bearerAuth: [] } ]
       parameters:
         - { name: cluster_id, in: query, required: false, schema: { type: integer }, description: "When set, proxies to Capsule Tenants on the given cluster" }
+        - { name: cluster_uid, in: query, required: false, schema: { type: string }, description: "Alternative to cluster_id (UUID)" }
       description: |
         Lists tenants.
         - Without `cluster_id`: returns the Manager store list (array).
@@ -99,6 +100,7 @@ paths:
       security: [ { bearerAuth: [] } ]
       parameters:
         - { name: cluster_id, in: query, required: false, schema: { type: integer } }
+        - { name: cluster_uid, in: query, required: false, schema: { type: string } }
       requestBody:
         required: true
         content:
@@ -149,6 +151,7 @@ paths:
     get:
       parameters:
         - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+        - { name: cluster_uid, in: query, required: false, schema: { type: string } }
         - { name: labelSelector, in: query, required: false, schema: { type: string } }
         - { name: fieldSelector, in: query, required: false, schema: { type: string } }
       responses:
@@ -167,6 +170,7 @@ paths:
     post:
       parameters:
         - { name: cluster_id, in: query, required: true, schema: { type: integer } }
+        - { name: cluster_uid, in: query, required: false, schema: { type: string } }
       requestBody:
         required: true
         content:
@@ -405,6 +409,43 @@ paths:
                   - name: tenant-user
                     user:
                       token: PLACEHOLDER
+  /api/v1/bootstrap-user:
+    post:
+      security: [ { bearerAuth: [] } ]
+      summary: Bootstrap a tenant user (tenant + namespace + project + kubeconfig)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cluster_id: { type: integer, description: Numeric cluster id }
+                cluster_uid: { type: string, description: UUID cluster id }
+                tenant: { type: string }
+                owners: { type: array, items: { type: string } }
+                project: { type: string }
+                namespace: { type: string }
+                role: { type: string, enum: [tenant-admin, tenant-dev, read-only] }
+              required: [tenant, project]
+            example:
+              cluster_uid: "550e8400-e29b-41d4-a716-446655440000"
+              tenant: acme
+              owners: ["user1@example.com"]
+              project: web
+              role: tenant-admin
+      responses:
+        '200':
+          description: Created objects and issued kubeconfig (base64)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant: { type: string }
+                  project: { type: string }
+                  namespace: { type: string }
+                  kubeconfigB64: { type: string, format: byte }
   /api/v1/clusters:
     post:
       security: [ { bearerAuth: [] } ]

@@ -99,6 +99,8 @@ func NewServer(s store.Store) *Server {
 			})
 		})
 
+		// Bootstrap user: create tenant, namespace, project, and issue kubeconfig
+		r.Post("/bootstrap-user", srv.bootstrapUser)
 		r.Get("/namespace-options", func(w http.ResponseWriter, r *http.Request) { srv.capsuleList(w, r, gvrNamespaceOptions) })
 		r.Post("/namespace-options", func(w http.ResponseWriter, r *http.Request) { srv.capsuleCreate(w, r, gvrNamespaceOptions) })
 		r.Route("/namespace-options/{name}", func(r chi.Router) {
@@ -465,11 +467,11 @@ func (s *Server) issueKubeconfig(w http.ResponseWriter, r *http.Request) {
 
 // --- Clusters ---
 func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
-	var c types.Cluster
-	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
+    var c types.Cluster
+    if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+        http.Error(w, err.Error(), 400)
+        return
+    }
 	// decode kubeconfig
 	kb, err := decodeB64(c.KubeconfigB64)
 	if err != nil {
@@ -478,17 +480,21 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	// encrypt for storage
 	enc := encodeB64(kb) // in real world, envelope encrypt; keep as base64 here for simplicity
-	id, err := s.store.CreateCluster(r.Context(), c, enc)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	// install agent (skip in E2E fake mode). Do this asynchronously so the
-	// registration call returns immediately and callers can poll readiness.
-	if !parseBool(os.Getenv("KUBENOVA_E2E_FAKE")) {
-		image := getenv("AGENT_IMAGE", "ghcr.io/vaheed/kubenova/agent:dev")
-		mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-manager.kubenova-system.svc.cluster.local:8080")
-		logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("install_agent_start", zap.String("cluster", c.Name), zap.String("image", image))
+    id, err := s.store.CreateCluster(r.Context(), c, enc)
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    // After creation, fetch stored cluster to include generated UID if available
+    if c2, _, err2 := s.store.GetCluster(r.Context(), id); err2 == nil {
+        c = c2
+    }
+    // install agent (skip in E2E fake mode). Do this asynchronously so the
+    // registration call returns immediately and callers can poll readiness.
+    if !parseBool(os.Getenv("KUBENOVA_E2E_FAKE")) {
+        image := getenv("AGENT_IMAGE", "ghcr.io/vaheed/kubenova/agent:dev")
+        mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-manager.kubenova-system.svc.cluster.local:8080")
+        logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("install_agent_start", zap.String("cluster", c.Name), zap.String("image", image))
 		kbCopy := append([]byte(nil), kb...)
 		go func(clusterID int, clusterName string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -500,9 +506,9 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 			}
 		}(id, c.Name)
 	}
-	c.ID = id
-	c.KubeconfigB64 = "" // don’t echo
-	respond(w, c, nil)
+    c.ID = id
+    c.KubeconfigB64 = "" // don’t echo
+    respond(w, c, nil)
 }
 
 func (s *Server) getCluster(w http.ResponseWriter, r *http.Request) {

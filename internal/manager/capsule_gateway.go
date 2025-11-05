@@ -54,6 +54,18 @@ func (s *Server) parseClusterID(r *http.Request) (int, bool, error) {
 	return id, true, nil
 }
 
+func (s *Server) dynamicForClusterUID(ctx context.Context, uid string) (dynamic.Interface, error) {
+	_, enc, err := s.store.GetClusterByUID(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	kc, err := decodeB64(enc)
+	if err != nil {
+		return nil, err
+	}
+	return s.dynFactory(ctx, kc)
+}
+
 func (s *Server) capsuleList(w http.ResponseWriter, r *http.Request, gvr schema.GroupVersionResource) {
 	id, _, err := s.parseClusterID(r)
 	if err != nil {
