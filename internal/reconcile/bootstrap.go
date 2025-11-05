@@ -38,6 +38,7 @@ func BootstrapHelmJob(ctx context.Context) error {
 			AllowPrivilegeEscalation: boolPtr(false),
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 			RunAsNonRoot:             boolPtr(true),
+			RunAsUser:                int64Ptr(65532),
 		},
 		Env: []corev1.EnvVar{
 			{Name: "CAPSULE_VERSION", Value: os.Getenv("CAPSULE_VERSION")},
@@ -110,3 +111,4 @@ wait_crd applications.core.oam.dev
 
 func int32ptr(i int32) *int32 { return &i }
 func boolPtr(b bool) *bool    { return &b }
+func int64Ptr(i int64) *int64 { return &i }
