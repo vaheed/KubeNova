@@ -573,7 +573,7 @@ func computeClusterConditions(ctx context.Context, kubeconfig []byte) []types.Co
 	// AgentReady
 	agentReady := false
 	if dep, err := cset.AppsV1().Deployments("kubenova-system").Get(ctx, "agent", metav1.GetOptions{}); err == nil {
-		if dep.Status.ReadyReplicas >= 2 {
+		if dep.Status.ReadyReplicas >= 1 {
 			if _, err := cset.AutoscalingV2().HorizontalPodAutoscalers("kubenova-system").Get(ctx, "agent", metav1.GetOptions{}); err == nil {
 				agentReady = true
 			}

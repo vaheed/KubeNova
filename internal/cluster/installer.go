@@ -146,13 +146,13 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 			_ = gvk // ignored
 		}
 	}
-	// Wait for agent 2/2 ready with backoff
+	// Wait for agent >=1 ready with backoff
 	var ready bool
 	ns := "kubenova-system"
 	logging.L.Info("agent.wait.ready", zap.String("namespace", ns), zap.String("name", "agent"))
 	check := func() (bool, error) {
 		dep, err := cset.AppsV1().Deployments(ns).Get(ctx, "agent", metav1.GetOptions{})
-		if err == nil && dep.Status.ReadyReplicas >= 2 {
+		if err == nil && dep.Status.ReadyReplicas >= 1 {
 			if _, err := cset.AutoscalingV2().HorizontalPodAutoscalers(ns).Get(ctx, "agent", metav1.GetOptions{}); err == nil {
 				ready = true
 				return false, nil

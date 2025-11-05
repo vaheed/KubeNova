@@ -31,6 +31,8 @@ func BootstrapHelmJob(ctx context.Context) error {
 		RunAsNonRoot:   boolPtr(true),
 	}
 	job.Spec.BackoffLimit = int32ptr(1)
+	ttl := int32(300)
+	job.Spec.TTLSecondsAfterFinished = &ttl
 	job.Spec.Template.Spec.Containers = []corev1.Container{{
 		Name:  "helm",
 		Image: "dtzar/helm-kubectl:3.14.4",
@@ -47,6 +49,11 @@ func BootstrapHelmJob(ctx context.Context) error {
 		},
 		Command: []string{"/bin/sh", "-c"},
 		Args: []string{`set -Eeuo pipefail
+# Ensure Helm has writable config/cache/data when running as non-root
+export HELM_CONFIG_HOME=/tmp/helm/config
+export HELM_CACHE_HOME=/tmp/helm/cache
+export HELM_DATA_HOME=/tmp/helm/data
+mkdir -p "$HELM_CONFIG_HOME" "$HELM_CACHE_HOME" "$HELM_DATA_HOME"
 # helper funcs
 rollout() { ns=$1; name=$2; kubectl -n "$ns" rollout status deploy/"$name" --timeout=10m; }
 wait_crd() { crd=$1; for i in $(seq 1 60); do kubectl get crd "$crd" >/dev/null 2>&1 && return 0; sleep 5; done; echo "timeout waiting for CRD $crd" >&2; exit 1; }
