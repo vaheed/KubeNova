@@ -12,7 +12,6 @@ import (
 
     "github.com/go-chi/chi/v5"
     "github.com/go-chi/chi/v5/middleware"
-    "github.com/golang-jwt/jwt/v5"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/vaheed/kubenova/internal/cluster"
     httpapi "github.com/vaheed/kubenova/internal/http"
@@ -29,10 +28,10 @@ import (
 var InstallAgentFunc = cluster.InstallAgent
 
 type Server struct {
-	r           *chi.Mux
-	store       store.Store
-	jwtKey      []byte
-	requireAuth bool
+    r           *chi.Mux
+    store       store.Store
+    jwtKey      []byte
+    requireAuth bool
 }
 
 func NewServer(s store.Store) *Server {
@@ -112,70 +111,11 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Auth ---
-type Claims struct {
-	Role   string `json:"role"`
-	Tenant string `json:"tenant"`
-	jwt.RegisteredClaims
-}
-
-type ctxKey int
-
-const claimsKey ctxKey = 1
-
-func (s *Server) jwtMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hdr := r.Header.Get("Authorization")
-		if hdr == "" || !strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
-			http.Error(w, "missing bearer", http.StatusUnauthorized)
-			return
-		}
-		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
-		var c Claims
-		_, err := jwt.ParseWithClaims(tok, &c, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil })
-		if err != nil {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
-			return
-		}
-		ctx := context.WithValue(r.Context(), claimsKey, &c)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-func (s *Server) caller(r *http.Request) *Claims {
-	if !s.requireAuth {
-		return &Claims{Role: "tenant-admin", Tenant: "*"}
-	}
-	if v := r.Context().Value(claimsKey); v != nil {
-		return v.(*Claims)
-	}
-	return &Claims{}
-}
-
-func canReadTenant(c *Claims, tenant string) bool {
-	if c.Tenant == "*" {
-		return true
-	}
-	return c.Tenant == tenant && (c.Role == "tenant-admin" || c.Role == "tenant-dev" || c.Role == "read-only")
-}
-func canWriteTenant(c *Claims, tenant string) bool {
-	if c.Tenant == "*" {
-		return true
-	}
-	return c.Tenant == tenant && (c.Role == "tenant-admin")
-}
-func canDevTenant(c *Claims, tenant string) bool {
-	if c.Tenant == "*" {
-		return true
-	}
-	return c.Tenant == tenant && (c.Role == "tenant-admin" || c.Role == "tenant-dev")
-}
-
 // helpers
 func getenv(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
+    if v := os.Getenv(k); v != "" {
+        return v
+    }
 	return d
 }
 func atoi(s string) int {
@@ -192,237 +132,15 @@ func atoi(s string) int {
 func encodeB64(b []byte) string          { return base64.StdEncoding.EncodeToString(b) }
 func decodeB64(s string) ([]byte, error) { return base64.StdEncoding.DecodeString(s) }
 
-// --- Tenants ---
-func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.ListTenants(r.Context())
-	// RBAC filter: tenant roles only see their own
-	c := s.caller(r)
-	if c.Tenant != "*" {
-		filtered := make([]types.Tenant, 0)
-		for _, t := range items {
-			if t.Name == c.Tenant {
-				filtered = append(filtered, t)
-			}
-		}
-		items = filtered
-	}
-	respond(w, items, err)
-}
-func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
-	var t types.Tenant
-	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	t.CreatedAt = time.Now().UTC()
-	if !canWriteTenant(s.caller(r), t.Name) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("create_tenant", zap.String("tenant", t.Name))
-	err := s.store.CreateTenant(r.Context(), t)
-	respond(w, t, err)
-}
-func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	if !canReadTenant(s.caller(r), name) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	t, err := s.store.GetTenant(r.Context(), name)
-	respond(w, t, err)
-}
-func (s *Server) updateTenant(w http.ResponseWriter, r *http.Request) {
-	var t types.Tenant
-	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	if !canWriteTenant(s.caller(r), t.Name) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	err := s.store.UpdateTenant(r.Context(), t)
-	respond(w, t, err)
-}
-func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	if !canWriteTenant(s.caller(r), name) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	err := s.store.DeleteTenant(r.Context(), name)
-	respond(w, map[string]string{"status": "ok"}, err)
-}
+// legacy tenant/project/app handlers removed; API is provided by OpenAPI server
 
 // --- Projects ---
-func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
-	tenant := chi.URLParam(r, "name")
-	if !canReadTenant(s.caller(r), tenant) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	items, err := s.store.ListProjects(r.Context(), tenant)
-	respond(w, items, err)
-}
-func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
-	var p types.Project
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	p.CreatedAt = time.Now().UTC()
-	if !canDevTenant(s.caller(r), p.Tenant) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("create_project", zap.String("tenant", p.Tenant), zap.String("project", p.Name))
-	err := s.store.CreateProject(r.Context(), p)
-	respond(w, p, err)
-}
-func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
-	tenant, name := chi.URLParam(r, "tenant"), chi.URLParam(r, "name")
-	if !canReadTenant(s.caller(r), tenant) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	p, err := s.store.GetProject(r.Context(), tenant, name)
-	respond(w, p, err)
-}
-func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
-	tenant, name := chi.URLParam(r, "tenant"), chi.URLParam(r, "name")
-	if !canDevTenant(s.caller(r), tenant) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	err := s.store.DeleteProject(r.Context(), tenant, name)
-	respond(w, map[string]string{"status": "ok"}, err)
-}
+// legacy project handlers removed
 
 // --- Apps ---
-func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
-	tenant, project := chi.URLParam(r, "tenant"), chi.URLParam(r, "name")
-	if !canReadTenant(s.caller(r), tenant) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	items, err := s.store.ListApps(r.Context(), tenant, project)
-	respond(w, items, err)
-}
-func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
-	var a types.App
-	if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	a.CreatedAt = time.Now().UTC()
-	if !canDevTenant(s.caller(r), a.Tenant) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("create_app", zap.String("tenant", a.Tenant), zap.String("project", a.Project), zap.String("app", a.Name))
-	err := s.store.CreateApp(r.Context(), a)
-	respond(w, a, err)
-}
-func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
-	tenant, project, name := chi.URLParam(r, "tenant"), chi.URLParam(r, "project"), chi.URLParam(r, "name")
-	if !canReadTenant(s.caller(r), tenant) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	a, err := s.store.GetApp(r.Context(), tenant, project, name)
-	respond(w, a, err)
-}
-func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
-	tenant, project, name := chi.URLParam(r, "tenant"), chi.URLParam(r, "project"), chi.URLParam(r, "name")
-	if !canDevTenant(s.caller(r), tenant) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	err := s.store.DeleteApp(r.Context(), tenant, project, name)
-	respond(w, map[string]string{"status": "ok"}, err)
-}
+// legacy app handlers removed
 
-// --- Kubeconfig Grant ---
-func (s *Server) issueKubeconfig(w http.ResponseWriter, r *http.Request) {
-	var g types.KubeconfigGrant
-	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	if g.Expires.IsZero() {
-		g.Expires = time.Now().UTC().Add(1 * time.Hour)
-	}
-	if !canDevTenant(s.caller(r), g.Tenant) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	kubeconfig, err := GenerateKubeconfig(g, os.Getenv("CAPSULE_PROXY_URL"))
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	g.Kubeconfig = kubeconfig
-	respond(w, g, nil)
-}
-
-// --- Clusters ---
-func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
-	var c types.Cluster
-	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	// decode kubeconfig
-	kb, err := decodeB64(c.KubeconfigB64)
-	if err != nil {
-		http.Error(w, "invalid kubeconfig", 400)
-		return
-	}
-	// encrypt for storage
-	enc := encodeB64(kb) // in real world, envelope encrypt; keep as base64 here for simplicity
-	id, err := s.store.CreateCluster(r.Context(), c, enc)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	// install agent (skip in E2E fake mode). Do this asynchronously so the
-	// registration call returns immediately and callers can poll readiness.
-	if !parseBool(os.Getenv("KUBENOVA_E2E_FAKE")) {
-		image := getenv("AGENT_IMAGE", "ghcr.io/vaheed/kubenova/agent:dev")
-		mgr := getenv("MANAGER_URL_PUBLIC", "http://kubenova-manager.kubenova-system.svc.cluster.local:8080")
-		logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("install_agent_start", zap.String("cluster", c.Name), zap.String("image", image))
-		kbCopy := append([]byte(nil), kb...)
-		go func(clusterID int, clusterName string) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-			defer cancel()
-			if err := InstallAgentFunc(ctx, kbCopy, image, mgr); err != nil {
-				logging.L.Error("install_agent_error", zap.String("cluster", clusterName), zap.Error(err))
-			} else {
-				logging.L.Info("install_agent_done", zap.String("cluster", clusterName))
-			}
-		}(id, c.Name)
-	}
-	c.ID = id
-	c.KubeconfigB64 = "" // don’t echo
-	respond(w, c, nil)
-}
-
-func (s *Server) getCluster(w http.ResponseWriter, r *http.Request) {
-	id := atoi(chi.URLParam(r, "id"))
-	c, enc, err := s.store.GetCluster(r.Context(), id)
-	if err != nil {
-		respond(w, nil, err)
-		return
-	}
-    // Compute conditions live from cluster status
-    kb, _ := decodeB64(enc)
-    conds := cluster.ComputeClusterConditions(r.Context(), kb, parseBool(os.Getenv("KUBENOVA_E2E_FAKE")))
-	c.Conditions = conds
-	// persist history (best-effort)
-	_ = s.store.AddConditionHistory(r.Context(), id, conds)
-	respond(w, c, nil)
-}
+// legacy kubeconfig grant and cluster handlers removed; provided by OpenAPI server
 
 func (s *Server) ingestEvents(w http.ResponseWriter, r *http.Request) {
 	var list []types.Event
@@ -483,23 +201,6 @@ func respond(w http.ResponseWriter, v any, err error) {
 	}
 }
 
-// Build a minimal kubeconfig string bound to the capsule-proxy URL and JWT token
-func GenerateKubeconfig(g types.KubeconfigGrant, server string) ([]byte, error) {
-	if server == "" {
-		server = "https://capsule-proxy.kubenova.svc"
-	}
-	// token is NOT issued here for real clusters; we return a placeholder to keep the example
-	token := "placeholder"
-	b := strings.Builder{}
-	b.WriteString("apiVersion: v1\nkind: Config\n")
-	b.WriteString("clusters:\n- name: capsule\n  cluster:\n    insecure-skip-tls-verify: true\n    server: ")
-	b.WriteString(server)
-	b.WriteString("\ncontexts:\n- name: tenant\n  context:\n    cluster: capsule\n    user: tenant-user\ncurrent-context: tenant\nusers:\n- name: tenant-user\n  user:\n    token: ")
-	b.WriteString(token)
-	b.WriteString("\n")
-	return []byte(b.String()), nil
-}
-
 // StartHTTP starts the server on the provided addr with graceful shutdown.
 func StartHTTP(ctx context.Context, srv *http.Server) error {
 	go func() { _ = srv.ListenAndServe() }()
@@ -509,88 +210,7 @@ func StartHTTP(ctx context.Context, srv *http.Server) error {
 	return srv.Shutdown(c)
 }
 
-// --- Access & Tokens ---
-type tokenReq struct {
-	Subject    string   `json:"subject"`
-	Roles      []string `json:"roles"`
-	TTLSeconds int      `json:"ttlSeconds"`
-}
-
-func (s *Server) issueToken(w http.ResponseWriter, r *http.Request) {
-	var req tokenReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "KN-422: invalid payload", http.StatusUnprocessableEntity)
-		return
-	}
-	if req.Subject == "" {
-		http.Error(w, "KN-422: subject required", http.StatusUnprocessableEntity)
-		return
-	}
-	if len(req.Roles) == 0 {
-		req.Roles = []string{"read-only"}
-	}
-	ttl := req.TTLSeconds
-	if ttl <= 0 || ttl > 2592000 {
-		ttl = 3600
-	}
-	// Compose claims compatible with existing Claims struct
-	role := req.Roles[0]
-	c := jwt.MapClaims{
-		"sub":   req.Subject,
-		"role":  role,
-		"roles": req.Roles,
-		"exp":   time.Now().Add(time.Duration(ttl) * time.Second).Unix(),
-	}
-	key := s.jwtKey
-	if len(key) == 0 {
-		key = []byte("dev")
-	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
-	ss, err := tok.SignedString(key)
-	if err != nil {
-		http.Error(w, "KN-500: sign failure", 500)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"token": ss, "expiresAt": time.Now().Add(time.Duration(ttl) * time.Second).UTC()})
-}
-
-func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
-	c := s.caller(r)
-	roles := []string{c.Role}
-	if roles[0] == "" {
-		roles = []string{"read-only"}
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"subject": "", "roles": roles})
-}
+// legacy access endpoints removed; implemented by OpenAPI server
 
 // Tenant-scoped kubeconfig issuance mapped to existing generator; proxy binding handled server-side.
-func (s *Server) issueKubeconfigTenantScoped(w http.ResponseWriter, r *http.Request) {
-	tenant := chi.URLParam(r, "name")
-	if tenant == "" {
-		http.Error(w, "KN-422: tenant required", 422)
-		return
-	}
-	var in struct {
-		Project    string `json:"project"`
-		Role       string `json:"role"`
-		TTLSeconds int    `json:"ttlSeconds"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
-	if in.Role == "" {
-		in.Role = "read-only"
-	}
-	if !canReadTenant(s.caller(r), tenant) {
-		http.Error(w, "KN-403: forbidden", http.StatusForbidden)
-		return
-	}
-	g := types.KubeconfigGrant{Tenant: tenant, Project: in.Project, Role: in.Role, Expires: time.Now().Add(1 * time.Hour)}
-	cfg, err := GenerateKubeconfig(g, "")
-	if err != nil {
-		http.Error(w, "KN-500: kubeconfig", 500)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"kubeconfig": encodeB64(cfg), "expiresAt": g.Expires})
-}
+// legacy kubeconfig issuance removed; provided by OpenAPI server
