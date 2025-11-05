@@ -5,7 +5,7 @@ metadata:
   namespace: kubenova-system
   labels: { app: agent }
 spec:
-  replicas: 2
+  replicas: 1
   selector: { matchLabels: { app: agent } }
   template:
     metadata:
