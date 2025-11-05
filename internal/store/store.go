@@ -40,8 +40,12 @@ type Store interface {
 
 	// Events & condition history
 	AddEvents(ctx context.Context, clusterID *int, evts []types.Event) error
-	AddConditionHistory(ctx context.Context, clusterID int, conds []types.Condition) error
-	ListClusterEvents(ctx context.Context, clusterID int, limit int) ([]types.Event, error)
+    AddConditionHistory(ctx context.Context, clusterID int, conds []types.Condition) error
+    ListClusterEvents(ctx context.Context, clusterID int, limit int) ([]types.Event, error)
+
+    // ListClusters returns clusters with optional pagination and label filtering.
+    // Cursor is an opaque string returned by the previous call (id-based).
+    ListClusters(ctx context.Context, limit int, cursor string, labelSelector string) ([]types.Cluster, string, error)
 }
 
 var ErrNotFound = errors.New("not found")

@@ -78,6 +78,54 @@ func TestContract_ClustersAndTenants(t *testing.T) {
     resp.Body.Close()
 }
 
+func TestContract_ClustersListWithCursorAndLabels(t *testing.T) {
+    st := store.NewMemory()
+    api := NewAPIServer(st)
+    r := chi.NewRouter()
+    _ = HandlerWithOptions(api, ChiServerOptions{BaseRouter: r})
+    ts := httptest.NewServer(r)
+    defer ts.Close()
+
+    // seed clusters with labels
+    seed := func(name, env string) {
+        kcfg := []byte("apiVersion: v1\nclusters: []\ncontexts: []\n")
+        reg := ClusterRegistration{Name: name, Labels: &map[string]string{"env": env}, Kubeconfig: kcfg}
+        b, _ := json.Marshal(reg)
+        req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters", bytes.NewReader(b))
+        req.Header.Set("Content-Type", "application/json")
+        _, _ = http.DefaultClient.Do(req)
+    }
+    seed("c1", "dev")
+    seed("c2", "prod")
+    seed("c3", "prod")
+
+    // page 1
+    resp, err := http.Get(ts.URL+"/api/v1/clusters?limit=1")
+    if err != nil { t.Fatal(err) }
+    if resp.StatusCode != http.StatusOK { t.Fatalf("list: %s", resp.Status) }
+    next := resp.Header.Get("X-Next-Cursor")
+    var page1 []Cluster
+    _ = json.NewDecoder(resp.Body).Decode(&page1)
+    resp.Body.Close()
+    if len(page1) != 1 || next == "" { t.Fatalf("pagination not working: next=%s items=%d", next, len(page1)) }
+
+    // page 2
+    resp, err = http.Get(ts.URL+"/api/v1/clusters?limit=2&cursor="+next)
+    if err != nil { t.Fatal(err) }
+    var page2 []Cluster
+    _ = json.NewDecoder(resp.Body).Decode(&page2)
+    resp.Body.Close()
+    if len(page2) == 0 { t.Fatalf("expected more items") }
+
+    // label filter
+    resp, err = http.Get(ts.URL+"/api/v1/clusters?labelSelector=env=prod")
+    if err != nil { t.Fatal(err) }
+    var filtered []Cluster
+    _ = json.NewDecoder(resp.Body).Decode(&filtered)
+    resp.Body.Close()
+    if len(filtered) != 2 { t.Fatalf("expected 2 prod clusters, got %d", len(filtered)) }
+}
+
 // Ensure byte format honors base64
 func TestContract_ClusterRegistrationBase64(t *testing.T) {
     st := store.NewMemory()
