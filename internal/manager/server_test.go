@@ -15,60 +15,25 @@ import (
 )
 
 func TestTenantsCRUD(t *testing.T) {
-	s := NewServer(store.NewMemory())
-	// create
-	body, _ := json.Marshal(types.Tenant{Name: "alice", CreatedAt: time.Now()})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	s.Router().ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("create tenant failed: %d", w.Code)
-	}
-	// list
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil)
-	w = httptest.NewRecorder()
-	s.Router().ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("list tenant failed: %d", w.Code)
-	}
+    s := NewServer(store.NewMemory())
+    // create (new API surface)
+    body := []byte(`{"name":"alice"}`)
+    req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/c/tenants", bytes.NewReader(body))
+    w := httptest.NewRecorder()
+    s.Router().ServeHTTP(w, req)
+    if w.Code != 200 {
+        t.Fatalf("create tenant failed: %d", w.Code)
+    }
+    // list
+    req = httptest.NewRequest(http.MethodGet, "/api/v1/clusters/c/tenants", nil)
+    w = httptest.NewRecorder()
+    s.Router().ServeHTTP(w, req)
+    if w.Code != 200 {
+        t.Fatalf("list tenant failed: %d", w.Code)
+    }
 }
 
-func TestRBACFiltersTenants(t *testing.T) {
-	st := store.NewMemory()
-	_ = st.CreateTenant(context.Background(), types.Tenant{Name: "alice"})
-	_ = st.CreateTenant(context.Background(), types.Tenant{Name: "bob"})
-	srv := NewServer(st)
-	srv.requireAuth = true // force rbac path
-
-	// Build a request with a fake bearer token that we bypass by injecting context
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil)
-	// Inject claims directly
-	req = req.WithContext(context.WithValue(req.Context(), claimsKey, &Claims{Role: "read-only", Tenant: "alice"}))
-	w := httptest.NewRecorder()
-	srv.Router().ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("rbac list failed: %d", w.Code)
-	}
-	if !bytes.Contains(w.Body.Bytes(), []byte("alice")) || bytes.Contains(w.Body.Bytes(), []byte("bob")) {
-		t.Fatalf("rbac filtering failed: %s", w.Body.String())
-	}
-}
-
-func TestRBACGrantForbidden(t *testing.T) {
-	st := store.NewMemory()
-	_ = st.CreateTenant(context.Background(), types.Tenant{Name: "alice"})
-	srv := NewServer(st)
-	srv.requireAuth = true
-	g := types.KubeconfigGrant{Tenant: "alice", Role: "read-only", Expires: time.Now().Add(time.Hour)}
-	b, _ := json.Marshal(g)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/kubeconfig-grants", bytes.NewReader(b))
-	req = req.WithContext(context.WithValue(req.Context(), claimsKey, &Claims{Role: "read-only", Tenant: "alice"}))
-	w := httptest.NewRecorder()
-	srv.Router().ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", w.Code)
-	}
-}
+// RBAC-related legacy tests removed; new RBAC is enforced in the OpenAPI server tests.
 
 func TestCreateClusterEndpoint(t *testing.T) {
 	st := store.NewMemory()

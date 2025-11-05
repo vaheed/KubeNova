@@ -67,84 +67,9 @@ func NewServer(s store.Store) *Server {
 		r.Post("/logs", srv.accept204)
     })
 
-    // Legacy /api/v1 router (disable with KUBENOVA_DISABLE_LEGACY=1 when migrating)
-    if !parseBool(os.Getenv("KUBENOVA_DISABLE_LEGACY")) {
-        // Add deprecation headers to all legacy routes to guide migration to the new OpenAPI server.
-        mux.Route("/api/v1", func(r chi.Router) {
-            r.Use(func(next http.Handler) http.Handler {
-                return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-                    // RFC 8594 style deprecation and sunset headers
-                    w.Header().Set("Deprecation", "true")
-                    // Provide a soft future date; operators can adjust via env in fronting proxies if needed
-                    w.Header().Set("Sunset", time.Now().Add(90*24*time.Hour).Format(time.RFC1123))
-                    // Point to the successor surface if new API is enabled
-                    succPrefix := getenv("KUBENOVA_NEW_API_PREFIX", "/_next")
-                    if parseBool(os.Getenv("KUBENOVA_NEW_API")) {
-                        w.Header().Set("Link", succPrefix+"/api/v1; rel=\"successor-version\"")
-                    }
-                    logging.FromContext(r.Context()).Warn("legacy_api_route", zap.String("path", r.URL.Path))
-                    next.ServeHTTP(w, r)
-                })
-            })
-            if srv.requireAuth {
-                r.Use(srv.jwtMiddleware)
-            }
-
-            // System endpoints (version/features under /api/v1 for consistency)
-            r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
-            r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
-            r.Get("/version", func(w http.ResponseWriter, r *http.Request) {
-                w.Header().Set("Content-Type", "application/json")
-                _, _ = w.Write([]byte(`{"version":"1.0.0"}`))
-            })
-            r.Get("/features", func(w http.ResponseWriter, r *http.Request) {
-                w.Header().Set("Content-Type", "application/json")
-                _, _ = w.Write([]byte(`{"tenancy":true,"vela":true,"proxy":true}`))
-            })
-
-            // Access & Tokens
-            r.Post("/tokens", srv.issueToken)
-            r.Get("/me", srv.getMe)
-
-            r.Get("/tenants", srv.listTenants)
-            r.Post("/tenants", srv.createTenant)
-            r.Route("/tenants/{name}", func(r chi.Router) {
-                r.Get("/", srv.getTenant)
-                r.Put("/", srv.updateTenant)
-                r.Delete("/", srv.deleteTenant)
-                r.Get("/projects", srv.listProjects)
-            })
-
-            r.Post("/projects", srv.createProject)
-            r.Route("/projects/{tenant}/{name}", func(r chi.Router) {
-                r.Get("/", srv.getProject)
-                r.Delete("/", srv.deleteProject)
-                r.Get("/apps", srv.listApps)
-            })
-
-            r.Post("/apps", srv.createApp)
-            r.Route("/apps/{tenant}/{project}/{name}", func(r chi.Router) {
-                r.Get("/", srv.getApp)
-                r.Delete("/", srv.deleteApp)
-            })
-
-            r.Post("/kubeconfig-grants", srv.issueKubeconfig)
-            // Also expose new scoped kubeconfig path (tenant-focused)
-            r.Post("/tenants/{name}/kubeconfig", srv.issueKubeconfigTenantScoped)
-
-            // clusters
-            r.Post("/clusters", srv.createCluster)
-            r.Get("/clusters/{id}", srv.getCluster)
-            r.Get("/clusters/{id}/events", srv.getClusterEvents)
-        })
-    }
-    // New OpenAPI-first HTTP server (feature-gated). Mounted under a migration prefix
-    // to avoid route conflicts with legacy endpoints while we port handlers.
-    if parseBool(os.Getenv("KUBENOVA_NEW_API")) {
-        prefix := getenv("KUBENOVA_NEW_API_PREFIX", "/_next")
-        opts := httpapi.ChiServerOptions{BaseRouter: mux, BaseURL: prefix}
-        _ = httpapi.HandlerWithOptions(httpapi.NewAPIServer(s), opts)
-    }
+    // Single OpenAPI-first HTTP server mounted at /api/v1
+    opts := httpapi.ChiServerOptions{BaseRouter: mux, BaseURL: ""}
+    _ = httpapi.HandlerWithOptions(httpapi.NewAPIServer(s), opts)
     telemetry.InitOTelProvider() // best-effort noop if not configured
     return srv
 }

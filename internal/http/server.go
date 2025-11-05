@@ -25,7 +25,7 @@ type APIServer struct {
     requireAuth bool
     jwtKey      []byte
     newCapsule  func([]byte) capib.Client
-    newVela     func([]byte) interface{ Deploy(context.Context, string, string) error; Suspend(context.Context, string, string) error; Resume(context.Context, string, string) error; Rollback(context.Context, string, string, *int) error; Status(context.Context, string, string) (map[string]any, error); Revisions(context.Context, string, string) ([]map[string]any, error); Diff(context.Context, string, string, int, int) (map[string]any, error); Logs(context.Context, string, string, string, bool) ([]map[string]any, error) }
+    newVela     func([]byte) interface{ Deploy(context.Context, string, string) error; Suspend(context.Context, string, string) error; Resume(context.Context, string, string) error; Rollback(context.Context, string, string, *int) error; Status(context.Context, string, string) (map[string]any, error); Revisions(context.Context, string, string) ([]map[string]any, error); Diff(context.Context, string, string, int, int) (map[string]any, error); Logs(context.Context, string, string, string, bool) ([]map[string]any, error); SetTraits(context.Context, string, string, []map[string]any) error; SetPolicies(context.Context, string, string, []map[string]any) error; ImageUpdate(context.Context, string, string, string, string, string) error }
 }
 
 func NewAPIServer(st store.Store) *APIServer {
@@ -34,7 +34,7 @@ func NewAPIServer(st store.Store) *APIServer {
         requireAuth: parseBool(os.Getenv("KUBENOVA_REQUIRE_AUTH")),
         jwtKey:      []byte(getenv("JWT_SIGNING_KEY", "dev")),
         newCapsule:  capib.New,
-        newVela:     func(b []byte) interface{ Deploy(context.Context, string, string) error; Suspend(context.Context, string, string) error; Resume(context.Context, string, string) error; Rollback(context.Context, string, string, *int) error; Status(context.Context, string, string) (map[string]any, error); Revisions(context.Context, string, string) ([]map[string]any, error); Diff(context.Context, string, string, int, int) (map[string]any, error); Logs(context.Context, string, string, string, bool) ([]map[string]any, error) } { return velab.New(b) },
+        newVela:     func(b []byte) interface{ Deploy(context.Context, string, string) error; Suspend(context.Context, string, string) error; Resume(context.Context, string, string) error; Rollback(context.Context, string, string, *int) error; Status(context.Context, string, string) (map[string]any, error); Revisions(context.Context, string, string) ([]map[string]any, error); Diff(context.Context, string, string, int, int) (map[string]any, error); Logs(context.Context, string, string, string, bool) ([]map[string]any, error); SetTraits(context.Context, string, string, []map[string]any) error; SetPolicies(context.Context, string, string, []map[string]any) error; ImageUpdate(context.Context, string, string, string, string, string) error } { return velab.New(b) },
     }
 }
 
@@ -527,6 +527,83 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsALogsComponent(w http.
     if err != nil { s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error()); return }
     w.Header().Set("Content-Type", "application/json")
     _ = json.NewEncoder(w).Encode(lines)
+}
+
+// System endpoints under /api/v1
+func (s *APIServer) GetApiV1Version(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(map[string]any{"version": "1.0.0"})
+}
+
+func (s *APIServer) GetApiV1Features(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(map[string]bool{"tenancy": true, "vela": true, "proxy": true})
+}
+
+// Access & Tokens
+func (s *APIServer) PostApiV1Tokens(w http.ResponseWriter, r *http.Request) {
+    var req TokenRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil { s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload"); return }
+    if strings.TrimSpace(req.Subject) == "" { s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "subject required"); return }
+    ttl := 3600
+    if req.TtlSeconds != nil && *req.TtlSeconds > 0 && *req.TtlSeconds <= 2592000 { ttl = *req.TtlSeconds }
+    roles := []string{"readOnly"}
+    if req.Roles != nil && len(*req.Roles) > 0 {
+        roles = make([]string, 0, len(*req.Roles))
+        for _, r := range *req.Roles { roles = append(roles, string(r)) }
+    }
+    c := jwt.MapClaims{"sub": req.Subject, "roles": roles, "exp": time.Now().Add(time.Duration(ttl) * time.Second).Unix()}
+    key := s.jwtKey
+    if len(key) == 0 { key = []byte("dev") }
+    tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+    ss, err := tok.SignedString(key)
+    if err != nil { s.writeError(w, 500, "KN-500", "sign failure"); return }
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(map[string]any{"token": ss, "expiresAt": time.Now().Add(time.Duration(ttl) * time.Second).UTC()})
+}
+
+func (s *APIServer) GetApiV1Me(w http.ResponseWriter, r *http.Request) {
+    roles := s.rolesFromReq(r)
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(map[string]any{"subject": "", "roles": roles})
+}
+
+// (PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits)
+func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAppsATraits(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, a AppParam) {
+    if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") { return }
+    var body []map[string]any
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil { s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload"); return }
+    _, enc, err := s.st.GetClusterByName(r.Context(), string(c))
+    if err != nil { s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found"); return }
+    kb, _ := base64.StdEncoding.DecodeString(enc)
+    if err := s.newVela(kb).SetTraits(r.Context(), string(p), string(a), body); err != nil { s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error()); return }
+    w.WriteHeader(http.StatusOK)
+}
+
+// (PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/policies)
+func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAppsAPolicies(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, a AppParam) {
+    if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") { return }
+    var body []map[string]any
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil { s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload"); return }
+    _, enc, err := s.st.GetClusterByName(r.Context(), string(c))
+    if err != nil { s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found"); return }
+    kb, _ := base64.StdEncoding.DecodeString(enc)
+    if err := s.newVela(kb).SetPolicies(r.Context(), string(p), string(a), body); err != nil { s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error()); return }
+    w.WriteHeader(http.StatusOK)
+}
+
+// (POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/image-update)
+func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsAImageUpdate(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, a AppParam) {
+    if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") { return }
+    var body PostApiV1ClustersCTenantsTProjectsPAppsAImageUpdateJSONBody
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil { s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload"); return }
+    _, enc, err := s.st.GetClusterByName(r.Context(), string(c))
+    if err != nil { s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found"); return }
+    kb, _ := base64.StdEncoding.DecodeString(enc)
+    tag := ""
+    if body.Tag != nil { tag = *body.Tag }
+    if err := s.newVela(kb).ImageUpdate(r.Context(), string(p), string(a), body.Component, body.Image, tag); err != nil { s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error()); return }
+    w.WriteHeader(http.StatusAccepted)
 }
 
 // ---- mapping helpers ----

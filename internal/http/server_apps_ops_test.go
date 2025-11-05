@@ -14,6 +14,7 @@ import (
 
 type fakeVela struct{
     deploy, suspend, resume, rollback, status, revisions, diff, logs bool
+    traits, policies, image bool
 }
 func (f *fakeVela) EnsureApp(_ context.Context, _, _ string, _ map[string]any) error { return nil }
 func (f *fakeVela) DeleteApp(_ context.Context, _, _ string) error { return nil }
@@ -27,15 +28,15 @@ func (f *fakeVela) Status(_ context.Context, ns, name string) (map[string]any, e
 func (f *fakeVela) Revisions(_ context.Context, ns, name string) ([]map[string]any, error) { f.revisions = true; return []map[string]any{}, nil }
 func (f *fakeVela) Diff(_ context.Context, ns, name string, _, _ int) (map[string]any, error) { f.diff = true; return map[string]any{"changes": []any{}}, nil }
 func (f *fakeVela) Logs(_ context.Context, ns, name, component string, follow bool) ([]map[string]any, error) { f.logs = true; return []map[string]any{}, nil }
-func (f *fakeVela) SetTraits(_ context.Context, _, _ string, _ []map[string]any) error { return nil }
-func (f *fakeVela) SetPolicies(_ context.Context, _, _ string, _ []map[string]any) error { return nil }
-func (f *fakeVela) ImageUpdate(_ context.Context, _, _, _, _ string) error { return nil }
+func (f *fakeVela) SetTraits(_ context.Context, _, _ string, _ []map[string]any) error { f.traits = true; return nil }
+func (f *fakeVela) SetPolicies(_ context.Context, _, _ string, _ []map[string]any) error { f.policies = true; return nil }
+func (f *fakeVela) ImageUpdate(_ context.Context, _, _, _, _, _ string) error { f.image = true; return nil }
 
 func TestAppsOpsInvokeBackend(t *testing.T) {
     st := store.NewMemory()
     api := NewAPIServer(st)
     fv := &fakeVela{}
-    api.newVela = func([]byte) interface{ Deploy(context.Context, string, string) error; Suspend(context.Context, string, string) error; Resume(context.Context, string, string) error; Rollback(context.Context, string, string, *int) error; Status(context.Context, string, string) (map[string]any, error); Revisions(context.Context, string, string) ([]map[string]any, error); Diff(context.Context, string, string, int, int) (map[string]any, error); Logs(context.Context, string, string, string, bool) ([]map[string]any, error) } { return fv }
+    api.newVela = func([]byte) interface{ Deploy(context.Context, string, string) error; Suspend(context.Context, string, string) error; Resume(context.Context, string, string) error; Rollback(context.Context, string, string, *int) error; Status(context.Context, string, string) (map[string]any, error); Revisions(context.Context, string, string) ([]map[string]any, error); Diff(context.Context, string, string, int, int) (map[string]any, error); Logs(context.Context, string, string, string, bool) ([]map[string]any, error); SetTraits(context.Context, string, string, []map[string]any) error; SetPolicies(context.Context, string, string, []map[string]any) error; ImageUpdate(context.Context, string, string, string, string, string) error } { return fv }
 
     r := chi.NewRouter()
     _ = HandlerWithOptions(api, ChiServerOptions{BaseRouter: r})
@@ -79,7 +80,29 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
     if resp.StatusCode != http.StatusOK { t.Fatalf("logs: %s", resp.Status) }
     resp.Body.Close()
 
-    if !fv.deploy || !fv.suspend || !fv.resume || !fv.rollback || !fv.status || !fv.revisions || !fv.diff || !fv.logs {
+    // traits
+    rq, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/c/tenants/t/projects/p/apps/a/traits", bytes.NewReader([]byte(`[]`)))
+    rq.Header.Set("Content-Type", "application/json")
+    resp, err = http.DefaultClient.Do(rq)
+    if err != nil { t.Fatal(err) }
+    if resp.StatusCode != http.StatusOK { t.Fatalf("traits: %s", resp.Status) }
+    resp.Body.Close()
+    // policies
+    rq, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/c/tenants/t/projects/p/apps/a/policies", bytes.NewReader([]byte(`[]`)))
+    rq.Header.Set("Content-Type", "application/json")
+    resp, err = http.DefaultClient.Do(rq)
+    if err != nil { t.Fatal(err) }
+    if resp.StatusCode != http.StatusOK { t.Fatalf("policies: %s", resp.Status) }
+    resp.Body.Close()
+    // image update
+    rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/c/tenants/t/projects/p/apps/a/image-update", bytes.NewReader([]byte(`{"component":"web","image":"busybox","tag":"latest"}`)))
+    rq.Header.Set("Content-Type", "application/json")
+    resp, err = http.DefaultClient.Do(rq)
+    if err != nil { t.Fatal(err) }
+    if resp.StatusCode != http.StatusAccepted { t.Fatalf("image update: %s", resp.Status) }
+    resp.Body.Close()
+
+    if !fv.deploy || !fv.suspend || !fv.resume || !fv.rollback || !fv.status || !fv.revisions || !fv.diff || !fv.logs || !fv.traits || !fv.policies || !fv.image {
         t.Fatalf("backend not invoked: %+v", fv)
     }
 }
