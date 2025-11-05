@@ -239,6 +239,10 @@ CREATE TABLE IF NOT EXISTS clusters (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- indexes for clusters listing and label filtering
+CREATE INDEX IF NOT EXISTS clusters_id_idx ON clusters(id);
+CREATE INDEX IF NOT EXISTS clusters_labels_gin_idx ON clusters USING gin(labels);
+
 CREATE TABLE IF NOT EXISTS events (
   id BIGSERIAL PRIMARY KEY,
   cluster_id INT NULL REFERENCES clusters(id) ON DELETE SET NULL,

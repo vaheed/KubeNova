@@ -67,58 +67,61 @@ func NewServer(s store.Store) *Server {
 		r.Post("/logs", srv.accept204)
     })
 
-    mux.Route("/api/v1", func(r chi.Router) {
-		if srv.requireAuth {
-			r.Use(srv.jwtMiddleware)
-		}
+    // Legacy /api/v1 router (disable with KUBENOVA_DISABLE_LEGACY=1 when migrating)
+    if !parseBool(os.Getenv("KUBENOVA_DISABLE_LEGACY")) {
+        mux.Route("/api/v1", func(r chi.Router) {
+            if srv.requireAuth {
+                r.Use(srv.jwtMiddleware)
+            }
 
-		// System endpoints (version/features under /api/v1 for consistency)
-		r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
-		r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
-		r.Get("/version", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"version":"1.0.0"}`))
-		})
-		r.Get("/features", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"tenancy":true,"vela":true,"proxy":true}`))
-		})
+            // System endpoints (version/features under /api/v1 for consistency)
+            r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
+            r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
+            r.Get("/version", func(w http.ResponseWriter, r *http.Request) {
+                w.Header().Set("Content-Type", "application/json")
+                _, _ = w.Write([]byte(`{"version":"1.0.0"}`))
+            })
+            r.Get("/features", func(w http.ResponseWriter, r *http.Request) {
+                w.Header().Set("Content-Type", "application/json")
+                _, _ = w.Write([]byte(`{"tenancy":true,"vela":true,"proxy":true}`))
+            })
 
-		// Access & Tokens
-		r.Post("/tokens", srv.issueToken)
-		r.Get("/me", srv.getMe)
+            // Access & Tokens
+            r.Post("/tokens", srv.issueToken)
+            r.Get("/me", srv.getMe)
 
-		r.Get("/tenants", srv.listTenants)
-		r.Post("/tenants", srv.createTenant)
-		r.Route("/tenants/{name}", func(r chi.Router) {
-			r.Get("/", srv.getTenant)
-			r.Put("/", srv.updateTenant)
-			r.Delete("/", srv.deleteTenant)
-			r.Get("/projects", srv.listProjects)
-		})
+            r.Get("/tenants", srv.listTenants)
+            r.Post("/tenants", srv.createTenant)
+            r.Route("/tenants/{name}", func(r chi.Router) {
+                r.Get("/", srv.getTenant)
+                r.Put("/", srv.updateTenant)
+                r.Delete("/", srv.deleteTenant)
+                r.Get("/projects", srv.listProjects)
+            })
 
-		r.Post("/projects", srv.createProject)
-		r.Route("/projects/{tenant}/{name}", func(r chi.Router) {
-			r.Get("/", srv.getProject)
-			r.Delete("/", srv.deleteProject)
-			r.Get("/apps", srv.listApps)
-		})
+            r.Post("/projects", srv.createProject)
+            r.Route("/projects/{tenant}/{name}", func(r chi.Router) {
+                r.Get("/", srv.getProject)
+                r.Delete("/", srv.deleteProject)
+                r.Get("/apps", srv.listApps)
+            })
 
-		r.Post("/apps", srv.createApp)
-		r.Route("/apps/{tenant}/{project}/{name}", func(r chi.Router) {
-			r.Get("/", srv.getApp)
-			r.Delete("/", srv.deleteApp)
-		})
+            r.Post("/apps", srv.createApp)
+            r.Route("/apps/{tenant}/{project}/{name}", func(r chi.Router) {
+                r.Get("/", srv.getApp)
+                r.Delete("/", srv.deleteApp)
+            })
 
-		r.Post("/kubeconfig-grants", srv.issueKubeconfig)
-		// Also expose new scoped kubeconfig path (tenant-focused)
-		r.Post("/tenants/{name}/kubeconfig", srv.issueKubeconfigTenantScoped)
+            r.Post("/kubeconfig-grants", srv.issueKubeconfig)
+            // Also expose new scoped kubeconfig path (tenant-focused)
+            r.Post("/tenants/{name}/kubeconfig", srv.issueKubeconfigTenantScoped)
 
-		// clusters
-		r.Post("/clusters", srv.createCluster)
-		r.Get("/clusters/{id}", srv.getCluster)
-		r.Get("/clusters/{id}/events", srv.getClusterEvents)
-    })
+            // clusters
+            r.Post("/clusters", srv.createCluster)
+            r.Get("/clusters/{id}", srv.getCluster)
+            r.Get("/clusters/{id}/events", srv.getClusterEvents)
+        })
+    }
     // New OpenAPI-first HTTP server (feature-gated). Mounted under a migration prefix
     // to avoid route conflicts with legacy endpoints while we port handlers.
     if parseBool(os.Getenv("KUBENOVA_NEW_API")) {
