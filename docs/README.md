@@ -1,36 +1,18 @@
-# KubeNova — Unified Control Plane for Capsule + KubeVela
+# KubeNova — Unified Control Plane
 
-**Goal:** One external API that bootstraps clusters, enforces multi-tenancy (Capsule), and delivers apps (KubeVela).
+**Goal:** One external API that bootstraps clusters, enforces multi-tenancy, and delivers apps.
 
 ## Principles
 - Single source of truth in KubeNova; clusters are projections.
-- Adapters: KubeNova ↔ Capsule/Vela only through adapters.
+- Adapters: KubeNova ↔ platform components only through adapters.
 - Idempotent operations; eventual consistency via reconcilers.
-- Least privilege; tenants access via capsule-proxy, not kube-apiserver.
+- Least privilege; tenants access via a scoped access proxy, not kube-apiserver.
 - Full observability: logs, metrics, traces, events.
 
 ## Bootstrap Runbook
-1) **Capsule**
-```bash
-helm repo add clastix https://clastix.github.io/charts && helm repo update
-kubectl create ns capsule-system || true
-helm upgrade --install capsule clastix/capsule -n capsule-system --set manager.leaderElection=true
-kubectl -n capsule-system rollout status deploy/capsule-controller-manager
-```
-2) **capsule-proxy**
-```bash
-helm upgrade --install capsule-proxy clastix/capsule-proxy \
-  -n capsule-system --set service.enabled=true \
-  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}'
-kubectl -n capsule-system rollout status deploy/capsule-proxy
-```
-3) **KubeVela Core**
-```bash
-helm repo add kubevela https://kubevela.github.io/charts && helm repo update
-kubectl create ns vela-system || true
-helm upgrade --install vela-core kubevela/vela-core -n vela-system --set admissionWebhooks.enabled=true
-kubectl -n vela-system rollout status deploy/vela-core
-```
+1) **Tenancy controller** (install per your platform’s guidance)
+2) **Access proxy** (expose proxy service for tenant-scoped kubeconfigs)
+3) **App delivery core** (deploy core controllers and CRDs)
 4) **Register cluster in KubeNova**
 ```http
 POST /api/v1/clusters
@@ -61,8 +43,8 @@ POST /api/v1/policysets
 ```
 
 ## Adapters
-- **CapsuleAdapter:** Tenant, quotas, namespace options, RBAC, NetworkPolicy. Stamp `capsule.clastix.io/tenant=<tenant>` on namespaces.
-- **VelaAdapter:** Application, Workflow, WorkflowRun, *Definitions. Deploy per project namespace. Support rollback via Application revisions.
+- **TenancyAdapter:** Tenant, quotas, namespace options, RBAC, NetworkPolicy.
+- **AppsAdapter:** Application, Workflow, WorkflowRun, Definitions. Deploy per project namespace. Support rollback via revisions.
 
 ## Reconcile Loop
 Intent → Plan → Apply → Observe → Converge. Emit events with correlation-id.
@@ -70,7 +52,7 @@ Status phases: `Pending|Applying|Deployed|Drifted|Error`.
 
 ## Security
 - JWT (HS256/RS256); roles: tenant-admin, tenant-dev, read-only.
-- Kubeconfigs via **KubeconfigGrant**: TTL, verbs, namespaces; endpoint = capsule-proxy.
+- Kubeconfigs via **KubeconfigGrant**: TTL, verbs, namespaces; endpoint = access proxy.
 - Envelope encryption for secrets; periodic key rotation.
 
 ## Observability
@@ -86,6 +68,6 @@ Status phases: `Pending|Applying|Deployed|Drifted|Error`.
 ## Architecture (ASCII)
 ```
 Client → KubeNova API → Orchestrator
-                     ├─ CapsuleAdapter → Capsule + capsule-proxy → Namespaces/RBAC/Policies
-                     └─ VelaAdapter    → KubeVela Core → Applications/Workflows → Workloads
+                     ├─ TenancyAdapter → Tenancy + Access Proxy → Namespaces/RBAC/Policies
+                     └─ AppsAdapter    → App Delivery Core → Applications/Workflows → Workloads
 ```

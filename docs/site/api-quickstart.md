@@ -1,6 +1,6 @@
 # API Quickstart
 
-NOTE: KubeNova is the only API; no direct Capsule/KubeVela usage.
+NOTE: KubeNova is the only API; no direct access to underlying platform components.
 
 - Auth: JWT (HS256). Obtain a token:
 ```
@@ -27,4 +27,3 @@ curl -s -XPOST $BASE/api/v1/clusters \
 curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/v1/clusters | jq
 ```
 - OpenAPI: `GET $BASE/openapi.yaml` (contract-first).
-

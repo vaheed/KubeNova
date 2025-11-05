@@ -1,6 +1,6 @@
 # Tenants & Projects
 
-NOTE: KubeNova is the only API; no direct Capsule/KubeVela usage.
+NOTE: KubeNova is the only API; no direct access to underlying platform components.
 
 - Create a tenant on a cluster:
 ```
@@ -22,4 +22,3 @@ curl -s -XPOST $BASE/api/v1/clusters/cluster-a/tenants/acme/projects \
 ```
 curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/v1/clusters/cluster-a/tenants/acme/summary | jq
 ```
-

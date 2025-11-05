@@ -1,6 +1,6 @@
 # Usage
 
-NOTE: KubeNova is the only API; no direct Capsule/KubeVela usage.
+NOTE: KubeNova is the only API; no direct access to underlying platform components.
 
 - Tenant usage (24h):
 ```
@@ -10,4 +10,3 @@ curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/v1/tenants/acme/usage?range=
 ```
 curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/v1/projects/web/usage?range=7d | jq
 ```
-

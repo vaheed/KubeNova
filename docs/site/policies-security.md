@@ -1,6 +1,6 @@
 # Policies & Security
 
-NOTE: KubeNova is the only API; no direct Capsule/KubeVela usage.
+NOTE: KubeNova is the only API; no direct access to underlying platform components.
 
 - Catalog:
 ```
@@ -12,4 +12,3 @@ curl -s -XPOST $BASE/api/v1/clusters/cluster-a/tenants/acme/policysets \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"name":"podsecurity-baseline","rules":[{"action":"enforce","name":"baseline"}]}' | jq
 ```
-

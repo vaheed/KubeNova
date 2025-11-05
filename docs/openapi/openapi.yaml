@@ -298,7 +298,7 @@ paths:
       - name: component
         in: path
         required: true
-        schema: { type: string, enum: [capsule, capsule-proxy, kubevela] }
+        schema: { type: string, enum: [tenancy, proxy, app-delivery] }
     post:
       summary: Bootstrap a system component on the cluster
       responses:
@@ -620,4 +620,3 @@ paths:
       parameters: [ { $ref: '#/components/parameters/TenantParam' } ]
       requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { project: { type: string }, role: { type: string, enum: [tenantOwner, projectDev, readOnly], default: readOnly }, ttlSeconds: { type: integer, minimum: 60, maximum: 86400, default: 3600 } } } } } }
       responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/KubeconfigResponse' } } } } }
-

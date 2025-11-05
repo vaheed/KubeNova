@@ -24,4 +24,4 @@ curl -fS localhost:8080/wait?timeout=60
 ```
 curl localhost:8080/api/v1/clusters/1 | jq
 ```
-Expect `AgentReady=True` and `AddonsReady=True` once Capsule, capsule-proxy, and KubeVela are ready.
+Expect `AgentReady=True` and `AddonsReady=True` once platform add-ons (tenancy, access proxy, and app delivery) are ready.

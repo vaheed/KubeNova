@@ -1,6 +1,6 @@
 # Apps & Deploy
 
-NOTE: KubeNova is the only API; no direct Capsule/KubeVela usage.
+NOTE: KubeNova is the only API; no direct access to underlying platform components.
 
 - Create an app:
 ```
@@ -25,4 +25,3 @@ curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/v1/clusters/cluster-a/tenant
 ```
 curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/v1/clusters/cluster-a/tenants/acme/projects/web/apps/hello-web/logs/web | jq
 ```
-

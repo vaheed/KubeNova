@@ -1,6 +1,6 @@
 # Kubeconfig (Scoped)
 
-NOTE: KubeNova is the only API; no direct Capsule/KubeVela usage.
+NOTE: KubeNova is the only API; no direct access to underlying platform components.
 
 - Issue tenant-scoped kubeconfig via proxy:
 ```
@@ -14,4 +14,3 @@ curl -s -XPOST $BASE/api/v1/tenants/acme/kubeconfig -H "Authorization: Bearer $T
   -H 'Content-Type: application/json' -d '{"project":"web","role":"readOnly"}' \
   | jq -r .kubeconfig | base64 --decode > kubeconfig-tenant
 ```
-
