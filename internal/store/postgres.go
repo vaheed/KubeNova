@@ -186,6 +186,11 @@ func (p *Postgres) GetCluster(ctx context.Context, id int) (types.Cluster, strin
 	return c, enc, nil
 }
 
+func (p *Postgres) GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error) {
+	// Postgres schema does not yet store UID; fall back to numeric id lookup failure
+	return types.Cluster{}, "", ErrNotFound
+}
+
 func mapToJSONB(m map[string]string) any {
 	if m == nil {
 		return map[string]string{}

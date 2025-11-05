@@ -8,3 +8,5 @@ env:
   AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
   MANAGER_URL_PUBLIC: http://kubenova-manager.kubenova-system.svc.cluster.local:8080
   CAPSULE_PROXY_URL: https://capsule-proxy.capsule-system.svc
+  DEFAULT_NS_RESOURCEQUOTA: ""
+  DEFAULT_PROJECT_QUOTA: ""

@@ -35,6 +35,7 @@ type Store interface {
 	// Clusters
 	CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (int, error)
 	GetCluster(ctx context.Context, id int) (types.Cluster, string, error)
+	GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error)
 
 	// Events & condition history
 	AddEvents(ctx context.Context, clusterID *int, evts []types.Event) error

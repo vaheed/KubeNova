@@ -23,6 +23,10 @@ curl -sS -XPOST "$API/api/v1/clusters" \
   -d '{"name":"kind","kubeconfig":"'"$KUBECONFIG_B64"'"}' | jq -r .id | tee /tmp/cluster_id
 CID=$(cat /tmp/cluster_id)
 echo "Cluster ID: $CID"
+
+# Prefer cluster UID if returned (more portable). Example jq:
+CLUSTER_UID=$(curl -sS "$API/api/v1/clusters/$CID" "${HDR_AUTH[@]}" | jq -r .uid // empty)
+if [[ -n "$CLUSTER_UID" && "$CLUSTER_UID" != "null" ]]; then echo "Cluster UID: $CLUSTER_UID"; fi
 ```
 
 Wait a minute for the Agent to deploy and bootstrap add‑ons. Check conditions:
@@ -49,6 +53,17 @@ curl -sS -XPOST "$API/api/v1/tenants?cluster_id=$CID" \
   -d @/tmp/tenant.json | jq -r .metadata.name
 
 curl -sS "$API/api/v1/tenants?cluster_id=$CID" "${HDR_AUTH[@]}" | jq '.items[].metadata.name'
+
+# Or use cluster_uid if present:
+if [[ -n "$CLUSTER_UID" ]]; then
+  curl -sS "$API/api/v1/tenants?cluster_uid=$CLUSTER_UID" "${HDR_AUTH[@]}" | jq '.items[].metadata.name'
+fi
+
+## (Alternative) Single-call bootstrap
+
+curl -sS -XPOST "$API/api/v1/bootstrap-user" \
+  -H 'Content-Type: application/json' "${HDR_AUTH[@]}" \
+  -d '{"cluster_uid":"'$CLUSTER_UID'","tenant":"acme","owners":["user1@example.com"],"project":"web","role":"tenant-admin"}' | jq .
 ```
 
 ## 3) Issue a kubeconfig for the tenant (capsule‑proxy)
@@ -126,4 +141,3 @@ Tips
 - If `KUBENOVA_REQUIRE_AUTH` is true, export `KUBENOVA_TOKEN` and the snippets add a Bearer header.
 - The kubeconfig Manager issues uses `CAPSULE_PROXY_URL` so tenants only see your provider domain.
 - Discovery RBAC omits Capsule API groups from tenant users by default.
-
