@@ -1,25 +1,26 @@
 package manager
 
 import (
-	"context"
-	"encoding/base64"
-	"encoding/json"
-	"errors"
-	"net/http"
-	"os"
-	"strings"
-	"time"
+    "context"
+    "encoding/base64"
+    "encoding/json"
+    "errors"
+    "net/http"
+    "os"
+    "strings"
+    "time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/vaheed/kubenova/internal/cluster"
-	"github.com/vaheed/kubenova/internal/logging"
-	"github.com/vaheed/kubenova/internal/metrics"
-	"github.com/vaheed/kubenova/internal/store"
-	"github.com/vaheed/kubenova/internal/telemetry"
-	"github.com/vaheed/kubenova/pkg/types"
+    "github.com/go-chi/chi/v5"
+    "github.com/go-chi/chi/v5/middleware"
+    "github.com/golang-jwt/jwt/v5"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/vaheed/kubenova/internal/cluster"
+    httpapi "github.com/vaheed/kubenova/internal/http"
+    "github.com/vaheed/kubenova/internal/logging"
+    "github.com/vaheed/kubenova/internal/metrics"
+    "github.com/vaheed/kubenova/internal/store"
+    "github.com/vaheed/kubenova/internal/telemetry"
+    "github.com/vaheed/kubenova/pkg/types"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -57,18 +58,18 @@ func NewServer(s store.Store) *Server {
 
 	mux.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
 	mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
-	mux.Method(http.MethodGet, "/metrics", promhttp.Handler())
-	mux.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "docs/openapi/openapi.yaml") })
+    mux.Method(http.MethodGet, "/metrics", promhttp.Handler())
+    mux.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "docs/openapi/openapi.yaml") })
 	// Wait endpoint: blocks until store is usable (DB ready) or timeout
 	mux.Get("/wait", srv.waitReady)
 
-	mux.Route("/sync", func(r chi.Router) {
+    mux.Route("/sync", func(r chi.Router) {
 		r.Post("/events", srv.ingestEvents)
 		r.Post("/metrics", srv.heartbeat)
 		r.Post("/logs", srv.accept204)
-	})
+    })
 
-	mux.Route("/api/v1", func(r chi.Router) {
+    mux.Route("/api/v1", func(r chi.Router) {
 		if srv.requireAuth {
 			r.Use(srv.jwtMiddleware)
 		}
@@ -119,9 +120,16 @@ func NewServer(s store.Store) *Server {
 		r.Post("/clusters", srv.createCluster)
 		r.Get("/clusters/{id}", srv.getCluster)
 		r.Get("/clusters/{id}/events", srv.getClusterEvents)
-	})
-	telemetry.InitOTelProvider() // best-effort noop if not configured
-	return srv
+    })
+    // New OpenAPI-first HTTP server (feature-gated). Mounted under a migration prefix
+    // to avoid route conflicts with legacy endpoints while we port handlers.
+    if parseBool(os.Getenv("KUBENOVA_NEW_API")) {
+        prefix := getenv("KUBENOVA_NEW_API_PREFIX", "/_next")
+        opts := httpapi.ChiServerOptions{BaseRouter: mux, BaseURL: prefix}
+        _ = httpapi.HandlerWithOptions(httpapi.NewAPIServer(s), opts)
+    }
+    telemetry.InitOTelProvider() // best-effort noop if not configured
+    return srv
 }
 
 func (s *Server) Router() http.Handler { return s.r }
