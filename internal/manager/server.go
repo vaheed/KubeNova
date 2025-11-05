@@ -69,7 +69,23 @@ func NewServer(s store.Store) *Server {
 
     // Legacy /api/v1 router (disable with KUBENOVA_DISABLE_LEGACY=1 when migrating)
     if !parseBool(os.Getenv("KUBENOVA_DISABLE_LEGACY")) {
+        // Add deprecation headers to all legacy routes to guide migration to the new OpenAPI server.
         mux.Route("/api/v1", func(r chi.Router) {
+            r.Use(func(next http.Handler) http.Handler {
+                return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                    // RFC 8594 style deprecation and sunset headers
+                    w.Header().Set("Deprecation", "true")
+                    // Provide a soft future date; operators can adjust via env in fronting proxies if needed
+                    w.Header().Set("Sunset", time.Now().Add(90*24*time.Hour).Format(time.RFC1123))
+                    // Point to the successor surface if new API is enabled
+                    succPrefix := getenv("KUBENOVA_NEW_API_PREFIX", "/_next")
+                    if parseBool(os.Getenv("KUBENOVA_NEW_API")) {
+                        w.Header().Set("Link", succPrefix+"/api/v1; rel=\"successor-version\"")
+                    }
+                    logging.FromContext(r.Context()).Warn("legacy_api_route", zap.String("path", r.URL.Path))
+                    next.ServeHTTP(w, r)
+                })
+            })
             if srv.requireAuth {
                 r.Use(srv.jwtMiddleware)
             }
