@@ -3,6 +3,13 @@
 - Provision a Kind cluster: `make kind-up`
 - Deploy the Manager API: `make deploy-manager`
 - Port-forward: `kubectl -n kubenova-system port-forward svc/kubenova-manager 8080:8080 &`
+- To serve only the new OpenAPI surface at /api, run Manager with:
+```
+export KUBENOVA_NEW_API=1
+export KUBENOVA_NEW_API_PREFIX=""
+export KUBENOVA_DISABLE_LEGACY=1
+```
+
 - Register the cluster:
 ```
 curl -XPOST localhost:8080/api/v1/clusters -H 'Content-Type: application/json' \
