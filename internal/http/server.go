@@ -85,6 +85,21 @@ func (s *APIServer) writeError(w http.ResponseWriter, status int, code, msg stri
 	httperr.Write(w, status, code, msg)
 }
 
+// (GET /api/v1/healthz)
+func (s *APIServer) GetApiV1Healthz(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+// (GET /api/v1/readyz)
+func (s *APIServer) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
+	// For now, return 200 when the store is usable
+	if _, err := s.st.ListTenants(r.Context()); err != nil {
+		s.writeError(w, http.StatusServiceUnavailable, "KN-500", "store not ready")
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 func (s *APIServer) requireRoles(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
 	if !s.requireAuth {
 		return true

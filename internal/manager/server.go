@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httprate"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/vaheed/kubenova/internal/cluster"
 	httpapi "github.com/vaheed/kubenova/internal/http"
@@ -35,6 +36,8 @@ type Server struct {
 func NewServer(s store.Store) *Server {
 	mux := chi.NewRouter()
 	mux.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
+	// Basic rate limiting to protect the manager API: 100 req/min/IP
+	mux.Use(httprate.LimitByIP(100, time.Minute))
 	mux.Use(func(next http.Handler) http.Handler { // zap logging with request_id, correlation_id and traces
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			reqID := middleware.GetReqID(r.Context())
