@@ -1341,8 +1341,8 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsALogsComponent(w http.
 
 // System endpoints under /api/v1
 func (s *APIServer) GetApiV1Version(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"version": "1.0.0"})
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(map[string]any{"version": "0.9.1"})
 }
 
 func (s *APIServer) GetApiV1Features(w http.ResponseWriter, r *http.Request) {

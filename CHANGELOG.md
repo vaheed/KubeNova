@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2025-11-07
+
+### Added
+- KubeVela operations wired: SetTraits, SetPolicies, ImageUpdate; Delete action invokes backend.
+- Tenant list filters: `labelSelector` and `owner` for provider-grade queries.
+- E2E harness auto-installs Vela Core when `E2E_VELA_OPS=1` (Kind).
+- Helm chart icons and Manager JWT secret support (existing or inline).
+- README/API maps linked to OpenAPI paths.
+
+### Changed
+- E2E uses GHCR `:dev` images; no local image builds.
+- CI packages/pushes charts before E2E; E2E depends on image build + chart publish.
+- OpenAPI examples for traits/policies/image-update; version endpoint returns `0.9.1`.
+
+### Security
+- Trivy config and image scans enforced; gosec clean.
+
+---
+
 ## [0.3.3] - 2025-11-05
 ### Fixed
 - Default the Go-based E2E suite to skip during lint/unit workflows unless `E2E_RUN=1`, addressing CI feedback that unit tests should not require Kind.
