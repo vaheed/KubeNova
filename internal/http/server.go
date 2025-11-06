@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -39,6 +40,11 @@ type APIServer struct {
 		SetPolicies(context.Context, string, string, []map[string]any) error
 		ImageUpdate(context.Context, string, string, string, string, string) error
 	}
+	psMu       sync.RWMutex
+	policysets map[string]map[string]PolicySet // tenantUID -> name -> item
+	runsMu     sync.RWMutex
+	runsByID   map[string]WorkflowRun
+	runsByApp  map[string][]WorkflowRun // key: tenantUID|projectUID|appUID
 }
 
 func NewAPIServer(st store.Store) *APIServer {
@@ -62,6 +68,9 @@ func NewAPIServer(st store.Store) *APIServer {
 		} {
 			return velab.New(b)
 		},
+		policysets: map[string]map[string]PolicySet{},
+		runsByID:   map[string]WorkflowRun{},
+		runsByApp:  map[string][]WorkflowRun{},
 	}
 }
 
@@ -83,6 +92,60 @@ func parseBool(v string) bool {
 
 func (s *APIServer) writeError(w http.ResponseWriter, status int, code, msg string) {
 	httperr.Write(w, status, code, msg)
+}
+
+// (GET /api/v1/healthz)
+func (s *APIServer) GetApiV1Healthz(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+// (GET /api/v1/readyz)
+func (s *APIServer) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
+	// For now, return 200 when the store is usable
+	if _, err := s.st.ListTenants(r.Context()); err != nil {
+		s.writeError(w, http.StatusServiceUnavailable, "KN-500", "store not ready")
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// (GET /api/v1/catalog/components)
+func (s *APIServer) GetApiV1CatalogComponents(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	t := Component
+	name := "web"
+	desc := "Web service"
+	items := []CatalogItem{{Name: &name, Type: &t, Description: &desc}}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(items)
+}
+
+// (GET /api/v1/catalog/traits)
+func (s *APIServer) GetApiV1CatalogTraits(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	t := Trait
+	name := "scaler"
+	desc := "Scale deployments"
+	items := []CatalogItem{{Name: &name, Type: &t, Description: &desc}}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(items)
+}
+
+// (GET /api/v1/catalog/workflows)
+func (s *APIServer) GetApiV1CatalogWorkflows(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	t := Workflow
+	name := "rollout"
+	desc := "Rolling updates"
+	items := []CatalogItem{{Name: &name, Type: &t, Description: &desc}}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(items)
 }
 
 func (s *APIServer) requireRoles(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
@@ -355,6 +418,291 @@ func (s *APIServer) GetApiV1ClustersCCapabilities(w http.ResponseWriter, r *http
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ClusterCapabilities{Tenancy: &t, Vela: &v, Proxy: &p})
 }
+
+// --- PolicySets & Catalog ---
+
+// (GET /api/v1/clusters/{c}/policysets/catalog)
+func (s *APIServer) GetApiV1ClustersCPolicysetsCatalog(w http.ResponseWriter, r *http.Request, c ClusterParam) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	desc := "Base guardrails"
+	items := []PolicySet{{Name: "baseline", Description: &desc}}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(items)
+}
+
+// (GET /api/v1/clusters/{c}/tenants/{t}/policysets)
+func (s *APIServer) GetApiV1ClustersCTenantsTPolicysets(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam) {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	s.psMu.RLock()
+	defer s.psMu.RUnlock()
+	psMap := s.policysets[ten.UID]
+	out := []PolicySet{}
+	for _, v := range psMap {
+		vv := v
+		out = append(out, vv)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// (POST /api/v1/clusters/{c}/tenants/{t}/policysets)
+func (s *APIServer) PostApiV1ClustersCTenantsTPolicysets(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam) {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
+		return
+	}
+	var body PolicySet
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	s.psMu.Lock()
+	if s.policysets[ten.UID] == nil {
+		s.policysets[ten.UID] = map[string]PolicySet{}
+	}
+	s.policysets[ten.UID][body.Name] = body
+	s.psMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+// (GET /api/v1/clusters/{c}/tenants/{t}/policysets/{name})
+func (s *APIServer) GetApiV1ClustersCTenantsTPolicysetsName(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, name string) {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	s.psMu.RLock()
+	defer s.psMu.RUnlock()
+	if m := s.policysets[ten.UID]; m != nil {
+		if v, ok := m[name]; ok {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(v)
+			return
+		}
+	}
+	s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+}
+
+// (PUT /api/v1/clusters/{c}/tenants/{t}/policysets/{name})
+func (s *APIServer) PutApiV1ClustersCTenantsTPolicysetsName(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, name string) {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
+		return
+	}
+	var body PolicySet
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	s.psMu.Lock()
+	defer s.psMu.Unlock()
+	if s.policysets[ten.UID] == nil {
+		s.policysets[ten.UID] = map[string]PolicySet{}
+	}
+	s.policysets[ten.UID][name] = body
+	w.WriteHeader(http.StatusOK)
+}
+
+// (DELETE /api/v1/clusters/{c}/tenants/{t}/policysets/{name})
+func (s *APIServer) DeleteApiV1ClustersCTenantsTPolicysetsName(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, name string) {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
+		return
+	}
+	s.psMu.Lock()
+	if m := s.policysets[ten.UID]; m != nil {
+		delete(m, name)
+	}
+	s.psMu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Bootstrap ---
+
+// (POST /api/v1/clusters/{c}/bootstrap/{component})
+func (s *APIServer) PostApiV1ClustersCBootstrapComponent(w http.ResponseWriter, r *http.Request, c ClusterParam, component string) {
+	if !s.requireRoles(w, r, "admin", "ops") {
+		return
+	}
+	// Validate cluster exists
+	if _, _, err := s.st.GetClusterByUID(r.Context(), string(c)); err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	switch component {
+	case "tenancy", "proxy", "app-delivery":
+		w.WriteHeader(http.StatusAccepted)
+	default:
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+	}
+}
+
+// --- Project/Tenant kubeconfig ---
+
+// (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig)
+func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
+	// resolve cluster
+	_, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	// ensure tenant/project exist (uid-based lookups)
+	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if _, err := s.st.GetProjectByUID(r.Context(), string(p)); err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	exp := time.Now().UTC().Add(time.Hour)
+	resp := KubeconfigResponse{Kubeconfig: &kb, ExpiresAt: &exp}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// (POST /api/v1/tenants/{t}/kubeconfig)
+func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.Request, t TenantParam) {
+	// best-effort: return short-lived minimal kubeconfig
+	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	raw := []byte("apiVersion: v1\nclusters: []\ncontexts: []\nusers: []\n")
+	exp := time.Now().UTC().Add(time.Hour)
+	resp := KubeconfigResponse{Kubeconfig: &raw, ExpiresAt: &exp}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// --- Usage ---
+
+// (GET /api/v1/tenants/{t}/usage)
+func (s *APIServer) GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Request, t TenantParam, params GetApiV1TenantsTUsageParams) {
+	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	window := "24h"
+	if params.Range != nil {
+		window = string(*params.Range)
+	}
+	resp := UsageReport{Window: &window}
+	cpu, mem := "2", "4Gi"
+	pods := 12
+	resp.Cpu = &cpu
+	resp.Memory = &mem
+	resp.Pods = &pods
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// (GET /api/v1/projects/{p}/usage)
+func (s *APIServer) GetApiV1ProjectsPUsage(w http.ResponseWriter, r *http.Request, p ProjectParam, params GetApiV1ProjectsPUsageParams) {
+	if _, err := s.st.GetProjectByUID(r.Context(), string(p)); err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	window := "24h"
+	if params.Range != nil {
+		window = string(*params.Range)
+	}
+	resp := UsageReport{Window: &window}
+	cpu, mem := "1", "1Gi"
+	pods := 5
+	resp.Cpu = &cpu
+	resp.Memory = &mem
+	resp.Pods = &pods
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// --- Workflows ---
+
+// (POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/run)
+func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsAWorkflowRun(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, a AppParam) {
+	id := "run-" + strings.ReplaceAll(time.Now().UTC().Format("20060102T150405.000000000"), ".", "")
+	now := time.Now().UTC()
+	run := WorkflowRun{Id: &id, Status: ptrWorkflowRunStatus(WorkflowRunStatusRunning), StartedAt: &now}
+	key := string(t) + "|" + string(p) + "|" + string(a)
+	s.runsMu.Lock()
+	s.runsByID[id] = run
+	s.runsByApp[key] = append(s.runsByApp[key], run)
+	s.runsMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(run)
+}
+
+// (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/runs)
+func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsAWorkflowRuns(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, a AppParam, params GetApiV1ClustersCTenantsTProjectsPAppsAWorkflowRunsParams) {
+	key := string(t) + "|" + string(p) + "|" + string(a)
+	s.runsMu.RLock()
+	out := s.runsByApp[key]
+	s.runsMu.RUnlock()
+	if out == nil {
+		out = []WorkflowRun{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/runs/{id})
+func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsRunsId(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, id string) {
+	s.runsMu.RLock()
+	run, ok := s.runsByID[id]
+	s.runsMu.RUnlock()
+	if !ok {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(run)
+}
+
+// (POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:delete)
+func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsADelete(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, a AppParam) {
+	if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") {
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// helpers
+func ptrString(s string) *string                                  { return &s }
+func ptrWorkflowRunStatus(s WorkflowRunStatus) *WorkflowRunStatus { return &s }
 
 // --- Tenants ---
 
