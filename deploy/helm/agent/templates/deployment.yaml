@@ -13,6 +13,7 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        fsGroup: 65532
       serviceAccountName: kubenova-agent
       containers:
         - name: agent
@@ -21,6 +22,9 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
           readinessProbe:
             httpGet: { path: /healthz, port: 8082 }
             initialDelaySeconds: 5
@@ -45,4 +49,7 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
         {{- end }}
