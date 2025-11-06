@@ -15,22 +15,22 @@ import (
 )
 
 func TestTenantsCRUD(t *testing.T) {
-    s := NewServer(store.NewMemory())
-    // create (new API surface)
-    body := []byte(`{"name":"alice"}`)
-    req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/c/tenants", bytes.NewReader(body))
-    w := httptest.NewRecorder()
-    s.Router().ServeHTTP(w, req)
-    if w.Code != 200 {
-        t.Fatalf("create tenant failed: %d", w.Code)
-    }
-    // list
-    req = httptest.NewRequest(http.MethodGet, "/api/v1/clusters/c/tenants", nil)
-    w = httptest.NewRecorder()
-    s.Router().ServeHTTP(w, req)
-    if w.Code != 200 {
-        t.Fatalf("list tenant failed: %d", w.Code)
-    }
+	s := NewServer(store.NewMemory())
+	// create (new API surface)
+	body := []byte(`{"name":"alice"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/c/tenants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	s.Router().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("create tenant failed: %d", w.Code)
+	}
+	// list
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/clusters/c/tenants", nil)
+	w = httptest.NewRecorder()
+	s.Router().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("list tenant failed: %d", w.Code)
+	}
 }
 
 // RBAC-related legacy tests removed; new RBAC is enforced in the OpenAPI server tests.

@@ -1,13 +1,13 @@
 package store
 
 import (
-    "context"
-    "fmt"
-    "sync"
+	"context"
+	"fmt"
+	"sync"
 
-    "github.com/vaheed/kubenova/pkg/types"
-    "sort"
-    "strings"
+	"github.com/vaheed/kubenova/pkg/types"
+	"sort"
+	"strings"
 )
 
 type Memory struct {
@@ -15,14 +15,14 @@ type Memory struct {
 	tenants  map[string]types.Tenant
 	projects map[string]map[string]types.Project        // tenant -> name
 	apps     map[string]map[string]map[string]types.App // tenant -> project -> name
-    clusters map[int]memCluster
-    byName   map[string]int
+	clusters map[int]memCluster
+	byName   map[string]int
 	nextID   int
-    evts     []memEvent
+	evts     []memEvent
 }
 
 func NewMemory() *Memory {
-    return &Memory{tenants: map[string]types.Tenant{}, projects: map[string]map[string]types.Project{}, apps: map[string]map[string]map[string]types.App{}, clusters: map[int]memCluster{}, byName: map[string]int{}, nextID: 1}
+	return &Memory{tenants: map[string]types.Tenant{}, projects: map[string]map[string]types.Project{}, apps: map[string]map[string]map[string]types.App{}, clusters: map[int]memCluster{}, byName: map[string]int{}, nextID: 1}
 }
 
 func (m *Memory) Close(ctx context.Context) error { return nil }
@@ -193,34 +193,34 @@ type memCluster struct {
 }
 
 func (m *Memory) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (int, error) {
-    m.mu.Lock()
-    defer m.mu.Unlock()
-    id := m.nextID
-    m.nextID++
-    c.ID = id
-    m.clusters[id] = memCluster{c: c, enc: kubeconfigEnc}
-    m.byName[c.Name] = id
-    return id, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := m.nextID
+	m.nextID++
+	c.ID = id
+	m.clusters[id] = memCluster{c: c, enc: kubeconfigEnc}
+	m.byName[c.Name] = id
+	return id, nil
 }
 
 func (m *Memory) GetCluster(ctx context.Context, id int) (types.Cluster, string, error) {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-    mc, ok := m.clusters[id]
-    if !ok {
-        return types.Cluster{}, "", ErrNotFound
-    }
-    return mc.c, mc.enc, nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	mc, ok := m.clusters[id]
+	if !ok {
+		return types.Cluster{}, "", ErrNotFound
+	}
+	return mc.c, mc.enc, nil
 }
 
 func (m *Memory) GetClusterByName(ctx context.Context, name string) (types.Cluster, string, error) {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-    if id, ok := m.byName[name]; ok {
-        mc := m.clusters[id]
-        return mc.c, mc.enc, nil
-    }
-    return types.Cluster{}, "", ErrNotFound
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if id, ok := m.byName[name]; ok {
+		mc := m.clusters[id]
+		return mc.c, mc.enc, nil
+	}
+	return types.Cluster{}, "", ErrNotFound
 }
 
 type memEvent struct {
@@ -256,60 +256,81 @@ func (m *Memory) ListClusterEvents(ctx context.Context, clusterID int, limit int
 
 // ListClusters implements id-based pagination and simple labelSelector filtering (k=v[,k2=v2]).
 func (m *Memory) ListClusters(ctx context.Context, limit int, cursor string, labelSelector string) ([]types.Cluster, string, error) {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-    // parse cursor as last id
-    last := 0
-    for i := 0; i < len(cursor); i++ {
-        c := cursor[i]
-        if c < '0' || c > '9' { break }
-        last = last*10 + int(c-'0')
-    }
-    // parse label selector
-    want := map[string]string{}
-    if labelSelector != "" {
-        parts := strings.Split(labelSelector, ",")
-        for _, p := range parts {
-            p = strings.TrimSpace(p)
-            if p == "" { continue }
-            kv := strings.SplitN(p, "=", 2)
-            if len(kv) == 2 { want[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1]) }
-        }
-    }
-    // collect ids sorted
-    ids := make([]int, 0, len(m.clusters))
-    for id := range m.clusters { ids = append(ids, id) }
-    sort.Ints(ids)
-    out := make([]types.Cluster, 0, limit)
-    var next string
-    for _, id := range ids {
-        if id <= last { continue }
-        mc := m.clusters[id]
-        if matchesLabels(mc.c.Labels, want) {
-            out = append(out, mc.c)
-            if len(out) == limit {
-                next = itoa(id)
-                break
-            }
-        }
-    }
-    return out, next, nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	// parse cursor as last id
+	last := 0
+	for i := 0; i < len(cursor); i++ {
+		c := cursor[i]
+		if c < '0' || c > '9' {
+			break
+		}
+		last = last*10 + int(c-'0')
+	}
+	// parse label selector
+	want := map[string]string{}
+	if labelSelector != "" {
+		parts := strings.Split(labelSelector, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			kv := strings.SplitN(p, "=", 2)
+			if len(kv) == 2 {
+				want[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+			}
+		}
+	}
+	// collect ids sorted
+	ids := make([]int, 0, len(m.clusters))
+	for id := range m.clusters {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	out := make([]types.Cluster, 0, limit)
+	var next string
+	for _, id := range ids {
+		if id <= last {
+			continue
+		}
+		mc := m.clusters[id]
+		if matchesLabels(mc.c.Labels, want) {
+			out = append(out, mc.c)
+			if len(out) == limit {
+				next = itoa(id)
+				break
+			}
+		}
+	}
+	return out, next, nil
 }
 
 func matchesLabels(have map[string]string, want map[string]string) bool {
-    if len(want) == 0 { return true }
-    for k, v := range want {
-        if hv, ok := have[k]; !ok || hv != v { return false }
-    }
-    return true
+	if len(want) == 0 {
+		return true
+	}
+	for k, v := range want {
+		if hv, ok := have[k]; !ok || hv != v {
+			return false
+		}
+	}
+	return true
 }
 
 func itoa(n int) string {
-    if n == 0 { return "" }
-    // simple int to string
-    b := make([]byte, 0, 16)
-    s := []byte{}
-    for n > 0 { s = append(s, byte('0'+(n%10))); n/=10 }
-    for i := len(s)-1; i>=0; i-- { b = append(b, s[i]) }
-    return string(b)
+	if n == 0 {
+		return ""
+	}
+	// simple int to string
+	b := make([]byte, 0, 16)
+	s := []byte{}
+	for n > 0 {
+		s = append(s, byte('0'+(n%10)))
+		n /= 10
+	}
+	for i := len(s) - 1; i >= 0; i-- {
+		b = append(b, s[i])
+	}
+	return string(b)
 }

@@ -1,37 +1,35 @@
 package manager
 
 import (
-    "context"
-    "encoding/base64"
-    "encoding/json"
-    "errors"
-    "net/http"
-    "os"
-    "strings"
-    "time"
+	"context"
+	"encoding/json"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
-    "github.com/go-chi/chi/v5"
-    "github.com/go-chi/chi/v5/middleware"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
-    "github.com/vaheed/kubenova/internal/cluster"
-    httpapi "github.com/vaheed/kubenova/internal/http"
-    "github.com/vaheed/kubenova/internal/logging"
-    "github.com/vaheed/kubenova/internal/metrics"
-    "github.com/vaheed/kubenova/internal/store"
-    "github.com/vaheed/kubenova/internal/telemetry"
-    "github.com/vaheed/kubenova/pkg/types"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/vaheed/kubenova/internal/cluster"
+	httpapi "github.com/vaheed/kubenova/internal/http"
+	"github.com/vaheed/kubenova/internal/logging"
+	"github.com/vaheed/kubenova/internal/metrics"
+	"github.com/vaheed/kubenova/internal/store"
+	"github.com/vaheed/kubenova/internal/telemetry"
+	"github.com/vaheed/kubenova/pkg/types"
 	"go.uber.org/zap"
-    // removed local compute code; health checks moved to internal/cluster
+	// removed local compute code; health checks moved to internal/cluster
 )
 
 // indirection for testing
 var InstallAgentFunc = cluster.InstallAgent
 
 type Server struct {
-    r           *chi.Mux
-    store       store.Store
-    jwtKey      []byte
-    requireAuth bool
+	r           *chi.Mux
+	store       store.Store
+	jwtKey      []byte
+	requireAuth bool
 }
 
 func NewServer(s store.Store) *Server {
@@ -55,22 +53,22 @@ func NewServer(s store.Store) *Server {
 
 	mux.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
 	mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
-    mux.Method(http.MethodGet, "/metrics", promhttp.Handler())
-    mux.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "docs/openapi/openapi.yaml") })
+	mux.Method(http.MethodGet, "/metrics", promhttp.Handler())
+	mux.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "docs/openapi/openapi.yaml") })
 	// Wait endpoint: blocks until store is usable (DB ready) or timeout
 	mux.Get("/wait", srv.waitReady)
 
-    mux.Route("/sync", func(r chi.Router) {
+	mux.Route("/sync", func(r chi.Router) {
 		r.Post("/events", srv.ingestEvents)
 		r.Post("/metrics", srv.heartbeat)
 		r.Post("/logs", srv.accept204)
-    })
+	})
 
-    // Single OpenAPI-first HTTP server mounted at /api/v1
-    opts := httpapi.ChiServerOptions{BaseRouter: mux, BaseURL: ""}
-    _ = httpapi.HandlerWithOptions(httpapi.NewAPIServer(s), opts)
-    telemetry.InitOTelProvider() // best-effort noop if not configured
-    return srv
+	// Single OpenAPI-first HTTP server mounted at /api/v1
+	opts := httpapi.ChiServerOptions{BaseRouter: mux, BaseURL: ""}
+	_ = httpapi.HandlerWithOptions(httpapi.NewAPIServer(s), opts)
+	telemetry.InitOTelProvider() // best-effort noop if not configured
+	return srv
 }
 
 func (s *Server) Router() http.Handler { return s.r }
@@ -112,12 +110,6 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 }
 
 // helpers
-func getenv(k, d string) string {
-    if v := os.Getenv(k); v != "" {
-        return v
-    }
-	return d
-}
 func atoi(s string) int {
 	n := 0
 	for i := 0; i < len(s); i++ {
@@ -129,8 +121,6 @@ func atoi(s string) int {
 	}
 	return n
 }
-func encodeB64(b []byte) string          { return base64.StdEncoding.EncodeToString(b) }
-func decodeB64(s string) ([]byte, error) { return base64.StdEncoding.DecodeString(s) }
 
 // legacy tenant/project/app handlers removed; API is provided by OpenAPI server
 
@@ -166,11 +156,7 @@ func (s *Server) ingestEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) getClusterEvents(w http.ResponseWriter, r *http.Request) {
-	id := atoi(chi.URLParam(r, "id"))
-	evts, err := s.store.ListClusterEvents(r.Context(), id, 100)
-	respond(w, evts, err)
-}
+// legacy cluster events endpoint removed
 
 // query target cluster for readiness
 // computeClusterConditions moved to internal/cluster.ComputeClusterConditions
@@ -184,22 +170,7 @@ func parseBool(v string) bool {
 	}
 }
 
-func respond(w http.ResponseWriter, v any, err error) {
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "not found", 404)
-			return
-		}
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		http.Error(w, err.Error(), 500)
-	}
-}
+// respond helper removed with legacy handlers
 
 // StartHTTP starts the server on the provided addr with graceful shutdown.
 func StartHTTP(ctx context.Context, srv *http.Server) error {

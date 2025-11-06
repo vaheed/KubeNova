@@ -342,7 +342,9 @@ type PostApiV1ClustersCTenantsTProjectsPAppsAImageUpdateJSONBody struct {
 
 // GetApiV1ClustersCTenantsTProjectsPAppsALogsComponentParams defines parameters for GetApiV1ClustersCTenantsTProjectsPAppsALogsComponent.
 type GetApiV1ClustersCTenantsTProjectsPAppsALogsComponentParams struct {
-	Follow *bool `form:"follow,omitempty" json:"follow,omitempty"`
+	Follow       *bool `form:"follow,omitempty" json:"follow,omitempty"`
+	Tail         *int  `form:"tail,omitempty" json:"tail,omitempty"`
+	SinceSeconds *int  `form:"sinceSeconds,omitempty" json:"sinceSeconds,omitempty"`
 }
 
 // PutApiV1ClustersCTenantsTProjectsPAppsAPoliciesJSONBody defines parameters for PutApiV1ClustersCTenantsTProjectsPAppsAPolicies.

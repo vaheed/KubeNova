@@ -2247,6 +2247,22 @@ func (siw *ServerInterfaceWrapper) GetApiV1ClustersCTenantsTProjectsPAppsALogsCo
 		return
 	}
 
+	// ------------- Optional query parameter "tail" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tail", r.URL.Query(), &params.Tail)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tail", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sinceSeconds" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sinceSeconds", r.URL.Query(), &params.SinceSeconds)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sinceSeconds", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetApiV1ClustersCTenantsTProjectsPAppsALogsComponent(w, r, c, t, p, a, component, params)
 	}))
