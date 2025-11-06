@@ -82,7 +82,7 @@ jobs:
 
   e2e_suite:
     runs-on: ubuntu-latest
-    needs: [lint_unit, gosec_scan, trivy_fs, trivy_config, trivy_images]
+    needs: [lint_unit, gosec_scan, trivy_fs, trivy_config, trivy_images, build_push_amd64, charts_push_oci]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -107,7 +107,6 @@ jobs:
       - name: Run end-to-end suite
         env:
           E2E_RUN: "1"
-          E2E_BUILD_IMAGES: "1"
           E2E_KIND_CLUSTER: kubenova-e2e
         run: |
           set -euo pipefail
@@ -256,7 +255,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_push_amd64
-      - e2e_suite
     permissions:
       contents: read
       packages: write
