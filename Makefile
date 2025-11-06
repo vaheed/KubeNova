@@ -29,7 +29,7 @@ test-unit:
 	go test ./... -count=1
 
 test-e2e:
-	E2E_KIND_CLUSTER=$(E2E_KIND_CLUSTER) go test ./tests/e2e/... -v -count=1 -timeout=45m
+	E2E_KIND_CLUSTER=$(E2E_KIND_CLUSTER) go test ./tests/e2e/... -v -count=1 -timeout=15m
 
 kind-flow:
 	bash kind/scripts/run_user_flow.sh
@@ -42,13 +42,6 @@ agent-build:
 
 agent-push:
 	docker push ghcr.io/vaheed/kubenova/agent:dev
-
-docs-build:
-	cd docs/site && npm ci || npm install
-	cd docs/site && npm run docs:build
-
-docs-serve:
-	cd docs/site && npm run docs:serve
-
+	
 down:
 	kind delete cluster --name $(KIND_CLUSTER)

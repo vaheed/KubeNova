@@ -2,3 +2,4 @@ apiVersion: v2
 name: agent
 version: 0.3.3
 type: application
+icon: https://raw.githubusercontent.com/vaheed/kubenova/main/docs/diagrams/KubeNova.png

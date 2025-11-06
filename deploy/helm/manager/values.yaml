@@ -7,3 +7,12 @@ env:
   KUBENOVA_REQUIRE_AUTH: "true"
   AGENT_IMAGE: ghcr.io/vaheed/kubenova/agent:dev
   MANAGER_URL_PUBLIC: http://kubenova-manager.kubenova-system.svc.cluster.local:8080
+  # CAPSULE_PROXY_URL: http://capsule-proxy.capsule-system.svc.cluster.local:9001
+
+# JWT signing key configuration
+# If 'jwt.existingSecret' is set, the deployment reads JWT_SIGNING_KEY from that secret.
+# Otherwise, when 'jwt.value' is non-empty, this chart creates a Secret named 'kubenova-manager-jwt'.
+jwt:
+  existingSecret: ""
+  key: JWT_SIGNING_KEY
+  value: ""

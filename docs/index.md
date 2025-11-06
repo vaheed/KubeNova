@@ -170,10 +170,31 @@ curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$
   -H 'Content-Type: application/json' $AUTH -d '[{"type":"rollout","properties":{"maxUnavailable":1}}]' -i
 curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/image-update" \
   -H 'Content-Type: application/json' $AUTH -d '{"component":"web","image":"nginx","tag":"1.25.3"}' -i
-curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID" $AUTH -i
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:delete" $AUTH -i
 ```
 
-## 6) Catalog
+## 6) PolicySets
+
+```bash
+# List tenant policy sets
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/policysets" $AUTH | jq .
+
+# Create a policy set
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/policysets" \
+  -H 'Content-Type: application/json' $AUTH \
+  -d '{"name":"baseline","description":"Base guardrails","rules":[]}' -i
+
+# Get/update/delete a policy set
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/policysets/baseline" $AUTH | jq .
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/policysets/baseline" \
+  -H 'Content-Type: application/json' $AUTH -d '{"name":"baseline","description":"Updated","rules":[]}' -i
+curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/policysets/baseline" $AUTH -i
+
+# Cluster curated PolicySet catalog
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/policysets/catalog" $AUTH | jq .
+```
+
+## 7) Catalog
 
 ```bash
 curl -sS "$BASE/api/v1/catalog/components" $AUTH | jq .
@@ -199,10 +220,11 @@ curl -sS "$BASE/api/v1/catalog/workflows" $AUTH | jq .
 ```
 :::
 
-## 7) Usage & kubeconfig
+## 8) Usage & kubeconfig
 
 ```bash
 curl -sS "$BASE/api/v1/tenants/$TENANT_ID/usage?range=24h" $AUTH | jq .
+curl -sS "$BASE/api/v1/projects/$PROJECT_ID/usage?range=24h" $AUTH | jq .
 curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" $AUTH | jq .
 ```
 
@@ -221,7 +243,7 @@ curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" $AUTH | jq .
 ```
 :::
 
-## 8) Cleanup
+## 9) Cleanup
 
 ```bash
 curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_ID" $AUTH -i

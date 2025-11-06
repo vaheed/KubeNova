@@ -35,6 +35,13 @@ spec:
               value: "{{ .Values.env.DEFAULT_NS_RESOURCEQUOTA | default "" }}"
             - name: DEFAULT_PROJECT_QUOTA
               value: "{{ .Values.env.DEFAULT_PROJECT_QUOTA | default "" }}"
+            {{- if or .Values.jwt.existingSecret .Values.jwt.value }}
+            - name: JWT_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.jwt.existingSecret }}{{ .Values.jwt.existingSecret }}{{ else }}kubenova-manager-jwt{{ end }}
+                  key: {{ .Values.jwt.key | default "JWT_SIGNING_KEY" }}
+            {{- end }}
           readinessProbe:
             httpGet: { path: /healthz, port: 8080 }
             initialDelaySeconds: 3
