@@ -22,22 +22,34 @@ components:
       name: c
       in: path
       required: true
-      schema: { type: string }
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f-]{36}$'
     TenantParam:
       name: t
       in: path
       required: true
-      schema: { type: string }
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f-]{36}$'
     ProjectParam:
       name: p
       in: path
       required: true
-      schema: { type: string }
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f-]{36}$'
     AppParam:
       name: a
       in: path
       required: true
-      schema: { type: string }
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f-]{36}$'
     Limit:
       name: limit
       in: query
@@ -82,6 +94,11 @@ components:
       type: object
       required: [name]
       properties:
+        uid:
+          type: string
+          description: Stable unique identifier
+          format: uuid
+          pattern: '^[0-9a-f-]{36}$'
         name: { type: string }
         displayName: { type: string }
         labels: { type: object, additionalProperties: { type: string } }
@@ -104,6 +121,10 @@ components:
       type: object
       required: [name]
       properties:
+        uid:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f-]{36}$'
         name: { type: string }
         owners: { type: array, items: { type: string } }
         labels: { type: object, additionalProperties: { type: string } }
@@ -119,6 +140,10 @@ components:
       type: object
       required: [name]
       properties:
+        uid:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f-]{36}$'
         name: { type: string }
         labels: { type: object, additionalProperties: { type: string } }
         annotations: { type: object, additionalProperties: { type: string } }
@@ -152,6 +177,10 @@ components:
       type: object
       required: [name]
       properties:
+        uid:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f-]{36}$'
         name: { type: string }
         description: { type: string }
         components: { type: array, items: { type: object } }

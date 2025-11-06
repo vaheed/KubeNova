@@ -51,7 +51,7 @@ curl -sS -X POST "$BASE/api/v1/clusters" -H 'Content-Type: application/json' $AU
 curl -sS "$BASE/api/v1/clusters?limit=50&labelSelector=env%3Ddev" $AUTH -i
 
 # Get cluster
-# - Path param {c} accepts name or numeric id
+# - Path param {c} is a UUID (lowercase)
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME" $AUTH -i
 
 # Capabilities
@@ -64,7 +64,7 @@ curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/bootstrap/tenancy" $AUTH -
 
 # Delete cluster
 # - Removes KubeNova registration and uninstalls agent resources from the target cluster
-# - Accepts name or numeric id
+# - Requires the cluster UUID
 curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME" $AUTH -i
 
 # ----------------------------------------------------------------------------

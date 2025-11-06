@@ -33,21 +33,28 @@ type Store interface {
 	DeleteApp(ctx context.Context, tenant, project, name string) error
 
 	// Clusters
-	CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (int, error)
-	GetCluster(ctx context.Context, id int) (types.Cluster, string, error)
+	CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (types.ID, error)
+	GetCluster(ctx context.Context, id types.ID) (types.Cluster, string, error)
 	// GetClusterByName returns cluster by name with stored kubeconfig encoding.
 	GetClusterByName(ctx context.Context, name string) (types.Cluster, string, error)
+	// GetClusterByUID returns cluster by uid with stored kubeconfig encoding.
+	GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error)
 	// DeleteCluster removes a cluster by id.
-	DeleteCluster(ctx context.Context, id int) error
+	DeleteCluster(ctx context.Context, id types.ID) error
 
 	// Events & condition history
-	AddEvents(ctx context.Context, clusterID *int, evts []types.Event) error
-	AddConditionHistory(ctx context.Context, clusterID int, conds []types.Condition) error
-	ListClusterEvents(ctx context.Context, clusterID int, limit int) ([]types.Event, error)
+	AddEvents(ctx context.Context, clusterID *types.ID, evts []types.Event) error
+	AddConditionHistory(ctx context.Context, clusterID types.ID, conds []types.Condition) error
+	ListClusterEvents(ctx context.Context, clusterID types.ID, limit int) ([]types.Event, error)
 
 	// ListClusters returns clusters with optional pagination and label filtering.
-	// Cursor is an opaque string returned by the previous call (id-based).
+	// Cursor is an opaque string returned by the previous call (UUID-based).
 	ListClusters(ctx context.Context, limit int, cursor string, labelSelector string) ([]types.Cluster, string, error)
+
+	// UID-based helpers for tenant/project/app resolution
+	GetTenantByUID(ctx context.Context, uid string) (types.Tenant, error)
+	GetProjectByUID(ctx context.Context, uid string) (types.Project, error)
+	GetAppByUID(ctx context.Context, uid string) (types.App, error)
 }
 
 var ErrNotFound = errors.New("not found")
