@@ -8,7 +8,7 @@ Helm charts and deployment assets.
 Publishing
 - CI publishes charts in two formats:
   - GitHub Pages: charts/dev (develop) and charts/stable (main)
-- OCI (GHCR): oci://ghcr.io/<owner>/kubenova/{manager,kubenova-agent}
+- OCI (GHCR): oci://ghcr.io/<owner>/kubenova-charts/{manager,kubenova-agent}
     - lightweight tags: dev (develop) and latest (main)
 
 Install (Helm repo)
