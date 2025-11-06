@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -282,7 +283,15 @@ func (s *APIServer) GetApiV1ClustersC(w http.ResponseWriter, r *http.Request, c 
 		return
 	}
 	name := string(c)
-	cl, enc, err := s.st.GetClusterByName(r.Context(), name)
+	// accept numeric id or name
+	var cl kn.Cluster
+	var enc string
+	var err error
+	if id, errN := strconv.Atoi(name); errN == nil && strconv.Itoa(id) == name {
+		cl, enc, err = s.st.GetCluster(r.Context(), id)
+	} else {
+		cl, enc, err = s.st.GetClusterByName(r.Context(), name)
+	}
 	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
@@ -305,6 +314,30 @@ func (s *APIServer) GetApiV1ClustersC(w http.ResponseWriter, r *http.Request, c 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// (DELETE /api/v1/clusters/{c})
+func (s *APIServer) DeleteApiV1ClustersC(w http.ResponseWriter, r *http.Request, c ClusterParam) {
+	if !s.requireRoles(w, r, "admin", "ops") {
+		return
+	}
+	ident := string(c)
+	// resolve id: allow numeric id or name lookup
+	id, errN := strconv.Atoi(ident)
+	if errN != nil || strconv.Itoa(id) != ident {
+		// lookup by name to get id
+		cl, _, err := s.st.GetClusterByName(r.Context(), ident)
+		if err != nil {
+			s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+			return
+		}
+		id = cl.ID
+	}
+	if err := s.st.DeleteCluster(r.Context(), id); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // (GET /api/v1/clusters/{c}/capabilities)

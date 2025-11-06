@@ -223,6 +223,18 @@ func (m *Memory) GetClusterByName(ctx context.Context, name string) (types.Clust
 	return types.Cluster{}, "", ErrNotFound
 }
 
+func (m *Memory) DeleteCluster(ctx context.Context, id int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mc, ok := m.clusters[id]
+	if !ok {
+		return nil
+	}
+	delete(m.clusters, id)
+	delete(m.byName, mc.c.Name)
+	return nil
+}
+
 type memEvent struct {
 	clusterID *int
 	e         types.Event

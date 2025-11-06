@@ -37,6 +37,8 @@ type Store interface {
 	GetCluster(ctx context.Context, id int) (types.Cluster, string, error)
 	// GetClusterByName returns cluster by name with stored kubeconfig encoding.
 	GetClusterByName(ctx context.Context, name string) (types.Cluster, string, error)
+	// DeleteCluster removes a cluster by id.
+	DeleteCluster(ctx context.Context, id int) error
 
 	// Events & condition history
 	AddEvents(ctx context.Context, clusterID *int, evts []types.Event) error

@@ -203,6 +203,11 @@ func (p *Postgres) GetClusterByName(ctx context.Context, name string) (types.Clu
 	return c, enc, nil
 }
 
+func (p *Postgres) DeleteCluster(ctx context.Context, id int) error {
+	_, err := p.db.Exec(ctx, `DELETE FROM clusters WHERE id=$1`, id)
+	return err
+}
+
 func mapToJSONB(m map[string]string) any {
 	if m == nil {
 		return map[string]string{}
