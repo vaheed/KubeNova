@@ -19,30 +19,30 @@ func main() {
 		closeFn func(context.Context) error
 		err     error
 	)
-	// Prefer Postgres if DATABASE_URL set; retry briefly so compose DB can come up.
-	if os.Getenv("DATABASE_URL") != "" {
-		var pst store.Store
-		var pclose func(context.Context) error
-		err := util.Retry(60*time.Second, func() (bool, error) {
-			s, c, e := store.EnvOrMemory()
-			if e != nil {
-				return true, e
-			}
-			// If we got memory while DATABASE_URL was set, retry
-			// but EnvOrMemory returns Postgres when DATABASE_URL is set; keep guard anyway
-			pst, pclose = s, c
-			return false, nil
-		})
-		if err != nil {
-			logging.L.Fatal("postgres connect", zap.Error(err))
-		}
-		st, closeFn = pst, pclose
-	} else {
-		st, closeFn, err = store.EnvOrMemory()
-		if err != nil {
-			logging.L.Fatal("store init", zap.Error(err))
+	// Validate required env
+	if v := os.Getenv("KUBENOVA_REQUIRE_AUTH"); v == "true" || v == "1" || v == "t" || v == "on" || v == "yes" || v == "y" {
+		if os.Getenv("JWT_SIGNING_KEY") == "" {
+			logging.L.Fatal("missing required env for auth", zap.String("env", "JWT_SIGNING_KEY"))
 		}
 	}
+	// Require DATABASE_URL to be set; no in-memory fallback
+	if os.Getenv("DATABASE_URL") == "" {
+		logging.L.Fatal("missing required env", zap.String("env", "DATABASE_URL"))
+	}
+	var pst store.Store
+	var pclose func(context.Context) error
+	err = util.Retry(60*time.Second, func() (bool, error) {
+		s, c, e := store.EnvOrMemory() // EnvOrMemory returns Postgres when DATABASE_URL is set
+		if e != nil {
+			return true, e
+		}
+		pst, pclose = s, c
+		return false, nil
+	})
+	if err != nil {
+		logging.L.Fatal("postgres connect", zap.Error(err))
+	}
+	st, closeFn = pst, pclose
 	defer closeFn(context.Background())
 
 	srv := mngr.NewServer(st)

@@ -287,13 +287,34 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/TokenRequest' } } }
       responses:
-        '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/TokenResponse' } } } }
-        '401': { description: unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+              examples:
+                success:
+                  value: { token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", expiresAt: "2025-01-01T12:00:00Z" }
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                unauthorized:
+                  value: { code: "KN-401", message: "missing bearer token" }
   /api/v1/me:
     get:
       summary: Return subject and roles of the caller
       responses:
-        '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/MeResponse' } } } }
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeResponse' }
+              examples:
+                me:
+                  value: { subject: "alice@example.com", roles: ["admin"] }
 
   # Clusters
   /api/v1/clusters:
@@ -301,22 +322,74 @@ paths:
       summary: List clusters
       parameters: [ { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/LabelSelector' } ]
       responses:
-        '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Cluster' } } } } }
+        '200':
+          description: ok
+          headers:
+            X-Next-Cursor:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Cluster' } }
+              examples:
+                page:
+                  value:
+                    - { uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
     post:
       summary: Register a cluster using kubeconfig
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/ClusterRegistration' } } }
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClusterRegistration' }
+            examples:
+              register:
+                value:
+                  name: kind
+                  kubeconfig: YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==
+                  labels: { env: dev }
       responses:
-        '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/Cluster' } } } }
-        '422': { description: validation error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cluster' }
+              examples:
+                created:
+                  value: { uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
+        '422':
+          description: validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-422", message: "name and kubeconfig required" }
   /api/v1/clusters/{c}:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
     get:
       summary: Get cluster
       responses:
-        '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Cluster' } } } }
-        '404': { description: not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cluster' }
+              examples:
+                cluster:
+                  value:
+                    uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60"
+                    name: "kind"
+                    conditions:
+                      - { type: "AgentReady", status: "True", lastTransitionTime: "2025-01-01T00:01:00Z" }
+                      - { type: "AddonsReady", status: "True", lastTransitionTime: "2025-01-01T00:02:00Z" }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
     delete:
       summary: Delete cluster
       responses:
@@ -337,23 +410,62 @@ paths:
     get:
       summary: Get cluster capabilities
       responses:
-        '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/ClusterCapabilities' } } } }
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClusterCapabilities' }
+              examples:
+                caps:
+                  value: { tenancy: true, vela: true, proxy: true }
 
   # Tenants
   /api/v1/clusters/{c}/tenants:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/LabelSelector' }, { $ref: '#/components/parameters/OwnerFilter' } ]
     get:
       summary: List tenants
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Tenant' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Tenant' } }
+              examples:
+                list:
+                  value:
+                    - { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
     post:
       summary: Create tenant
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } }
-      responses: { '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Tenant' }
+            examples:
+              create:
+                value: { name: "acme", owners: ["owner@example.com"], labels: { team: platform } }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+              examples:
+                created:
+                  value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
   /api/v1/clusters/{c}/tenants/{t}:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
     get:
       summary: Get tenant
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Tenant' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+              examples:
+                tenant:
+                  value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
     delete:
       summary: Delete tenant
       responses: { '204': { description: deleted } }
@@ -399,11 +511,34 @@ paths:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
     get:
       summary: List projects for tenant
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Project' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Project' } }
+              examples:
+                list:
+                  value: [ { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" } ]
     post:
       summary: Create project
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
-      responses: { '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Project' }
+            examples:
+              create:
+                value: { name: "web" }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+              examples:
+                created:
+                  value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
     get:
@@ -468,16 +603,47 @@ paths:
     get:
       summary: List apps
       parameters: [ { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' } ]
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/App' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/App' } }
+              examples:
+                list:
+                  value: [ { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" } ]
     post:
       summary: Create app
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } }
-      responses: { '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/App' }
+            examples:
+              create:
+                value: { name: "hello" }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+              examples:
+                created:
+                  value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
     get:
       summary: Get app
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+              examples:
+                app:
+                  value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
     put:
       summary: Update app
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } }
@@ -519,12 +685,28 @@ paths:
     get:
       summary: Get app status
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/AppStatus' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppStatus' }
+              examples:
+                status:
+                  value: { phase: "Running", healthy: true, conditions: [ { type: "Available", status: "True" } ] }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/revisions:
     get:
       summary: List app revisions
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AppRevision' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AppRevision' } }
+              examples:
+                revisions:
+                  value: [ { revision: 1, createdAt: "2025-01-01T00:00:00Z" } ]
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/diff/{revA}/{revB}:
     get:
       summary: Diff between two app revisions
@@ -541,7 +723,15 @@ paths:
           in: path
           required: true
           schema: { type: integer }
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/AppDiff' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppDiff' }
+              examples:
+                diff:
+                  value: { from: 1, to: 2, changes: [] }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/logs/{component}:
     get:
       summary: Stream or fetch component logs
@@ -563,7 +753,15 @@ paths:
         - name: sinceSeconds
           in: query
           schema: { type: integer, minimum: 1, maximum: 604800 }
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/LogLine' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/LogLine' } }
+              examples:
+                logs:
+                  value: [ { ts: "2025-01-01T00:00:00Z", component: "web", message: "started" } ]
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits:
     put:
       summary: Replace app traits

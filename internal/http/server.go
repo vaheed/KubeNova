@@ -45,7 +45,7 @@ func NewAPIServer(st store.Store) *APIServer {
 	return &APIServer{
 		st:          st,
 		requireAuth: parseBool(os.Getenv("KUBENOVA_REQUIRE_AUTH")),
-		jwtKey:      []byte(getenv("JWT_SIGNING_KEY", "dev")),
+		jwtKey:      []byte(os.Getenv("JWT_SIGNING_KEY")),
 		newCapsule:  capib.New,
 		newVela: func(b []byte) interface {
 			Deploy(context.Context, string, string) error
