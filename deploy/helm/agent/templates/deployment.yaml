@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agent
-  labels: { app: agent }
+  name: kubenova-agent
+  labels: { app: kubenova-agent }
 spec:
-  replicas: 1
+  replicas: 2
   selector:
-    matchLabels: {app: agent}
+    matchLabels: {app: kubenova-agent}
   template:
     metadata:
-      labels: {app: agent}
+      labels: {app: kubenova-agent}
     spec:
       securityContext:
         runAsNonRoot: true
-      serviceAccountName: agent
+      serviceAccountName: kubenova-agent
       containers:
         - name: agent
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -34,12 +34,6 @@ spec:
               value: "{{ .Values.manager.url }}"
             - name: BATCH_INTERVAL_SECONDS
               value: {{ .Values.manager.batchIntervalSeconds | quote }}
-            - name: CAPSULE_VERSION
-              value: {{ .Values.bootstrap.capsuleVersion | quote }}
-            - name: CAPSULE_PROXY_VERSION
-              value: {{ .Values.bootstrap.capsuleProxyVersion | quote }}
-            - name: VELA_CORE_VERSION
-              value: {{ .Values.bootstrap.velaCoreVersion | quote }}
             - name: REDIS_ADDR
               value: "{{ .Values.redis.addr }}"
             - name: BATCH_MAX_ITEMS

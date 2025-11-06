@@ -199,7 +199,7 @@ func (e *Environment) ensureImages(ctx context.Context) error {
 	}
 	tag := fmt.Sprintf("e2e-%d", time.Now().UnixNano())
 	managerImage := fmt.Sprintf("kubenova-manager:%s", tag)
-	agentImage := fmt.Sprintf("agent:%s", tag)
+	agentImage := fmt.Sprintf("kubenova-agent:%s", tag)
 	builds := []struct {
 		image      string
 		dockerfile string

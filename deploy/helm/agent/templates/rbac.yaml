@@ -1,11 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: agent
+  name: kubenova-agent
 rules:
-  - apiGroups: ["coordination.k8s.io"]
-    resources: ["leases"]
-    verbs: ["get","list","watch","create","update","patch"]
   - apiGroups: [""]
     resources: ["namespaces","configmaps","events"]
     verbs: ["get","list","watch","create","update","patch"]
@@ -22,18 +19,18 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: agent
+  name: kubenova-agent
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: agent
+  name: kubenova-agent
 subjects:
   - kind: ServiceAccount
-    name: agent
+    name: kubenova-agent
     namespace: kubenova-system
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: agent
+  name: kubenova-agent
   namespace: kubenova-system

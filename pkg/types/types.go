@@ -6,7 +6,6 @@ import "time"
 
 type Cluster struct {
 	ID            int               `json:"id,omitempty"`
-	UID           string            `json:"uid,omitempty"`
 	Name          string            `json:"name"`
 	DisplayName   string            `json:"displayName,omitempty"`
 	KubeconfigB64 string            `json:"kubeconfig,omitempty"`

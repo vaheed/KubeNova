@@ -35,8 +35,8 @@ echo "$RESP"
 CID=$(echo "$RESP" | jq -r .id)
 
 echo "[agent] Wait for Agent 2/2 Ready and HPA"
-kubectl -n "$NS" rollout status deploy/agent --timeout=5m
-kubectl -n "$NS" get hpa agent
+kubectl -n "$NS" rollout status deploy/kubenova-agent --timeout=5m
+kubectl -n "$NS" get hpa kubenova-agent
 
 echo "[addons] Wait for Capsule/capsule-proxy/KubeVela (best-effort)"
 kubectl -n capsule-system rollout status deploy/capsule-controller-manager --timeout=10m || true

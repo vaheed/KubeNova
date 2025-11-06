@@ -6,6 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/vaheed/kubenova/pkg/types"
+	"strconv"
+	"strings"
 )
 
 // Postgres implements Store using pgx. It applies the bootstrap migration on open.
@@ -186,9 +188,19 @@ func (p *Postgres) GetCluster(ctx context.Context, id int) (types.Cluster, strin
 	return c, enc, nil
 }
 
-func (p *Postgres) GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error) {
-	// Postgres schema does not yet store UID; fall back to numeric id lookup failure
-	return types.Cluster{}, "", ErrNotFound
+func (p *Postgres) GetClusterByName(ctx context.Context, name string) (types.Cluster, string, error) {
+	var c types.Cluster
+	var enc string
+	var labels map[string]string
+	var id int
+	err := p.db.QueryRow(ctx, `SELECT id, kubeconfig_enc, labels, created_at FROM clusters WHERE name=$1`, name).Scan(&id, &enc, &labels, &c.CreatedAt)
+	if err != nil {
+		return types.Cluster{}, "", ErrNotFound
+	}
+	c.ID = id
+	c.Name = name
+	c.Labels = labels
+	return c, enc, nil
 }
 
 func mapToJSONB(m map[string]string) any {
@@ -226,6 +238,10 @@ CREATE TABLE IF NOT EXISTS clusters (
   labels JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- indexes for clusters listing and label filtering
+CREATE INDEX IF NOT EXISTS clusters_id_idx ON clusters(id);
+CREATE INDEX IF NOT EXISTS clusters_labels_gin_idx ON clusters USING gin(labels);
 
 CREATE TABLE IF NOT EXISTS events (
   id BIGSERIAL PRIMARY KEY,
@@ -286,4 +302,74 @@ func (p *Postgres) ListClusterEvents(ctx context.Context, clusterID int, limit i
 		out = append(out, e)
 	}
 	return out, nil
+}
+
+func (p *Postgres) ListClusters(ctx context.Context, limit int, cursor string, labelSelector string) ([]types.Cluster, string, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	last := 0
+	for i := 0; i < len(cursor); i++ {
+		c := cursor[i]
+		if c < '0' || c > '9' {
+			break
+		}
+		last = last*10 + int(c-'0')
+	}
+	// build where clause
+	where := []string{"id > $1"}
+	args := []any{last}
+	idx := 2
+	if labelSelector != "" {
+		// parse simple k=v pairs
+		pairs := map[string]string{}
+		for _, pz := range strings.Split(labelSelector, ",") {
+			kv := strings.SplitN(strings.TrimSpace(pz), "=", 2)
+			if len(kv) == 2 {
+				pairs[kv[0]] = kv[1]
+			}
+		}
+		if len(pairs) > 0 {
+			// build a jsonb object string parameter
+			// e.g., '{"env":"dev","tier":"gold"}'
+			sb := strings.Builder{}
+			sb.WriteString("{")
+			i := 0
+			for k, v := range pairs {
+				if i > 0 {
+					sb.WriteString(",")
+				}
+				sb.WriteString("\"")
+				sb.WriteString(k)
+				sb.WriteString("\":\"")
+				sb.WriteString(v)
+				sb.WriteString("\"")
+				i++
+			}
+			sb.WriteString("}")
+			where = append(where, "labels @> $"+strconv.Itoa(idx)+"::jsonb")
+			args = append(args, sb.String())
+			idx++
+		}
+	}
+	q := "SELECT id, name, labels, created_at FROM clusters WHERE " + strings.Join(where, " AND ") + " ORDER BY id ASC LIMIT $" + strconv.Itoa(idx)
+	args = append(args, limit)
+	rows, err := p.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	out := []types.Cluster{}
+	next := ""
+	for rows.Next() {
+		var c types.Cluster
+		if err := rows.Scan(&c.ID, &c.Name, &c.Labels, &c.CreatedAt); err != nil {
+			return nil, "", err
+		}
+		out = append(out, c)
+	}
+	if len(out) == limit {
+		next = strconv.Itoa(out[len(out)-1].ID)
+	}
+	return out, next, nil
 }

@@ -26,3 +26,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [0.3.0] - 2025-07-01
 ### Added
 - Baseline release of Manager and Agent Helm charts with Capsule/KubeVela integration.
+## [0.4.0] - 2025-11-06
+### Cleanup & Dedupe
+- Remove legacy HTTP routes and JWT middleware from manager; mount single OpenAPI server at `/api/v1`.
+- Delete duplicate/unused helpers (`internal/http/errors.go`, `internal/http/auth.go`, manager `respond`, misc env helpers).
+- Keep canonical spec at `docs/openapi/openapi.yaml`; remove duplicate `docs/openapi.yaml`.
+- Implement Clusters/Tenants/Projects/Apps handlers in OpenAPI server and system/token endpoints.
+- Add dynamic backends for tenancy/apps using client-go without vendor leakage.
+- Add Postgres `ListClusters` with label filter + cursor and indexes; tests (integration + memory).
+- Update docs to reflect single API surface; runnable curl remains.

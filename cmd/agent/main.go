@@ -32,7 +32,7 @@ func main() {
 		Metrics:                metricsserver.Options{BindAddress: ":8081"},
 		HealthProbeBindAddress: ":8082",
 		LeaderElection:         true,
-		LeaderElectionID:       "agent-leader",
+		LeaderElectionID:       "kubenova-agent-leader",
 	})
 	if err != nil {
 		logging.L.Fatal("manager", zap.Error(err))

@@ -5,3 +5,7 @@
 - Rollback: Reapply a prior Agent image; helm job installs add-ons idempotently.
 - Health Checks: `/healthz` and `/readyz` on both Manager and Agent.
 - Metrics: `/metrics` Prometheus endpoint on Manager; Controller-runtime metrics on Agent.
+## API Surface
+
+- The API is served at `/api/v1` using the contract-first router. No legacy endpoints remain.
+- The OpenAPI spec remains available at `/openapi.yaml`.
