@@ -29,6 +29,12 @@ spec:
               value: "{{ .Values.env.AGENT_IMAGE }}"
             - name: MANAGER_URL_PUBLIC
               value: "{{ .Values.env.MANAGER_URL_PUBLIC }}"
+            - name: CAPSULE_PROXY_URL
+              value: "{{ .Values.env.CAPSULE_PROXY_URL }}"
+            - name: DEFAULT_NS_RESOURCEQUOTA
+              value: "{{ .Values.env.DEFAULT_NS_RESOURCEQUOTA | default "" }}"
+            - name: DEFAULT_PROJECT_QUOTA
+              value: "{{ .Values.env.DEFAULT_PROJECT_QUOTA | default "" }}"
           readinessProbe:
             httpGet: { path: /healthz, port: 8080 }
             initialDelaySeconds: 3
