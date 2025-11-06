@@ -112,6 +112,14 @@ curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/network-po
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/summary" $AUTH | jq .
 ```
 
+Filter tenants by labels and owner
+```bash
+# Label selector (k=v[,k=v])
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants?labelSelector=env%3Dprod,tier%3Dgold" $AUTH | jq .
+# Owner e-mail/subject
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants?owner=alice@example.com" $AUTH | jq .
+```
+
 ## 4) Projects
 
 Create project and capture UID

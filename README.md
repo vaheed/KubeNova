@@ -34,6 +34,11 @@ Tests
 Docs
 - VitePress site at `docs/site`. Build with `make docs-build` and serve with `make docs-serve`.
 
+New features
+- Tenant listing supports `labelSelector` and `owner` filters.
+- App operations wired to KubeVela: traits, policies, image-update, delete action.
+- E2E: Set `E2E_VELA_OPS=1` to auto-install KubeVela Core in Kind and run ops scenario.
+
 Helm charts
 - CI publishes packaged charts to GitHub Pages:
   - develop → https://vaheed.github.io/kubenova/charts/dev
@@ -82,6 +87,8 @@ helm upgrade --install agent kubenova/agent \
   --set bootstrap.capsuleVersion=0.10.6 \
   --set bootstrap.capsuleProxyVersion=0.9.13
 ```
+
+Note: The Manager chart supports JWT secret injection via `jwt.existingSecret` or inline `jwt.value` for development.
 
 This document includes:
 - Capsule & capsule-proxy bootstrap instructions  

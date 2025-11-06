@@ -17,6 +17,10 @@ helm repo add kubenova https://vaheed.github.io/kubenova/charts/stable
 helm install manager kubenova/manager -n kubenova-system --create-namespace
 ```
 
+Notes
+- Charts now include icons and the Manager chart supports JWT secret injection via values.
+- See per-chart READMEs for install flags and values: `deploy/helm/manager/README.md`, `deploy/helm/agent/README.md`.
+
 Install (OCI)
 ```
 helm registry login ghcr.io -u <user> -p <token>

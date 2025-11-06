@@ -117,6 +117,11 @@ Status phases: `Pending|Applying|Deployed|Drifted|Error`.
 - Kubeconfigs via **KubeconfigGrant**: TTL, verbs, namespaces; endpoint = access proxy.
 - Envelope encryption for secrets; periodic key rotation.
 
+New features
+- Tenant listing supports `labelSelector` and `owner` filters.
+- App operations wired to KubeVela: `traits`, `policies`, `image-update`, `:delete` action.
+- See interactive examples in `docs/index.md` (Section 5 and 6).
+
 ## Observability
 - Logs: structured JSON with `request_id`, `tenant`, `cluster`, `adapter`.
 - Metrics: `kubenova_reconcile_seconds`, `kubenova_events_total`, `kubenova_adapter_errors_total`.
