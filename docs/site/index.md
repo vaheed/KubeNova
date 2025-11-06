@@ -4,12 +4,8 @@
 # How to use this guide
 # - Copy the whole block, paste into a terminal, and adjust variables at top
 # - Every section shows the endpoint, required/optional params, and common options
+# - IDs in path params are UUIDv4 (lowercase). Names are only used in bodies and filters.
 # - All commands are idempotent where possible; re-running is safe
-#
-# Auth
-# - If auth is enabled on the server, set KN_TOKEN (JWT with roles)
-# - Roles: admin, ops, tenantOwner, projectDev, readOnly
-# - You can also pass X-KN-Roles for dev/testing
 
 export BASE=${BASE:-http://localhost:8080}
 # export KN_TOKEN="<jwt>"
@@ -21,9 +17,13 @@ AUTH=${KN_TOKEN:+-H "Authorization: Bearer $KN_TOKEN"}
 # Issue a token (admin role for demo)
 curl -sS -X POST "$BASE/api/v1/tokens" -H 'Content-Type: application/json' \
   -d '{"subject":"demo","roles":["admin"],"ttlSeconds":3600}'
+# Example output:
+# { "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", "expiresAt": "2025-01-01T12:00:00Z" }
 
 # Who am I?
 curl -sS "$BASE/api/v1/me" $AUTH
+# Example output:
+# { "subject": "demo", "roles": ["admin"] }
 
 # Version and Features
 curl -sS "$BASE/api/v1/version" $AUTH
@@ -42,191 +42,161 @@ export KUBE_B64=$(base64 < ~/.kube/config | tr -d '\n')
 # Register cluster
 curl -sS -X POST "$BASE/api/v1/clusters" -H 'Content-Type: application/json' $AUTH \
   -d '{"name":"'$CLUSTER_NAME'","kubeconfig":"'$KUBE_B64'","labels":{"env":"dev"}}'
+# Example output:
+# { "name": "dev", "labels": {"env":"dev"}, "createdAt": "2025-01-01T00:00:00Z" }
 
-# List clusters
-# - Query args:
-#   - limit: 1..200 (default 50)
-#   - cursor: opaque pagination cursor from X-Next-Cursor header
-#   - labelSelector: simple k=v[,k2=v2]
+# Resolve the cluster UUID by listing and filtering by name
+CLUSTER_ID=$(curl -sS "$BASE/api/v1/clusters?limit=200" $AUTH | \
+  jq -r '.[] | select(.name=="'$CLUSTER_NAME'") | .uid')
+echo "CLUSTER_ID=$CLUSTER_ID"
+
+# List clusters (with label filter)
 curl -sS "$BASE/api/v1/clusters?limit=50&labelSelector=env%3Ddev" $AUTH -i
+# Example output (body):
+# [ { "uid": "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", "name": "dev", "labels": {"env":"dev"}, "createdAt": "..." } ]
 
-# Get cluster
-# - Path param {c} is a UUID (lowercase)
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME" $AUTH -i
+# Get cluster (path {c} is UUID)
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID" $AUTH | jq .
+# Example output includes conditions when available
+# { "name": "dev", "conditions": [ {"type":"AgentReady","status":"True"} ] }
 
 # Capabilities
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/capabilities" $AUTH
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/capabilities" $AUTH | jq .
+# Example output: { "tenancy": true, "vela": true, "proxy": true }
 
 # Bootstrap components
 # - POST /clusters/{c}/bootstrap/{component}
 # - {component} ∈ {tenancy, proxy, app-delivery}
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/bootstrap/tenancy" $AUTH -i
-
-# Delete cluster
-# - Removes KubeNova registration and uninstalls agent resources from the target cluster
-# - Requires the cluster UUID
-curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME" $AUTH -i
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/bootstrap/tenancy" $AUTH -i
 
 # ----------------------------------------------------------------------------
-# Tenants
+# Tenants (paths use tenant UID)
 
-export TENANT=${TENANT:-acme}
+export TENANT_NAME=${TENANT_NAME:-acme}
 
 # Create tenant
-# - POST /clusters/{c}/tenants with body {name, owners?, labels?, annotations?}
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants" -H 'Content-Type: application/json' $AUTH \
-  -d '{"name":"'$TENANT'","owners":["owner@example.com"],"labels":{"team":"platform"}}'
+TENANT_JSON=$(curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants" \
+  -H 'Content-Type: application/json' $AUTH \
+  -d '{"name":"'$TENANT_NAME'","owners":["owner@example.com"],"labels":{"team":"platform"}}')
+echo "$TENANT_JSON" | jq .
+TENANT_ID=$(echo "$TENANT_JSON" | jq -r .uid)
+echo "TENANT_ID=$TENANT_ID"
+# Example output: { "uid":"3a7f5d62-...", "name":"acme", ... }
 
-# List tenants (optionally filter by owner or labels in future revisions)
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants" $AUTH -i
+# List tenants
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants" $AUTH | jq .
 
-# Get tenant
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT" $AUTH
+# Get tenant by UID
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID" $AUTH | jq .
 
 # Replace owners
-# - PUT /clusters/{c}/tenants/{t}/owners with body {owners:[..]}
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/owners" \
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/owners" \
   -H 'Content-Type: application/json' $AUTH -d '{"owners":["alice@example.com","ops@example.com"]}' -i
 
 # Set quotas
-# - PUT /clusters/{c}/tenants/{t}/quotas with body { key: quantity }
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/quotas" \
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/quotas" \
   -H 'Content-Type: application/json' $AUTH -d '{"cpu":"4","memory":"8Gi"}' -i
 
 # Set limits
-# - PUT /clusters/{c}/tenants/{t}/limits with body { key: quantity }
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/limits" \
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/limits" \
   -H 'Content-Type: application/json' $AUTH -d '{"pods":"50"}' -i
 
 # Set default network policies
-# - PUT /clusters/{c}/tenants/{t}/network-policies
-# - Body shape is neutral; e.g., {"defaultDeny":true}
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/network-policies" \
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/network-policies" \
   -H 'Content-Type: application/json' $AUTH -d '{"defaultDeny":true}' -i
 
-# Tenant summary
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/summary" $AUTH
+# Tenant summary (example)
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/summary" $AUTH | jq .
 
 # ----------------------------------------------------------------------------
-# Projects
+# Projects (paths use project UID)
 
-export PROJECT=${PROJECT:-web}
+export PROJECT_NAME=${PROJECT_NAME:-web}
 
 # Create project
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects" \
-  -H 'Content-Type: application/json' $AUTH -d '{"name":"'$PROJECT'"}'
+PROJECT_JSON=$(curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects" \
+  -H 'Content-Type: application/json' $AUTH -d '{"name":"'$PROJECT_NAME'"}')
+echo "$PROJECT_JSON" | jq .
+PROJECT_ID=$(echo "$PROJECT_JSON" | jq -r .uid)
+echo "PROJECT_ID=$PROJECT_ID"
 
 # List projects
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects" $AUTH
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects" $AUTH | jq .
 
 # Get project
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT" $AUTH
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID" $AUTH | jq .
 
 # Update project labels/annotations
-# - PUT /clusters/{c}/tenants/{t}/projects/{p}
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT" \
-  -H 'Content-Type: application/json' $AUTH -d '{"labels":{"tier":"gold"}}'
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID" \
+  -H 'Content-Type: application/json' $AUTH -d '{"labels":{"tier":"gold"}}' -i
 
-# Set project access (members + roles)
-# - PUT /clusters/{c}/tenants/{t}/projects/{p}/access
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/access" \
+# Set project access
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/access" \
   -H 'Content-Type: application/json' $AUTH -d '{"members":[{"subject":"dev@example.com","role":"projectDev"}]}' -i
 
 # (Optional) Scoped kubeconfig (if enabled server-side)
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/kubeconfig" $AUTH
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/kubeconfig" $AUTH | jq .
 
 # ----------------------------------------------------------------------------
-# PolicySets
+# Apps (paths use app UID)
 
-export POLICY=${POLICY:-baseline}
-
-# Catalog
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/policysets/catalog" $AUTH
-
-# List tenant PolicySets
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/policysets" $AUTH
-
-# Create PolicySet
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/policysets" \
-  -H 'Content-Type: application/json' $AUTH -d '{"name":"'$POLICY'","rules":[]}'
-
-# Get/Update/Delete PolicySet
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/policysets/$POLICY" $AUTH
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/policysets/$POLICY" \
-  -H 'Content-Type: application/json' $AUTH -d '{"rules":[]}' -i
-curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/policysets/$POLICY" $AUTH -i
-
-# ----------------------------------------------------------------------------
-# Apps
-
-export APP=${APP:-hello}
+export APP_NAME=${APP_NAME:-hello}
 
 # List apps
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps" $AUTH
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps" $AUTH | jq .
 
-# Create app (neutral app model)
-# - POST /clusters/{c}/tenants/{t}/projects/{p}/apps
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps" \
-  -H 'Content-Type: application/json' $AUTH -d '{"name":"'$APP'","components":[{"name":"web","image":"nginx:1.25"}]}'
+# Create app
+APP_JSON=$(curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps" \
+  -H 'Content-Type: application/json' $AUTH -d '{"name":"'$APP_NAME'","components":[{"name":"web","image":"nginx:1.25"}]}')
+echo "$APP_JSON" | jq .
+APP_ID=$(echo "$APP_JSON" | jq -r .uid)
+echo "APP_ID=$APP_ID"
 
 # Get app
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP" $AUTH
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID" $AUTH | jq .
 
 # Deploy/Suspend/Resume
-# - POST .../apps/{a}:(deploy|suspend|resume)
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP:deploy" $AUTH -i
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP:suspend" $AUTH -i
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP:resume" $AUTH -i
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:deploy" $AUTH -i
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:suspend" $AUTH -i
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:resume" $AUTH -i
 
 # Status/Revisions/Diff/Logs
-# - GET .../status
-# - GET .../revisions
-# - GET .../diff/{revA}/{revB}
-# - GET .../logs/{component}?tail={n}&sinceSeconds={s}
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/status" $AUTH
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/revisions" $AUTH
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/diff/1/2" $AUTH
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/logs/web?tail=100&sinceSeconds=600" $AUTH
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/status" $AUTH | jq .
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/revisions" $AUTH | jq .
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/diff/1/2" $AUTH | jq .
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/logs/web" $AUTH | jq .
 
 # Traits/Policies/Image update
-# - PUT .../traits
-# - PUT .../policies
-# - POST .../image-update {component,image,tag}
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/traits" \
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/traits" \
   -H 'Content-Type: application/json' $AUTH -d '[{"type":"scaler","properties":{"replicas":2}}]' -i
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/policies" \
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/policies" \
   -H 'Content-Type: application/json' $AUTH -d '[{"type":"rollout","properties":{"maxUnavailable":1}}]' -i
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/image-update" \
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/image-update" \
   -H 'Content-Type: application/json' $AUTH -d '{"component":"web","image":"nginx","tag":"1.25.3"}' -i
 
-# Workflow run/list
-curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/workflow/run" \
-  -H 'Content-Type: application/json' $AUTH -d '{"steps":[]}' -i
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/workflow/runs" $AUTH
-
-# Delete app
-curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP" $AUTH -i
+# Delete app (Accepted)
+curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID" $AUTH -i
 
 # ----------------------------------------------------------------------------
 # Catalog (read-only)
 
-curl -sS "$BASE/api/v1/catalog/components" $AUTH
-curl -sS "$BASE/api/v1/catalog/traits" $AUTH
-curl -sS "$BASE/api/v1/catalog/workflows" $AUTH
+curl -sS "$BASE/api/v1/catalog/components" $AUTH | jq .
+curl -sS "$BASE/api/v1/catalog/traits" $AUTH | jq .
+curl -sS "$BASE/api/v1/catalog/workflows" $AUTH | jq .
 
 # ----------------------------------------------------------------------------
 # Usage & Kubeconfig
 
-# Usage reports
-curl -sS "$BASE/api/v1/tenants/$TENANT/usage?range=7d" $AUTH
-curl -sS "$BASE/api/v1/projects/$PROJECT/usage?range=7d" $AUTH
+# Usage reports (if enabled)
+curl -sS "$BASE/api/v1/tenants/$TENANT_ID/usage?range=24h" $AUTH | jq .
 
-# Tenant-scoped kubeconfig (if enabled)
-curl -sS -X POST "$BASE/api/v1/tenants/$TENANT/kubeconfig" $AUTH
+# Tenant-scoped kubeconfig (proxy)
+curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" $AUTH | jq .
 
 # ----------------------------------------------------------------------------
-# Cleanup (delete project, tenant)
+# Cleanup
 
-curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT" $AUTH -i
-curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT" $AUTH -i
+# Delete cluster (Requires UUID)
+curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_ID" $AUTH -i
 ```
+
