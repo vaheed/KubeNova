@@ -28,7 +28,7 @@ Configuration
 
 Tests
 - `make test-unit` – unit tests and integration stubs (the Go E2E suite is disabled by default).
-- `E2E_RUN=1 E2E_BUILD_IMAGES=true make test-e2e` – Kind-based end-to-end suite that builds local Manager/Agent images, registers a cluster, and verifies Capsule/capsule-proxy/KubeVela health. When `E2E_RUN=1` is omitted, the suite is skipped.
+- `E2E_RUN=1 make test-e2e` – Kind-based end-to-end suite that uses published dev images from GHCR (`ghcr.io/vaheed/kubenova/*:dev`), registers a cluster, and verifies Capsule/capsule-proxy/KubeVela health. When `E2E_RUN=1` is omitted, the suite is skipped.
   - Use `E2E_WAIT_TIMEOUT` to extend the suite's wait budget and HTTP timeouts when agent installation or add-on bootstrapping needs longer than the default 20 minutes.
 
 Docs

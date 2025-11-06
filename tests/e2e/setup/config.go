@@ -40,26 +40,27 @@ func LoadConfig() Config {
 	if skip, ok := lookupEnvBool("E2E_SKIP"); ok {
 		skipSuite = skip
 	}
-	cfg := Config{
-		ClusterName:        getenvDefault("E2E_KIND_CLUSTER", "kubenova-e2e"),
-		KindBinary:         getenvDefault("E2E_KIND_BIN", "kind"),
-		HelmBinary:         getenvDefault("E2E_HELM_BIN", "helm"),
-		KubectlBinary:      getenvDefault("E2E_KUBECTL_BIN", "kubectl"),
-		DockerBinary:       getenvDefault("E2E_DOCKER_BIN", "docker"),
-		RepositoryRoot:     getenvDefault("E2E_REPO_ROOT", repoRoot),
-		ManagerChartPath:   getenvDefault("E2E_MANAGER_CHART", "deploy/helm/manager"),
-		ManagerImage:       getenvDefault("E2E_MANAGER_IMAGE", "ghcr.io/vaheed/kubenova/manager:dev"),
-		AgentImage:         getenvDefault("E2E_AGENT_IMAGE", "ghcr.io/vaheed/kubenova/agent:dev"),
-		ManagerNamespace:   getenvDefault("E2E_MANAGER_NAMESPACE", "kubenova-system"),
-		ManagerReleaseName: getenvDefault("E2E_MANAGER_RELEASE", "kubenova-manager"),
-		PortForwardPort:    getenvInt("E2E_MANAGER_PORT", 18080),
-		UseExistingCluster: getenvBool("E2E_USE_EXISTING_CLUSTER"),
-		SkipCleanup:        getenvBool("E2E_SKIP_CLEANUP"),
-		SkipSuite:          skipSuite,
-		BuildImages:        getenvBool("E2E_BUILD_IMAGES"),
-		WaitTimeout:        getenvDuration("E2E_WAIT_TIMEOUT", 20*time.Minute),
-	}
-	return cfg
+    cfg := Config{
+        ClusterName:        getenvDefault("E2E_KIND_CLUSTER", "kubenova-e2e"),
+        KindBinary:         getenvDefault("E2E_KIND_BIN", "kind"),
+        HelmBinary:         getenvDefault("E2E_HELM_BIN", "helm"),
+        KubectlBinary:      getenvDefault("E2E_KUBECTL_BIN", "kubectl"),
+        DockerBinary:       getenvDefault("E2E_DOCKER_BIN", "docker"),
+        RepositoryRoot:     getenvDefault("E2E_REPO_ROOT", repoRoot),
+        ManagerChartPath:   getenvDefault("E2E_MANAGER_CHART", "deploy/helm/manager"),
+        ManagerImage:       getenvDefault("E2E_MANAGER_IMAGE", "ghcr.io/vaheed/kubenova/manager:dev"),
+        AgentImage:         getenvDefault("E2E_AGENT_IMAGE", "ghcr.io/vaheed/kubenova/agent:dev"),
+        ManagerNamespace:   getenvDefault("E2E_MANAGER_NAMESPACE", "kubenova-system"),
+        ManagerReleaseName: getenvDefault("E2E_MANAGER_RELEASE", "kubenova-manager"),
+        PortForwardPort:    getenvInt("E2E_MANAGER_PORT", 18080),
+        UseExistingCluster: getenvBool("E2E_USE_EXISTING_CLUSTER"),
+        SkipCleanup:        getenvBool("E2E_SKIP_CLEANUP"),
+        SkipSuite:          skipSuite,
+        // Always use published dev images from GHCR for E2E; do not build locally.
+        BuildImages:        false,
+        WaitTimeout:        getenvDuration("E2E_WAIT_TIMEOUT", 20*time.Minute),
+    }
+    return cfg
 }
 
 func getenvDefault(key, def string) string {
