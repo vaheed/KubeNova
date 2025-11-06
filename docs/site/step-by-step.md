@@ -1,6 +1,15 @@
 ```bash
-# KubeNova API v1 — Full curl walkthrough (copy/paste)
-# Tip: export BASE and optional KN_TOKEN once and reuse.
+# KubeNova API v1 — Step-by-Step (curl only)
+#
+# How to use this guide
+# - Copy the whole block, paste into a terminal, and adjust variables at top
+# - Every section shows the endpoint, required/optional params, and common options
+# - All commands are idempotent where possible; re-running is safe
+#
+# Auth
+# - If auth is enabled on the server, set KN_TOKEN (JWT with roles)
+# - Roles: admin, ops, tenantOwner, projectDev, readOnly
+# - You can also pass X-KN-Roles for dev/testing
 
 export BASE=${BASE:-http://localhost:8080}
 # export KN_TOKEN="<jwt>"
@@ -34,19 +43,28 @@ export KUBE_B64=$(base64 < ~/.kube/config | tr -d '\n')
 curl -sS -X POST "$BASE/api/v1/clusters" -H 'Content-Type: application/json' $AUTH \
   -d '{"name":"'$CLUSTER_NAME'","kubeconfig":"'$KUBE_B64'","labels":{"env":"dev"}}'
 
-# List clusters (optional: limit/cursor/labelSelector)
-curl -sS "$BASE/api/v1/clusters?limit=50&labelSelector=env%3Ddev" $AUTH
+# List clusters
+# - Query args:
+#   - limit: 1..200 (default 50)
+#   - cursor: opaque pagination cursor from X-Next-Cursor header
+#   - labelSelector: simple k=v[,k2=v2]
+curl -sS "$BASE/api/v1/clusters?limit=50&labelSelector=env%3Ddev" $AUTH -i
 
-# Get cluster (param accepts name or numeric id)
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME" $AUTH
+# Get cluster
+# - Path param {c} accepts name or numeric id
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME" $AUTH -i
 
 # Capabilities
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/capabilities" $AUTH
 
-# Bootstrap components (tenancy|proxy|app-delivery)
+# Bootstrap components
+# - POST /clusters/{c}/bootstrap/{component}
+# - {component} ∈ {tenancy, proxy, app-delivery}
 curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/bootstrap/tenancy" $AUTH -i
 
-# Delete cluster (name or id)
+# Delete cluster
+# - Removes KubeNova registration and uninstalls agent resources from the target cluster
+# - Accepts name or numeric id
 curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME" $AUTH -i
 
 # ----------------------------------------------------------------------------
@@ -55,28 +73,34 @@ curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME" $AUTH -i
 export TENANT=${TENANT:-acme}
 
 # Create tenant
+# - POST /clusters/{c}/tenants with body {name, owners?, labels?, annotations?}
 curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants" -H 'Content-Type: application/json' $AUTH \
   -d '{"name":"'$TENANT'","owners":["owner@example.com"],"labels":{"team":"platform"}}'
 
-# List tenants
-curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants" $AUTH
+# List tenants (optionally filter by owner or labels in future revisions)
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants" $AUTH -i
 
 # Get tenant
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT" $AUTH
 
 # Replace owners
+# - PUT /clusters/{c}/tenants/{t}/owners with body {owners:[..]}
 curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/owners" \
   -H 'Content-Type: application/json' $AUTH -d '{"owners":["alice@example.com","ops@example.com"]}' -i
 
-# Set quotas (key: quantity)
+# Set quotas
+# - PUT /clusters/{c}/tenants/{t}/quotas with body { key: quantity }
 curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/quotas" \
   -H 'Content-Type: application/json' $AUTH -d '{"cpu":"4","memory":"8Gi"}' -i
 
-# Set limits (key: quantity)
+# Set limits
+# - PUT /clusters/{c}/tenants/{t}/limits with body { key: quantity }
 curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/limits" \
   -H 'Content-Type: application/json' $AUTH -d '{"pods":"50"}' -i
 
-# Set default network policies (shape is implementation-defined, neutral)
+# Set default network policies
+# - PUT /clusters/{c}/tenants/{t}/network-policies
+# - Body shape is neutral; e.g., {"defaultDeny":true}
 curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/network-policies" \
   -H 'Content-Type: application/json' $AUTH -d '{"defaultDeny":true}' -i
 
@@ -99,10 +123,12 @@ curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects" $AUTH
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT" $AUTH
 
 # Update project labels/annotations
+# - PUT /clusters/{c}/tenants/{t}/projects/{p}
 curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT" \
   -H 'Content-Type: application/json' $AUTH -d '{"labels":{"tier":"gold"}}'
 
 # Set project access (members + roles)
+# - PUT /clusters/{c}/tenants/{t}/projects/{p}/access
 curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/access" \
   -H 'Content-Type: application/json' $AUTH -d '{"members":[{"subject":"dev@example.com","role":"projectDev"}]}' -i
 
@@ -139,6 +165,7 @@ export APP=${APP:-hello}
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps" $AUTH
 
 # Create app (neutral app model)
+# - POST /clusters/{c}/tenants/{t}/projects/{p}/apps
 curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps" \
   -H 'Content-Type: application/json' $AUTH -d '{"name":"'$APP'","components":[{"name":"web","image":"nginx:1.25"}]}'
 
@@ -146,17 +173,25 @@ curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP" $AUTH
 
 # Deploy/Suspend/Resume
+# - POST .../apps/{a}:(deploy|suspend|resume)
 curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP:deploy" $AUTH -i
 curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP:suspend" $AUTH -i
 curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP:resume" $AUTH -i
 
 # Status/Revisions/Diff/Logs
+# - GET .../status
+# - GET .../revisions
+# - GET .../diff/{revA}/{revB}
+# - GET .../logs/{component}?tail={n}&sinceSeconds={s}
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/status" $AUTH
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/revisions" $AUTH
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/diff/1/2" $AUTH
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/logs/web?tail=100&sinceSeconds=600" $AUTH
 
 # Traits/Policies/Image update
+# - PUT .../traits
+# - PUT .../policies
+# - POST .../image-update {component,image,tag}
 curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/traits" \
   -H 'Content-Type: application/json' $AUTH -d '[{"type":"scaler","properties":{"replicas":2}}]' -i
 curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT/apps/$APP/policies" \
@@ -195,4 +230,3 @@ curl -sS -X POST "$BASE/api/v1/tenants/$TENANT/kubeconfig" $AUTH
 curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT/projects/$PROJECT" $AUTH -i
 curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_NAME/tenants/$TENANT" $AUTH -i
 ```
-
