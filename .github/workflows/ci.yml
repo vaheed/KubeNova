@@ -106,8 +106,8 @@ jobs:
           version: v3.14.4
       - name: Run end-to-end suite
         env:
-          E2E_RUN: "false"
-          E2E_BUILD_IMAGES: "false"
+          E2E_RUN: "1"
+          E2E_BUILD_IMAGES: "1"
           E2E_KIND_CLUSTER: kubenova-e2e
         run: |
           set -euo pipefail
