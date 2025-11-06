@@ -136,7 +136,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: |
+      - env:
+          SITE_BASE: "/${{ github.event.repository.name }}/"
+        run: |
           cd docs/site
           npm ci || npm install
           npm run docs:build
@@ -146,6 +148,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs/site/.vitepress/dist
+          publish_branch: gh-pages
+          force_orphan: true
 
   gosec_scan:
     runs-on: ubuntu-latest
