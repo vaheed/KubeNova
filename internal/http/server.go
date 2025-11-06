@@ -75,12 +75,6 @@ func NewAPIServer(st store.Store) *APIServer {
 }
 
 // --- helpers ---
-func getenv(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return d
-}
 func parseBool(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "1", "t", "true", "y", "yes", "on":
@@ -701,7 +695,6 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsADelete(w http.Respon
 }
 
 // helpers
-func ptrString(s string) *string                                  { return &s }
 func ptrWorkflowRunStatus(s WorkflowRunStatus) *WorkflowRunStatus { return &s }
 
 // --- Tenants ---
