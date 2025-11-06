@@ -41,7 +41,7 @@ Scope: Entire repository.
 
 ## Helpful Commands
 - Unit: `make test-unit`
-- E2E (Kind): `E2E_BUILD_IMAGES=true make test-e2e`
+- E2E (Kind): `E2E_RUN=1 make test-e2e` (uses published `:dev` images from GHCR; no local builds)
 - Docs: `make docs-build`
 
 By committing, an agent asserts the checklist has been followed.

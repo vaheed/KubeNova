@@ -20,26 +20,88 @@ POST /api/v1/clusters
 ```
 
 ## Unified API (canonical excerpts)
-### Tenancy
+The API surface is cluster-scoped and defined in `docs/openapi/openapi.yaml`.
+
+### System & Access
 ```
-POST   /api/v1/tenants
-GET    /api/v1/tenants/{name}
-POST   /api/v1/tenants/{name}/projects
+GET    /api/v1/healthz
+GET    /api/v1/readyz
+GET    /api/v1/version
+GET    /api/v1/features
+POST   /api/v1/tokens
+GET    /api/v1/me
 ```
-### Delivery
+
+### Clusters
 ```
-POST   /api/v1/apps
-GET    /api/v1/apps/{name}/rollout
-POST   /api/v1/apps/{name}:rollback
+POST   /api/v1/clusters
+GET    /api/v1/clusters
+GET    /api/v1/clusters/{c}
+DELETE /api/v1/clusters/{c}
+GET    /api/v1/clusters/{c}/capabilities
+POST   /api/v1/clusters/{c}/bootstrap/{component}
 ```
-### Access
+
+### Tenants
 ```
-POST   /api/v1/tenants/{name}:issue-kubeconfig
-POST   /api/v1/projects/{name}:issue-kubeconfig
+GET    /api/v1/clusters/{c}/tenants
+POST   /api/v1/clusters/{c}/tenants
+GET    /api/v1/clusters/{c}/tenants/{t}
+DELETE /api/v1/clusters/{c}/tenants/{t}
+PUT    /api/v1/clusters/{c}/tenants/{t}/owners
+PUT    /api/v1/clusters/{c}/tenants/{t}/quotas
+PUT    /api/v1/clusters/{c}/tenants/{t}/limits
+PUT    /api/v1/clusters/{c}/tenants/{t}/network-policies
+GET    /api/v1/clusters/{c}/tenants/{t}/summary
+POST   /api/v1/tenants/{t}/kubeconfig
+GET    /api/v1/tenants/{t}/usage
 ```
-### Policies
+
+### Projects
 ```
-POST /api/v1/policysets
+GET    /api/v1/clusters/{c}/tenants/{t}/projects
+POST   /api/v1/clusters/{c}/tenants/{t}/projects
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}
+PUT    /api/v1/clusters/{c}/tenants/{t}/projects/{p}
+DELETE /api/v1/clusters/{c}/tenants/{t}/projects/{p}
+PUT    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig
+GET    /api/v1/projects/{p}/usage
+```
+
+### Apps
+```
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps
+POST   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}
+PUT    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}
+POST   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:deploy
+POST   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:suspend
+POST   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:resume
+POST   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:rollback
+POST   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:delete
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/status
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/revisions
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/diff/{revA}/{revB}
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/logs/{component}
+PUT    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits
+PUT    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/policies
+POST   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/run
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/runs
+GET    /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/runs/{id}
+```
+
+### PolicySets & Catalog
+```
+GET    /api/v1/clusters/{c}/tenants/{t}/policysets
+POST   /api/v1/clusters/{c}/tenants/{t}/policysets
+GET    /api/v1/clusters/{c}/tenants/{t}/policysets/{name}
+PUT    /api/v1/clusters/{c}/tenants/{t}/policysets/{name}
+DELETE /api/v1/clusters/{c}/tenants/{t}/policysets/{name}
+GET    /api/v1/clusters/{c}/policysets/catalog
+GET    /api/v1/catalog/components
+GET    /api/v1/catalog/traits
+GET    /api/v1/catalog/workflows
 ```
 
 ## Adapters
@@ -54,6 +116,11 @@ Status phases: `Pending|Applying|Deployed|Drifted|Error`.
 - JWT (HS256/RS256); roles: tenant-admin, tenant-dev, read-only.
 - Kubeconfigs via **KubeconfigGrant**: TTL, verbs, namespaces; endpoint = access proxy.
 - Envelope encryption for secrets; periodic key rotation.
+
+New features
+- Tenant listing supports `labelSelector` and `owner` filters.
+- App operations wired to KubeVela: `traits`, `policies`, `image-update`, `:delete` action.
+- See interactive examples in `docs/index.md` (Section 5 and 6).
 
 ## Observability
 - Logs: structured JSON with `request_id`, `tenant`, `cluster`, `adapter`.

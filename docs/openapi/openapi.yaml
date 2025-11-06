@@ -1085,7 +1085,14 @@ paths:
     put:
       summary: Replace app traits
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      requestBody: { required: true, content: { application/json: { schema: { type: array, items: { type: object } } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: array, items: { type: object } }
+            examples:
+              traits:
+                value: [ { type: "scaler", properties: { replicas: 2 } } ]
       responses:
         '200': { description: ok }
         '422':
@@ -1100,7 +1107,14 @@ paths:
     put:
       summary: Replace app policies
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      requestBody: { required: true, content: { application/json: { schema: { type: array, items: { type: object } } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: array, items: { type: object } }
+            examples:
+              policies:
+                value: [ { type: "rollout", properties: { maxUnavailable: 1 } } ]
       responses:
         '200': { description: ok }
         '422':
@@ -1115,7 +1129,14 @@ paths:
     post:
       summary: Update image for an app component
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { component: { type: string }, image: { type: string }, tag: { type: string } }, required: [component, image] } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { component: { type: string }, image: { type: string }, tag: { type: string } }, required: [component, image] }
+            examples:
+              img:
+                value: { component: "web", image: "nginx", tag: "1.25.3" }
       responses:
         '202': { description: started }
         '422':

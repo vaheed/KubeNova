@@ -28,11 +28,16 @@ Configuration
 
 Tests
 - `make test-unit` – unit tests and integration stubs (the Go E2E suite is disabled by default).
-- `E2E_RUN=1 E2E_BUILD_IMAGES=true make test-e2e` – Kind-based end-to-end suite that builds local Manager/Agent images, registers a cluster, and verifies Capsule/capsule-proxy/KubeVela health. When `E2E_RUN=1` is omitted, the suite is skipped.
+- `E2E_RUN=1 make test-e2e` – Kind-based end-to-end suite that uses published dev images from GHCR (`ghcr.io/vaheed/kubenova/*:dev`), registers a cluster, and verifies Capsule/capsule-proxy/KubeVela health. When `E2E_RUN=1` is omitted, the suite is skipped.
   - Use `E2E_WAIT_TIMEOUT` to extend the suite's wait budget and HTTP timeouts when agent installation or add-on bootstrapping needs longer than the default 20 minutes.
 
 Docs
 - VitePress site at `docs/site`. Build with `make docs-build` and serve with `make docs-serve`.
+
+New features
+- Tenant listing supports `labelSelector` and `owner` filters.
+- App operations wired to KubeVela: traits, policies, image-update, delete action.
+- E2E: Set `E2E_VELA_OPS=1` to auto-install KubeVela Core in Kind and run ops scenario.
 
 Helm charts
 - CI publishes packaged charts to GitHub Pages:
@@ -58,6 +63,32 @@ helm registry login ghcr.io -u <user> -p <token>
 helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version latest
 ```
 ```
+
+### Helm install flags (quick reference)
+
+Manager chart common flags
+```
+helm upgrade --install manager kubenova/manager \
+  -n kubenova-system --create-namespace \
+  --set image.tag=latest \
+  --set env.KUBENOVA_REQUIRE_AUTH=true \
+  --set env.MANAGER_URL_PUBLIC=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
+  --set env.CAPSULE_PROXY_URL=http://capsule-proxy.capsule-system.svc.cluster.local:9001 \
+  --set env.AGENT_IMAGE=ghcr.io/vaheed/kubenova/agent:latest
+```
+
+Agent chart common flags
+```
+helm upgrade --install agent kubenova/agent \
+  -n kubenova-system \
+  --set image.tag=latest \
+  --set manager.url=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
+  --set redis.enabled=true \
+  --set bootstrap.capsuleVersion=0.10.6 \
+  --set bootstrap.capsuleProxyVersion=0.9.13
+```
+
+Note: The Manager chart supports JWT secret injection via `jwt.existingSecret` or inline `jwt.value` for development.
 
 This document includes:
 - Capsule & capsule-proxy bootstrap instructions  
@@ -121,60 +152,45 @@ kubectl -n capsule-system get svc capsule-proxy
 
 ## 3. KubeNova ↔ Capsule — Top-50 API Map
 
-Each object supports CRUD verbs (`create|get|list|update|delete`).
+Cluster-scoped KubeNova routes map to Capsule Tenant operations and related k8s resources. The key CRD is `capsule.clastix.io/v1beta2, Tenant`.
 
-| # | KubeNova Route | Capsule Resource | Verbs |
-|---|----------------|------------------|-------|
-| 1 | `POST /api/v1/tenants` | `capsule.clastix.io/v1beta2, Tenant` | create |
-| 2 | `GET /api/v1/tenants/{name}` | Tenant | get |
-| 3 | `GET /api/v1/tenants` | Tenant | list |
-| 4 | `PUT /api/v1/tenants/{name}` | Tenant | update |
-| 5 | `DELETE /api/v1/tenants/{name}` | Tenant | delete |
-| 6 | `POST /api/v1/tenant-quotas` | TenantResourceQuota | create |
-| 7 | `GET /api/v1/tenant-quotas/{name}` | TenantResourceQuota | get |
-| 8 | `GET /api/v1/tenant-quotas` | TenantResourceQuota | list |
-| 9 | `PUT /api/v1/tenant-quotas/{name}` | TenantResourceQuota | update |
-|10 | `DELETE /api/v1/tenant-quotas/{name}` | TenantResourceQuota | delete |
-|11 | `POST /api/v1/namespace-options` | NamespaceOptions | create |
-|12 | `GET /api/v1/namespace-options/{name}` | NamespaceOptions | get |
-|13 | `GET /api/v1/namespace-options` | NamespaceOptions | list |
-|14 | `PUT /api/v1/namespace-options/{name}` | NamespaceOptions | update |
-|15 | `DELETE /api/v1/namespace-options/{name}` | NamespaceOptions | delete |
-|16 | `POST /api/v1/configurations` | CapsuleConfiguration | create |
-|17 | `GET /api/v1/configurations/{name}` | CapsuleConfiguration | get |
-|18 | `GET /api/v1/configurations` | CapsuleConfiguration | list |
-|19 | `PUT /api/v1/configurations/{name}` | CapsuleConfiguration | update |
-|20 | `DELETE /api/v1/configurations/{name}` | CapsuleConfiguration | delete |
-|21 | `POST /api/v1/networkpolicies` | NetworkPolicy (tenant) | create |
-|22 | `GET /api/v1/networkpolicies/{name}` | NetworkPolicy | get |
-|23 | `GET /api/v1/networkpolicies` | NetworkPolicy | list |
-|24 | `PUT /api/v1/networkpolicies/{name}` | NetworkPolicy | update |
-|25 | `DELETE /api/v1/networkpolicies/{name}` | NetworkPolicy | delete |
-|26 | `POST /api/v1/namespaces` | Namespace (tenant) | create |
-|27 | `GET /api/v1/namespaces/{name}` | Namespace | get |
-|28 | `GET /api/v1/namespaces` | Namespace | list |
-|29 | `PUT /api/v1/namespaces/{name}` | Namespace | update |
-|30 | `DELETE /api/v1/namespaces/{name}` | Namespace | delete |
-|31 | `POST /api/v1/roles` | Role | create |
-|32 | `GET /api/v1/roles/{name}` | Role | get |
-|33 | `GET /api/v1/roles` | Role | list |
-|34 | `PUT /api/v1/roles/{name}` | Role | update |
-|35 | `DELETE /api/v1/roles/{name}` | Role | delete |
-|36 | `POST /api/v1/rolebindings` | RoleBinding | create |
-|37 | `GET /api/v1/rolebindings/{name}` | RoleBinding | get |
-|38 | `GET /api/v1/rolebindings` | RoleBinding | list |
-|39 | `PUT /api/v1/rolebindings/{name}` | RoleBinding | update |
-|40 | `DELETE /api/v1/rolebindings/{name}` | RoleBinding | delete |
-|41 | `POST /api/v1/quotas` | ResourceQuota | create |
-|42 | `GET /api/v1/quotas/{name}` | ResourceQuota | get |
-|43 | `GET /api/v1/quotas` | ResourceQuota | list |
-|44 | `PUT /api/v1/quotas/{name}` | ResourceQuota | update |
-|45 | `DELETE /api/v1/quotas/{name}` | ResourceQuota | delete |
-|46 | `GET /api/v1/tenant-status/{name}` | Tenant.status | get |
-|47 | `GET /api/v1/tenant-events/{name}` | Events | list |
-|48 | `GET /api/v1/tenant-policies/{name}` | PolicyRef | list |
-|49 | `POST /api/v1/tenant-sync` | Capsule Sync | create |
-|50 | `DELETE /api/v1/tenant-sync/{name}` | Capsule Sync | delete |
+| # | KubeNova Route | Capsule/Cluster Mapping | Verb | OpenAPI |
+|---|----------------|-------------------------|------|---------|
+| 1 | `POST /api/v1/clusters/{c}/tenants` | Tenant (create/update) | create | [spec](docs/openapi/openapi.yaml#L445) |
+| 2 | `GET /api/v1/clusters/{c}/tenants/{t}` | Tenant (get) | get | [spec](docs/openapi/openapi.yaml#L486) |
+| 3 | `GET /api/v1/clusters/{c}/tenants` | Tenant (list with labels/owners) | list | [spec](docs/openapi/openapi.yaml#L445) |
+| 4 | `DELETE /api/v1/clusters/{c}/tenants/{t}` | Tenant (delete) | delete | [spec](docs/openapi/openapi.yaml#L486) |
+| 5 | `PUT /api/v1/clusters/{c}/tenants/{t}/owners` | Tenant.spec.owners | update | [spec](docs/openapi/openapi.yaml#L519) |
+| 6 | `PUT /api/v1/clusters/{c}/tenants/{t}/quotas` | Tenant.spec.resourceQuotas.hard | update | [spec](docs/openapi/openapi.yaml#L549) |
+| 7 | `PUT /api/v1/clusters/{c}/tenants/{t}/limits` | Tenant.spec.limitRanges.limits | update | [spec](docs/openapi/openapi.yaml#L572) |
+| 8 | `PUT /api/v1/clusters/{c}/tenants/{t}/network-policies` | Tenant.spec.networkPolicies | update | [spec](docs/openapi/openapi.yaml#L595) |
+| 9 | `GET /api/v1/clusters/{c}/tenants/{t}/summary` | Aggregate Tenant + cluster objects | get | [spec](docs/openapi/openapi.yaml#L618) |
+|10 | `GET /api/v1/clusters/{c}/capabilities` | Detect Capsule/proxy presence | get | [spec](docs/openapi/openapi.yaml#L430) |
+|11 | `POST /api/v1/clusters/{c}/bootstrap/tenancy` | Install/verify Capsule | action | [spec](docs/openapi/openapi.yaml#L411) |
+|12 | `POST /api/v1/clusters/{c}/bootstrap/proxy` | Install/verify capsule-proxy | action | [spec](docs/openapi/openapi.yaml#L411) |
+|13 | `GET /api/v1/clusters/{c}/tenants/{t}/projects` | Namespaces permitted by Tenant | list | [spec](docs/openapi/openapi.yaml#L633) |
+|14 | `POST /api/v1/clusters/{c}/tenants/{t}/projects` | Create Namespace for project | create | [spec](docs/openapi/openapi.yaml#L633) |
+|15 | `PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}` | Update Namespace labels/annots | update | [spec](docs/openapi/openapi.yaml#L673) |
+|16 | `DELETE /api/v1/clusters/{c}/tenants/{t}/projects/{p}` | Delete Namespace | delete | [spec](docs/openapi/openapi.yaml#L673) |
+|17 | `PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access` | Namespace RBAC (Role/RoleBinding) | update | [spec](docs/openapi/openapi.yaml#L701) |
+|18 | `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig` | capsule-proxy issued kubeconfig | get | [spec](docs/openapi/openapi.yaml#L707) |
+|19 | `POST /api/v1/tenants/{t}/kubeconfig` | capsule-proxy tenant-scoped kubeconfig | create | [spec](docs/openapi/openapi.yaml#L1267) |
+|20 | `GET /api/v1/tenants/{t}/usage` | Metrics aggregator (tenant scope) | get | [spec](docs/openapi/openapi.yaml#L1225) |
+|21 | `GET /api/v1/projects/{p}/usage` | Metrics aggregator (namespace scope) | get | [spec](docs/openapi/openapi.yaml#L1245) |
+|22 | `GET /api/v1/clusters/{c}/tenants?labelSelector=...` | Tenant list with label filter | list | [spec](docs/openapi/openapi.yaml#L445) |
+|23 | `GET /api/v1/clusters?labelSelector=...` | Cluster list w/ labels (store) | list | [spec](docs/openapi/openapi.yaml#L334) |
+|24 | `GET /api/v1/clusters/{c}` | Cluster object (store) | get | [spec](docs/openapi/openapi.yaml#L381) |
+|25 | `DELETE /api/v1/clusters/{c}` | Remove cluster registration | delete | [spec](docs/openapi/openapi.yaml#L381) |
+|26 | `POST /api/v1/tokens` | JWT for API auth (manager) | create | [spec](docs/openapi/openapi.yaml#L297) |
+|27 | `GET /api/v1/me` | Introspect roles/subject | get | [spec](docs/openapi/openapi.yaml#L320) |
+|28 | `GET /api/v1/healthz` | Liveness | get | [spec](docs/openapi/openapi.yaml#L261) |
+|29 | `GET /api/v1/readyz` | Readiness (store reachable) | get | [spec](docs/openapi/openapi.yaml#L266) |
+|30 | `GET /api/v1/version` | Version info | get | [spec](docs/openapi/openapi.yaml#L271) |
+
+Notes
+- Quotas/limits/network-policies write into Tenant.spec as per Capsule reference.
+- Projects are represented as Namespaces within a Tenant; access updates result in Role/RoleBinding adjustments.
+- Kubeconfigs are expected to be served by capsule-proxy; in dev/test they are stubbed.
 
 ---
 
@@ -197,58 +213,59 @@ kubectl api-resources | grep vela
 
 ## 5. KubeNova ↔ KubeVela — Top-50 API Map
 
-| # | KubeNova Route | KubeVela Object | Verbs |
-|---|----------------|----------------|-------|
-| 1 | `POST /api/v1/apps` | Application | create |
-| 2 | `GET /api/v1/apps/{name}` | Application | get |
-| 3 | `GET /api/v1/apps` | Application | list |
-| 4 | `PUT /api/v1/apps/{name}` | Application | update |
-| 5 | `DELETE /api/v1/apps/{name}` | Application | delete |
-| 6 | `POST /api/v1/app-revisions` | ApplicationRevision | create |
-| 7 | `GET /api/v1/app-revisions/{name}` | ApplicationRevision | get |
-| 8 | `GET /api/v1/app-revisions` | ApplicationRevision | list |
-| 9 | `PUT /api/v1/app-revisions/{name}` | ApplicationRevision | update |
-|10 | `DELETE /api/v1/app-revisions/{name}` | ApplicationRevision | delete |
-|11 | `POST /api/v1/workflows` | Workflow | create |
-|12 | `GET /api/v1/workflows/{name}` | Workflow | get |
-|13 | `GET /api/v1/workflows` | Workflow | list |
-|14 | `PUT /api/v1/workflows/{name}` | Workflow | update |
-|15 | `DELETE /api/v1/workflows/{name}` | Workflow | delete |
-|16 | `POST /api/v1/workflowruns` | WorkflowRun | create |
-|17 | `GET /api/v1/workflowruns/{name}` | WorkflowRun | get |
-|18 | `GET /api/v1/workflowruns` | WorkflowRun | list |
-|19 | `PUT /api/v1/workflowruns/{name}` | WorkflowRun | update |
-|20 | `DELETE /api/v1/workflowruns/{name}` | WorkflowRun | delete |
-|21 | `POST /api/v1/components` | ComponentDefinition | create |
-|22 | `GET /api/v1/components/{name}` | ComponentDefinition | get |
-|23 | `GET /api/v1/components` | ComponentDefinition | list |
-|24 | `PUT /api/v1/components/{name}` | ComponentDefinition | update |
-|25 | `DELETE /api/v1/components/{name}` | ComponentDefinition | delete |
-|26 | `POST /api/v1/traits` | TraitDefinition | create |
-|27 | `GET /api/v1/traits/{name}` | TraitDefinition | get |
-|28 | `GET /api/v1/traits` | TraitDefinition | list |
-|29 | `PUT /api/v1/traits/{name}` | TraitDefinition | update |
-|30 | `DELETE /api/v1/traits/{name}` | TraitDefinition | delete |
-|31 | `POST /api/v1/policies` | PolicyDefinition | create |
-|32 | `GET /api/v1/policies/{name}` | PolicyDefinition | get |
-|33 | `GET /api/v1/policies` | PolicyDefinition | list |
-|34 | `PUT /api/v1/policies/{name}` | PolicyDefinition | update |
-|35 | `DELETE /api/v1/policies/{name}` | PolicyDefinition | delete |
-|36 | `POST /api/v1/projects` | VelaUX /projects | create |
-|37 | `GET /api/v1/projects/{name}` | VelaUX /projects/{name} | get |
-|38 | `GET /api/v1/projects` | VelaUX /projects | list |
-|39 | `PUT /api/v1/projects/{name}` | VelaUX /projects/{name} | update |
-|40 | `DELETE /api/v1/projects/{name}` | VelaUX /projects/{name} | delete |
-|41 | `POST /api/v1/envs` | VelaUX /envs | create |
-|42 | `GET /api/v1/envs/{name}` | VelaUX /envs/{name} | get |
-|43 | `GET /api/v1/envs` | VelaUX /envs | list |
-|44 | `PUT /api/v1/envs/{name}` | VelaUX /envs/{name} | update |
-|45 | `DELETE /api/v1/envs/{name}` | VelaUX /envs/{name} | delete |
-|46 | `POST /api/v1/targets` | VelaUX /targets | create |
-|47 | `GET /api/v1/targets/{name}` | VelaUX /targets/{name} | get |
-|48 | `GET /api/v1/targets` | VelaUX /targets | list |
-|49 | `PUT /api/v1/targets/{name}` | VelaUX /targets/{name} | update |
-|50 | `DELETE /api/v1/targets/{name}` | VelaUX /targets/{name} | delete |
+KubeNova app endpoints map to KubeVela CRDs under `core.oam.dev/v1beta1`.
+
+| # | KubeNova Route | KubeVela Mapping | Verb | OpenAPI |
+|---|----------------|------------------|------|---------|
+| 1 | `POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps` | Application (create) | create | [spec](docs/openapi/openapi.yaml#L810) |
+| 2 | `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps` | Application (list) | list | [spec](docs/openapi/openapi.yaml#L810) |
+| 3 | `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}` | Application (get) | get | [spec](docs/openapi/openapi.yaml#L851) |
+| 4 | `PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}` | Application (update) | update | [spec](docs/openapi/openapi.yaml#L851) |
+| 5 | `POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:deploy` | Application annotate (redeploy) | action | [spec](docs/openapi/openapi.yaml#L906) |
+| 6 | `POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:suspend` | Application.spec.suspend=true | action | [spec](docs/openapi/openapi.yaml#L920) |
+| 7 | `POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:resume` | Application.spec.suspend=false | action | [spec](docs/openapi/openapi.yaml#L934) |
+| 8 | `POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:rollback` | Annotate with target revision | action | [spec](docs/openapi/openapi.yaml#L948) |
+| 9 | `POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:delete` | Delete Application | delete | [spec](docs/openapi/openapi.yaml#L965) |
+|10 | `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/status` | Application.status | get | [spec](docs/openapi/openapi.yaml#L971) |
+|11 | `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/revisions` | ApplicationRevision (list by label) | list | [spec](docs/openapi/openapi.yaml#L992) |
+|12 | `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/diff/{revA}/{revB}` | Compare two ApplicationRevisions | get | [spec](docs/openapi/openapi.yaml#L1013) |
+|13 | `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/logs/{component}` | Pod logs by app/component labels | get | [spec](docs/openapi/openapi.yaml#L1046) |
+|14 | `PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits` | Application.spec.traits | update | [spec](docs/openapi/openapi.yaml#L1084) |
+|15 | `PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/policies` | Application.spec.policies | update | [spec](docs/openapi/openapi.yaml#L1099) |
+|16 | `POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/image-update` | Update component image/tag | action | [spec](docs/openapi/openapi.yaml#L1114) |
+|17 | `POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/run` | WorkflowRun (create) | create | [spec](docs/openapi/openapi.yaml#L1169) |
+|18 | `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/runs` | WorkflowRun (list) | list | [spec](docs/openapi/openapi.yaml#L1190) |
+|19 | `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/runs/{id}` | WorkflowRun (get by id) | get | [spec](docs/openapi/openapi.yaml#L1203) |
+|20 | `GET /api/v1/catalog/components` | ComponentDefinition (curated list) | list | [spec](docs/openapi/openapi.yaml#L1131) |
+|21 | `GET /api/v1/catalog/traits` | TraitDefinition (curated list) | list | [spec](docs/openapi/openapi.yaml#L1143) |
+|22 | `GET /api/v1/catalog/workflows` | WorkflowStepDefinition (curated list) | list | [spec](docs/openapi/openapi.yaml#L1155) |
+
+Notes
+- The adapter uses dynamic client for `Application` and `ApplicationRevision` in `core.oam.dev/v1beta1`.
+- Logs are aggregated from Pods labeled with `app.oam.dev/name` and optional `app.oam.dev/component`.
+- Catalog endpoints are curated views of KubeVela definitions; they don’t expose raw objects.
+- SetTraits/SetPolicies update `spec.traits`/`spec.policies`; ImageUpdate updates the matching component `properties.image` (creates the component if missing).
+
+---
+
+## 6. Coverage — Remaining KubeNova API Endpoints
+
+These endpoints are served by the Manager control plane or helper surfaces and don’t directly map to Capsule/KubeVela objects:
+
+- Clusters
+  - `POST /api/v1/clusters` — register cluster (stores kubeconfig, labels)
+  - `GET /api/v1/clusters` — list registered clusters (label selectors supported)
+  - `GET /api/v1/clusters/{c}` — get cluster
+  - `DELETE /api/v1/clusters/{c}` — delete registration
+  - `POST /api/v1/clusters/{c}/bootstrap/{component}` — install/verify components (tenancy, proxy, app-delivery)
+- PolicySets
+  - `GET /api/v1/clusters/{c}/policysets/catalog` — curated catalog
+  - `GET/POST/PUT/DELETE /api/v1/clusters/{c}/tenants/{t}/policysets[/{}]` — tenant-scoped policy sets (control-plane stored)
+- Access & System
+  - `POST /api/v1/tokens`, `GET /api/v1/me`
+  - `GET /api/v1/version`, `GET /api/v1/features`, `GET /api/v1/healthz`, `GET /api/v1/readyz`
+
+All remaining endpoints in docs/openapi/openapi.yaml are implemented and tested; see reports/api_coverage.md for status.
 
 ---
 
