@@ -48,7 +48,7 @@ helm install manager kubenova/manager --namespace kubenova-system --create-names
 OCI charts in GitHub Packages (GHCR)
 - CI also pushes Helm charts as OCI artifacts to GHCR under a separate namespace to avoid conflicts with container images:
   - ghcr.io/vaheed/kubenova-charts/manager
-  - ghcr.io/vaheed/kubenova-charts/kubenova-agent
+  - ghcr.io/vaheed/kubenova-charts/agent
 - Tags:
   - develop: semantic version with -dev suffix, plus alias dev
   - main: semantic version, plus alias latest
