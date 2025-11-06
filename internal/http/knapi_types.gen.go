@@ -88,6 +88,7 @@ type App struct {
 	Name        string                    `json:"name"`
 	Policies    *[]map[string]interface{} `json:"policies,omitempty"`
 	Traits      *[]map[string]interface{} `json:"traits,omitempty"`
+	Uid         *string                   `json:"uid,omitempty"`
 }
 
 // AppDiff defines model for AppDiff.
@@ -133,6 +134,9 @@ type Cluster struct {
 	DisplayName *string            `json:"displayName,omitempty"`
 	Labels      *map[string]string `json:"labels,omitempty"`
 	Name        string             `json:"name"`
+
+	// Uid Stable unique identifier
+	Uid *string `json:"uid,omitempty"`
 }
 
 // ClusterCapabilities defines model for ClusterCapabilities.
@@ -205,6 +209,7 @@ type Project struct {
 	CreatedAt   *time.Time         `json:"createdAt,omitempty"`
 	Labels      *map[string]string `json:"labels,omitempty"`
 	Name        string             `json:"name"`
+	Uid         *string            `json:"uid,omitempty"`
 }
 
 // ProjectAccess defines model for ProjectAccess.
@@ -225,6 +230,7 @@ type Tenant struct {
 	Labels      *map[string]string `json:"labels,omitempty"`
 	Name        string             `json:"name"`
 	Owners      *[]string          `json:"owners,omitempty"`
+	Uid         *string            `json:"uid,omitempty"`
 }
 
 // TenantSummary defines model for TenantSummary.

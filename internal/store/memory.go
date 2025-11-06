@@ -3,26 +3,38 @@ package store
 import (
 	"context"
 	"fmt"
-	"sync"
-
 	"github.com/vaheed/kubenova/pkg/types"
 	"sort"
 	"strings"
+	"sync"
 )
 
 type Memory struct {
-	mu       sync.RWMutex
-	tenants  map[string]types.Tenant
-	projects map[string]map[string]types.Project        // tenant -> name
-	apps     map[string]map[string]map[string]types.App // tenant -> project -> name
-	clusters map[int]memCluster
-	byName   map[string]int
-	nextID   int
-	evts     []memEvent
+	mu           sync.RWMutex
+	tenants      map[string]types.Tenant
+	projects     map[string]map[string]types.Project        // tenant -> name
+	apps         map[string]map[string]map[string]types.App // tenant -> project -> name
+	clusters     map[types.ID]memCluster
+	byName       map[string]types.ID
+	byUID        map[string]types.ID
+	tenantByUID  map[string]string        // uid -> tenant name
+	projectByUID map[string]types.Project // uid -> project (tenant name + name)
+	appByUID     map[string]types.App     // uid -> app (tenant/project names + name)
+	evts         []memEvent
 }
 
 func NewMemory() *Memory {
-	return &Memory{tenants: map[string]types.Tenant{}, projects: map[string]map[string]types.Project{}, apps: map[string]map[string]map[string]types.App{}, clusters: map[int]memCluster{}, byName: map[string]int{}, nextID: 1}
+	return &Memory{
+		tenants:      map[string]types.Tenant{},
+		projects:     map[string]map[string]types.Project{},
+		apps:         map[string]map[string]map[string]types.App{},
+		clusters:     map[types.ID]memCluster{},
+		byName:       map[string]types.ID{},
+		byUID:        map[string]types.ID{},
+		tenantByUID:  map[string]string{},
+		projectByUID: map[string]types.Project{},
+		appByUID:     map[string]types.App{},
+	}
 }
 
 func (m *Memory) Close(ctx context.Context) error { return nil }
@@ -34,7 +46,15 @@ func (m *Memory) CreateTenant(ctx context.Context, t types.Tenant) error {
 		return nil
 	}
 	t.CreatedAt = stamp(t.CreatedAt)
+	if t.UID == "" {
+		if t.Name != "" {
+			t.UID = t.Name
+		} else {
+			t.UID = uuidNew()
+		}
+	}
 	m.tenants[t.Name] = t
+	m.tenantByUID[t.UID] = t.Name
 	return nil
 }
 func (m *Memory) GetTenant(ctx context.Context, name string) (types.Tenant, error) {
@@ -45,6 +65,17 @@ func (m *Memory) GetTenant(ctx context.Context, name string) (types.Tenant, erro
 		return types.Tenant{}, ErrNotFound
 	}
 	return t, nil
+}
+
+func (m *Memory) GetTenantByUID(ctx context.Context, uid string) (types.Tenant, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if name, ok := m.tenantByUID[uid]; ok {
+		if t, ok2 := m.tenants[name]; ok2 {
+			return t, nil
+		}
+	}
+	return types.Tenant{}, ErrNotFound
 }
 func (m *Memory) ListTenants(ctx context.Context) ([]types.Tenant, error) {
 	m.mu.RLock()
@@ -61,6 +92,9 @@ func (m *Memory) UpdateTenant(ctx context.Context, t types.Tenant) error {
 func (m *Memory) DeleteTenant(ctx context.Context, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if t, ok := m.tenants[name]; ok {
+		delete(m.tenantByUID, t.UID)
+	}
 	delete(m.tenants, name)
 	delete(m.projects, name)
 	delete(m.apps, name)
@@ -77,7 +111,15 @@ func (m *Memory) CreateProject(ctx context.Context, p types.Project) error {
 		return nil
 	}
 	p.CreatedAt = stamp(p.CreatedAt)
+	if p.UID == "" {
+		if p.Name != "" {
+			p.UID = p.Name
+		} else {
+			p.UID = uuidNew()
+		}
+	}
 	m.projects[p.Tenant][p.Name] = p
+	m.projectByUID[p.UID] = p
 	return nil
 }
 func (m *Memory) GetProject(ctx context.Context, tenant, name string) (types.Project, error) {
@@ -87,6 +129,15 @@ func (m *Memory) GetProject(ctx context.Context, tenant, name string) (types.Pro
 		if p, ok2 := mp[name]; ok2 {
 			return p, nil
 		}
+	}
+	return types.Project{}, ErrNotFound
+}
+
+func (m *Memory) GetProjectByUID(ctx context.Context, uid string) (types.Project, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if pr, ok := m.projectByUID[uid]; ok {
+		return pr, nil
 	}
 	return types.Project{}, ErrNotFound
 }
@@ -110,6 +161,9 @@ func (m *Memory) DeleteProject(ctx context.Context, tenant, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if mp, ok := m.projects[tenant]; ok {
+		if pr, ok2 := mp[name]; ok2 {
+			delete(m.projectByUID, pr.UID)
+		}
 		delete(mp, name)
 	}
 	if ma, ok := m.apps[tenant]; ok {
@@ -131,7 +185,15 @@ func (m *Memory) CreateApp(ctx context.Context, a types.App) error {
 		return nil
 	}
 	a.CreatedAt = stamp(a.CreatedAt)
+	if a.UID == "" {
+		if a.Name != "" {
+			a.UID = a.Name
+		} else {
+			a.UID = uuidNew()
+		}
+	}
 	m.apps[a.Tenant][a.Project][a.Name] = a
+	m.appByUID[a.UID] = a
 	return nil
 }
 func (m *Memory) GetApp(ctx context.Context, tenant, project, name string) (types.App, error) {
@@ -150,6 +212,15 @@ func (m *Memory) GetApp(ctx context.Context, tenant, project, name string) (type
 		return types.App{}, ErrNotFound
 	}
 	return a, nil
+}
+
+func (m *Memory) GetAppByUID(ctx context.Context, uid string) (types.App, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if ap, ok := m.appByUID[uid]; ok {
+		return ap, nil
+	}
+	return types.App{}, ErrNotFound
 }
 func (m *Memory) ListApps(ctx context.Context, tenant, project string) ([]types.App, error) {
 	m.mu.RLock()
@@ -174,6 +245,9 @@ func (m *Memory) DeleteApp(ctx context.Context, tenant, project, name string) er
 	defer m.mu.Unlock()
 	if ma, ok := m.apps[tenant]; ok {
 		if mp, ok2 := ma[project]; ok2 {
+			if ap, ok3 := mp[name]; ok3 {
+				delete(m.appByUID, ap.UID)
+			}
 			delete(mp, name)
 		}
 	}
@@ -192,18 +266,28 @@ type memCluster struct {
 	enc string
 }
 
-func (m *Memory) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (int, error) {
+func (m *Memory) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (types.ID, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := m.nextID
-	m.nextID++
+	id := types.NewID()
 	c.ID = id
+	if c.UID == "" {
+		if c.Name != "" {
+			c.UID = c.Name
+		} else {
+			c.UID = uuidNew()
+		}
+	}
 	m.clusters[id] = memCluster{c: c, enc: kubeconfigEnc}
 	m.byName[c.Name] = id
+	if m.byUID == nil {
+		m.byUID = map[string]types.ID{}
+	}
+	m.byUID[c.UID] = id
 	return id, nil
 }
 
-func (m *Memory) GetCluster(ctx context.Context, id int) (types.Cluster, string, error) {
+func (m *Memory) GetCluster(ctx context.Context, id types.ID) (types.Cluster, string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	mc, ok := m.clusters[id]
@@ -223,12 +307,34 @@ func (m *Memory) GetClusterByName(ctx context.Context, name string) (types.Clust
 	return types.Cluster{}, "", ErrNotFound
 }
 
+func (m *Memory) GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if id, ok := m.byUID[uid]; ok {
+		mc := m.clusters[id]
+		return mc.c, mc.enc, nil
+	}
+	return types.Cluster{}, "", ErrNotFound
+}
+
+func (m *Memory) DeleteCluster(ctx context.Context, id types.ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mc, ok := m.clusters[id]
+	if !ok {
+		return nil
+	}
+	delete(m.clusters, id)
+	delete(m.byName, mc.c.Name)
+	return nil
+}
+
 type memEvent struct {
-	clusterID *int
+	clusterID *types.ID
 	e         types.Event
 }
 
-func (m *Memory) AddEvents(ctx context.Context, clusterID *int, evts []types.Event) error {
+func (m *Memory) AddEvents(ctx context.Context, clusterID *types.ID, evts []types.Event) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, e := range evts {
@@ -237,11 +343,11 @@ func (m *Memory) AddEvents(ctx context.Context, clusterID *int, evts []types.Eve
 	return nil
 }
 
-func (m *Memory) AddConditionHistory(ctx context.Context, clusterID int, conds []types.Condition) error {
+func (m *Memory) AddConditionHistory(ctx context.Context, clusterID types.ID, conds []types.Condition) error {
 	return nil
 }
 
-func (m *Memory) ListClusterEvents(ctx context.Context, clusterID int, limit int) ([]types.Event, error) {
+func (m *Memory) ListClusterEvents(ctx context.Context, clusterID types.ID, limit int) ([]types.Event, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := []types.Event{}
@@ -258,15 +364,8 @@ func (m *Memory) ListClusterEvents(ctx context.Context, clusterID int, limit int
 func (m *Memory) ListClusters(ctx context.Context, limit int, cursor string, labelSelector string) ([]types.Cluster, string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	// parse cursor as last id
-	last := 0
-	for i := 0; i < len(cursor); i++ {
-		c := cursor[i]
-		if c < '0' || c > '9' {
-			break
-		}
-		last = last*10 + int(c-'0')
-	}
+	// parse cursor as UUID; if invalid treat as zero UUID (no lower bound)
+	lastID, _ := types.ParseID(cursor)
 	// parse label selector
 	want := map[string]string{}
 	if labelSelector != "" {
@@ -282,23 +381,27 @@ func (m *Memory) ListClusters(ctx context.Context, limit int, cursor string, lab
 			}
 		}
 	}
-	// collect ids sorted
-	ids := make([]int, 0, len(m.clusters))
+	// collect ids sorted lexicographically by string
+	ids := make([]string, 0, len(m.clusters))
+	idByStr := make(map[string]types.ID, len(m.clusters))
 	for id := range m.clusters {
-		ids = append(ids, id)
+		s := id.String()
+		ids = append(ids, s)
+		idByStr[s] = id
 	}
-	sort.Ints(ids)
+	sort.Strings(ids)
 	out := make([]types.Cluster, 0, limit)
 	var next string
-	for _, id := range ids {
-		if id <= last {
+	for _, sid := range ids {
+		id := idByStr[sid]
+		if !types.IsZeroID(lastID) && sid <= lastID.String() {
 			continue
 		}
 		mc := m.clusters[id]
 		if matchesLabels(mc.c.Labels, want) {
 			out = append(out, mc.c)
 			if len(out) == limit {
-				next = itoa(id)
+				next = sid
 				break
 			}
 		}
@@ -318,19 +421,5 @@ func matchesLabels(have map[string]string, want map[string]string) bool {
 	return true
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return ""
-	}
-	// simple int to string
-	b := make([]byte, 0, 16)
-	s := []byte{}
-	for n > 0 {
-		s = append(s, byte('0'+(n%10)))
-		n /= 10
-	}
-	for i := len(s) - 1; i >= 0; i-- {
-		b = append(b, s[i])
-	}
-	return string(b)
-}
+// helper for consistent UID generation (UUIDv4, lowercase)
+func uuidNew() string { return types.NewID().String() }

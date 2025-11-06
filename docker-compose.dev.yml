@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:16
-    env_file: [ env.example ]
+    env_file: [ .env ]
     ports: ["5432:5432"]
     volumes:
       - dbdata:/var/lib/postgresql/data
@@ -15,12 +15,7 @@ services:
     build:
       context: .
       dockerfile: build/Dockerfile.manager
-    env_file: [ env.example ]
-    environment:
-      - DATABASE_URL=${KUBENOVA_DB_URL:-postgres://kubenova:kubenova@db:5432/kubenova?sslmode=disable}
-      - KUBENOVA_REQUIRE_AUTH=${KUBENOVA_REQUIRE_AUTH:-false}
-      - MANAGER_URL_PUBLIC=${MANAGER_URL_PUBLIC:-http://localhost:8080}
-      - AGENT_IMAGE=${AGENT_IMAGE:-ghcr.io/vaheed/kubenova/agent:dev}
+    env_file: [ .env ]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports: ["8080:8080"]

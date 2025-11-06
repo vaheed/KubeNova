@@ -1,11 +1,17 @@
 package types
 
-import "time"
+import (
+	"time"
 
-// IDs are simple strings for portability; database can map to serial if desired.
+	"github.com/google/uuid"
+)
+
+// ID is the canonical identifier type (UUIDv4, lowercase)
+type ID = uuid.UUID
 
 type Cluster struct {
-	ID            int               `json:"id,omitempty"`
+	UID           string            `json:"uid"`
+	ID            ID                `json:"id,omitempty"`
 	Name          string            `json:"name"`
 	DisplayName   string            `json:"displayName,omitempty"`
 	KubeconfigB64 string            `json:"kubeconfig,omitempty"`
@@ -23,6 +29,7 @@ type Condition struct {
 }
 
 type Tenant struct {
+	UID         string            `json:"uid"`
 	Name        string            `json:"name"`
 	Owners      []string          `json:"owners,omitempty"` // user or group subjects
 	Labels      map[string]string `json:"labels,omitempty"`
@@ -31,6 +38,7 @@ type Tenant struct {
 }
 
 type Project struct {
+	UID         string            `json:"uid"`
 	Tenant      string            `json:"tenant"`
 	Name        string            `json:"name"`
 	Labels      map[string]string `json:"labels,omitempty"`
@@ -40,6 +48,7 @@ type Project struct {
 }
 
 type App struct {
+	UID        string         `json:"uid"`
 	Tenant     string         `json:"tenant"`
 	Project    string         `json:"project"`
 	Name       string         `json:"name"`

@@ -58,15 +58,16 @@ func TestCreateClusterEndpoint(t *testing.T) {
 func TestIngestEventsAndList(t *testing.T) {
 	st := store.NewMemory()
 	srv := NewServer(st)
+	id := types.NewID()
 	evs := []types.Event{{Type: "Info", Resource: "agent", Payload: map[string]any{"m": "started"}, TS: time.Now()}}
 	b, _ := json.Marshal(evs)
-	req := httptest.NewRequest(http.MethodPost, "/sync/events?cluster_id=1", bytes.NewReader(b))
+	req := httptest.NewRequest(http.MethodPost, "/sync/events?cluster_id="+id.String(), bytes.NewReader(b))
 	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("ingest failed: %d", w.Code)
 	}
-	items, err := st.ListClusterEvents(context.Background(), 1, 10)
+	items, err := st.ListClusterEvents(context.Background(), id, 10)
 	if err != nil || len(items) != 1 {
 		t.Fatalf("list events: %v %d", err, len(items))
 	}

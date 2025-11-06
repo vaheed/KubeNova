@@ -45,19 +45,34 @@ func (p *Postgres) Close(ctx context.Context) error { p.db.Close(); return nil }
 
 func (p *Postgres) CreateTenant(ctx context.Context, t types.Tenant) error {
 	t.CreatedAt = stamp(t.CreatedAt)
-	_, err := p.db.Exec(ctx, `INSERT INTO tenants(name, created_at) VALUES ($1,$2) ON CONFLICT (name) DO NOTHING`, t.Name, t.CreatedAt)
+	if t.UID == "" {
+		if t.Name != "" {
+			t.UID = t.Name
+		} else {
+			t.UID = types.NewID().String()
+		}
+	}
+	_, err := p.db.Exec(ctx, `INSERT INTO tenants(uid, name, created_at) VALUES ($1,$2,$3) ON CONFLICT (name) DO NOTHING`, t.UID, t.Name, t.CreatedAt)
 	return err
 }
 func (p *Postgres) GetTenant(ctx context.Context, name string) (types.Tenant, error) {
 	var t types.Tenant
-	err := p.db.QueryRow(ctx, `SELECT name, created_at FROM tenants WHERE name=$1`, name).Scan(&t.Name, &t.CreatedAt)
+	err := p.db.QueryRow(ctx, `SELECT uid, name, created_at FROM tenants WHERE name=$1`, name).Scan(&t.UID, &t.Name, &t.CreatedAt)
+	if err != nil {
+		return types.Tenant{}, ErrNotFound
+	}
+	return t, nil
+}
+func (p *Postgres) GetTenantByUID(ctx context.Context, uid string) (types.Tenant, error) {
+	var t types.Tenant
+	err := p.db.QueryRow(ctx, `SELECT uid, name, created_at FROM tenants WHERE uid=$1`, uid).Scan(&t.UID, &t.Name, &t.CreatedAt)
 	if err != nil {
 		return types.Tenant{}, ErrNotFound
 	}
 	return t, nil
 }
 func (p *Postgres) ListTenants(ctx context.Context) ([]types.Tenant, error) {
-	rows, err := p.db.Query(ctx, `SELECT name, created_at FROM tenants ORDER BY name`)
+	rows, err := p.db.Query(ctx, `SELECT uid, name, created_at FROM tenants ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +80,7 @@ func (p *Postgres) ListTenants(ctx context.Context) ([]types.Tenant, error) {
 	var out []types.Tenant
 	for rows.Next() {
 		var t types.Tenant
-		if err := rows.Scan(&t.Name, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.UID, &t.Name, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -82,19 +97,34 @@ func (p *Postgres) DeleteTenant(ctx context.Context, name string) error {
 
 func (p *Postgres) CreateProject(ctx context.Context, pr types.Project) error {
 	pr.CreatedAt = stamp(pr.CreatedAt)
-	_, err := p.db.Exec(ctx, `INSERT INTO projects(tenant, name) VALUES ($1,$2) ON CONFLICT (tenant,name) DO NOTHING`, pr.Tenant, pr.Name)
+	if pr.UID == "" {
+		if pr.Name != "" {
+			pr.UID = pr.Name
+		} else {
+			pr.UID = types.NewID().String()
+		}
+	}
+	_, err := p.db.Exec(ctx, `INSERT INTO projects(uid, tenant, name) VALUES ($1,$2,$3) ON CONFLICT (tenant,name) DO NOTHING`, pr.UID, pr.Tenant, pr.Name)
 	return err
 }
 func (p *Postgres) GetProject(ctx context.Context, tenant, name string) (types.Project, error) {
 	var pr types.Project
-	err := p.db.QueryRow(ctx, `SELECT tenant, name FROM projects WHERE tenant=$1 AND name=$2`, tenant, name).Scan(&pr.Tenant, &pr.Name)
+	err := p.db.QueryRow(ctx, `SELECT uid, tenant, name FROM projects WHERE tenant=$1 AND name=$2`, tenant, name).Scan(&pr.UID, &pr.Tenant, &pr.Name)
+	if err != nil {
+		return types.Project{}, ErrNotFound
+	}
+	return pr, nil
+}
+func (p *Postgres) GetProjectByUID(ctx context.Context, uid string) (types.Project, error) {
+	var pr types.Project
+	err := p.db.QueryRow(ctx, `SELECT uid, tenant, name FROM projects WHERE uid=$1`, uid).Scan(&pr.UID, &pr.Tenant, &pr.Name)
 	if err != nil {
 		return types.Project{}, ErrNotFound
 	}
 	return pr, nil
 }
 func (p *Postgres) ListProjects(ctx context.Context, tenant string) ([]types.Project, error) {
-	rows, err := p.db.Query(ctx, `SELECT tenant, name FROM projects WHERE tenant=$1 ORDER BY name`, tenant)
+	rows, err := p.db.Query(ctx, `SELECT uid, tenant, name FROM projects WHERE tenant=$1 ORDER BY name`, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +132,7 @@ func (p *Postgres) ListProjects(ctx context.Context, tenant string) ([]types.Pro
 	var out []types.Project
 	for rows.Next() {
 		var pr types.Project
-		if err := rows.Scan(&pr.Tenant, &pr.Name); err != nil {
+		if err := rows.Scan(&pr.UID, &pr.Tenant, &pr.Name); err != nil {
 			return nil, err
 		}
 		out = append(out, pr)
@@ -119,12 +149,27 @@ func (p *Postgres) DeleteProject(ctx context.Context, tenant, name string) error
 
 func (p *Postgres) CreateApp(ctx context.Context, a types.App) error {
 	a.CreatedAt = stamp(a.CreatedAt)
-	_, err := p.db.Exec(ctx, `INSERT INTO apps(tenant, project, name) VALUES ($1,$2,$3) ON CONFLICT (tenant,project,name) DO NOTHING`, a.Tenant, a.Project, a.Name)
+	if a.UID == "" {
+		if a.Name != "" {
+			a.UID = a.Name
+		} else {
+			a.UID = types.NewID().String()
+		}
+	}
+	_, err := p.db.Exec(ctx, `INSERT INTO apps(uid, tenant, project, name) VALUES ($1,$2,$3,$4) ON CONFLICT (tenant,project,name) DO NOTHING`, a.UID, a.Tenant, a.Project, a.Name)
 	return err
 }
 func (p *Postgres) GetApp(ctx context.Context, tenant, project, name string) (types.App, error) {
 	var a types.App
-	err := p.db.QueryRow(ctx, `SELECT tenant, project, name FROM apps WHERE tenant=$1 AND project=$2 AND name=$3`, tenant, project, name).Scan(&a.Tenant, &a.Project, &a.Name)
+	err := p.db.QueryRow(ctx, `SELECT uid, tenant, project, name FROM apps WHERE tenant=$1 AND project=$2 AND name=$3`, tenant, project, name).Scan(&a.UID, &a.Tenant, &a.Project, &a.Name)
+	if err != nil {
+		return types.App{}, ErrNotFound
+	}
+	return a, nil
+}
+func (p *Postgres) GetAppByUID(ctx context.Context, uid string) (types.App, error) {
+	var a types.App
+	err := p.db.QueryRow(ctx, `SELECT uid, tenant, project, name FROM apps WHERE uid=$1`, uid).Scan(&a.UID, &a.Tenant, &a.Project, &a.Name)
 	if err != nil {
 		return types.App{}, ErrNotFound
 	}
@@ -169,17 +214,31 @@ func EnvOrMemory() (Store, func(context.Context) error, error) {
 }
 
 // Clusters
-func (p *Postgres) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (int, error) {
-	var id int
-	err := p.db.QueryRow(ctx, `INSERT INTO clusters(name, kubeconfig_enc, labels) VALUES ($1,$2,$3) RETURNING id`, c.Name, kubeconfigEnc, mapToJSONB(c.Labels)).Scan(&id)
-	return id, err
+func (p *Postgres) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (types.ID, error) {
+	if c.UID == "" {
+		if c.Name != "" {
+			c.UID = c.Name
+		} else {
+			c.UID = types.NewID().String()
+		}
+	}
+	var idStr string
+	err := p.db.QueryRow(ctx, `INSERT INTO clusters(uid, name, kubeconfig_enc, labels) VALUES ($1,$2,$3,$4) RETURNING id::text`, c.UID, c.Name, kubeconfigEnc, mapToJSONB(c.Labels)).Scan(&idStr)
+	if err != nil {
+		return types.ID{}, err
+	}
+	id, perr := types.ParseID(idStr)
+	if perr != nil {
+		return types.ID{}, perr
+	}
+	return id, nil
 }
 
-func (p *Postgres) GetCluster(ctx context.Context, id int) (types.Cluster, string, error) {
+func (p *Postgres) GetCluster(ctx context.Context, id types.ID) (types.Cluster, string, error) {
 	var c types.Cluster
 	var enc string
 	var labels map[string]string
-	err := p.db.QueryRow(ctx, `SELECT name, kubeconfig_enc, labels, created_at FROM clusters WHERE id=$1`, id).Scan(&c.Name, &enc, &labels, &c.CreatedAt)
+	err := p.db.QueryRow(ctx, `SELECT uid, name, kubeconfig_enc, labels, created_at FROM clusters WHERE id=$1::uuid`, id.String()).Scan(&c.UID, &c.Name, &enc, &labels, &c.CreatedAt)
 	if err != nil {
 		return types.Cluster{}, "", ErrNotFound
 	}
@@ -192,15 +251,37 @@ func (p *Postgres) GetClusterByName(ctx context.Context, name string) (types.Clu
 	var c types.Cluster
 	var enc string
 	var labels map[string]string
-	var id int
-	err := p.db.QueryRow(ctx, `SELECT id, kubeconfig_enc, labels, created_at FROM clusters WHERE name=$1`, name).Scan(&id, &enc, &labels, &c.CreatedAt)
+	var idStr string
+	err := p.db.QueryRow(ctx, `SELECT id::text, uid, kubeconfig_enc, labels, created_at FROM clusters WHERE name=$1`, name).Scan(&idStr, &c.UID, &enc, &labels, &c.CreatedAt)
 	if err != nil {
 		return types.Cluster{}, "", ErrNotFound
 	}
+	id, _ := types.ParseID(idStr)
 	c.ID = id
 	c.Name = name
 	c.Labels = labels
 	return c, enc, nil
+}
+
+func (p *Postgres) GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error) {
+	var c types.Cluster
+	var enc string
+	var labels map[string]string
+	var idStr string
+	err := p.db.QueryRow(ctx, `SELECT id::text, name, kubeconfig_enc, labels, created_at FROM clusters WHERE uid=$1`, uid).Scan(&idStr, &c.Name, &enc, &labels, &c.CreatedAt)
+	if err != nil {
+		return types.Cluster{}, "", ErrNotFound
+	}
+	id, _ := types.ParseID(idStr)
+	c.ID = id
+	c.UID = uid
+	c.Labels = labels
+	return c, enc, nil
+}
+
+func (p *Postgres) DeleteCluster(ctx context.Context, id types.ID) error {
+	_, err := p.db.Exec(ctx, `DELETE FROM clusters WHERE id=$1::uuid`, id.String())
+	return err
 }
 
 func mapToJSONB(m map[string]string) any {
@@ -210,21 +291,30 @@ func mapToJSONB(m map[string]string) any {
 	return m
 }
 
+// randUID minimal generator: kn + 16 random hex bytes
+// randUID is provided in memory.go (same package)
+
 // defaultMigrationSQL mirrors db/migrations/0001_init.sql for test environments
-const defaultMigrationSQL = `-- tenants, projects, apps, events (skeleton)
+const defaultMigrationSQL = `
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- tenants, projects, apps, events (skeleton)
 CREATE TABLE IF NOT EXISTS tenants (
-  id SERIAL PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid TEXT UNIQUE NOT NULL,
   name TEXT UNIQUE NOT NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS projects (
-  id SERIAL PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid TEXT UNIQUE NOT NULL,
   tenant TEXT NOT NULL,
   name TEXT NOT NULL,
   UNIQUE(tenant,name)
 );
 CREATE TABLE IF NOT EXISTS apps (
-  id SERIAL PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid TEXT UNIQUE NOT NULL,
   tenant TEXT NOT NULL,
   project TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -232,7 +322,8 @@ CREATE TABLE IF NOT EXISTS apps (
 );
 
 CREATE TABLE IF NOT EXISTS clusters (
-  id SERIAL PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid TEXT UNIQUE NOT NULL,
   name TEXT UNIQUE NOT NULL,
   kubeconfig_enc TEXT NOT NULL,
   labels JSONB DEFAULT '{}'::jsonb,
@@ -240,12 +331,11 @@ CREATE TABLE IF NOT EXISTS clusters (
 );
 
 -- indexes for clusters listing and label filtering
-CREATE INDEX IF NOT EXISTS clusters_id_idx ON clusters(id);
 CREATE INDEX IF NOT EXISTS clusters_labels_gin_idx ON clusters USING gin(labels);
 
 CREATE TABLE IF NOT EXISTS events (
-  id BIGSERIAL PRIMARY KEY,
-  cluster_id INT NULL REFERENCES clusters(id) ON DELETE SET NULL,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cluster_id UUID NULL REFERENCES clusters(id) ON DELETE SET NULL,
   type TEXT NOT NULL,
   resource TEXT NOT NULL,
   payload JSONB,
@@ -253,8 +343,8 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE TABLE IF NOT EXISTS cluster_conditions (
-  id BIGSERIAL PRIMARY KEY,
-  cluster_id INT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cluster_id UUID NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
   type TEXT NOT NULL,
   status TEXT NOT NULL,
   reason TEXT,
@@ -263,13 +353,13 @@ CREATE TABLE IF NOT EXISTS cluster_conditions (
 );`
 
 // Events & conditions
-func (p *Postgres) AddEvents(ctx context.Context, clusterID *int, evts []types.Event) error {
+func (p *Postgres) AddEvents(ctx context.Context, clusterID *types.ID, evts []types.Event) error {
 	for _, e := range evts {
 		var cid any = nil
 		if clusterID != nil {
-			cid = *clusterID
+			cid = clusterID.String()
 		}
-		_, err := p.db.Exec(ctx, `INSERT INTO events(cluster_id, type, resource, payload, ts) VALUES ($1,$2,$3,$4,COALESCE($5,NOW()))`, cid, e.Type, e.Resource, e.Payload, e.TS)
+		_, err := p.db.Exec(ctx, `INSERT INTO events(cluster_id, type, resource, payload, ts) VALUES ($1::uuid,$2,$3,$4,COALESCE($5,NOW()))`, cid, e.Type, e.Resource, e.Payload, e.TS)
 		if err != nil {
 			return err
 		}
@@ -277,9 +367,9 @@ func (p *Postgres) AddEvents(ctx context.Context, clusterID *int, evts []types.E
 	return nil
 }
 
-func (p *Postgres) AddConditionHistory(ctx context.Context, clusterID int, conds []types.Condition) error {
+func (p *Postgres) AddConditionHistory(ctx context.Context, clusterID types.ID, conds []types.Condition) error {
 	for _, c := range conds {
-		_, err := p.db.Exec(ctx, `INSERT INTO cluster_conditions(cluster_id, type, status, reason, message, ts) VALUES ($1,$2,$3,$4,$5,COALESCE($6,NOW()))`, clusterID, c.Type, c.Status, c.Reason, c.Message, c.LastTransitionTime)
+		_, err := p.db.Exec(ctx, `INSERT INTO cluster_conditions(cluster_id, type, status, reason, message, ts) VALUES ($1::uuid,$2,$3,$4,$5,COALESCE($6,NOW()))`, clusterID.String(), c.Type, c.Status, c.Reason, c.Message, c.LastTransitionTime)
 		if err != nil {
 			return err
 		}
@@ -287,8 +377,8 @@ func (p *Postgres) AddConditionHistory(ctx context.Context, clusterID int, conds
 	return nil
 }
 
-func (p *Postgres) ListClusterEvents(ctx context.Context, clusterID int, limit int) ([]types.Event, error) {
-	rows, err := p.db.Query(ctx, `SELECT type, resource, payload, ts FROM events WHERE cluster_id=$1 ORDER BY ts DESC LIMIT $2`, clusterID, limit)
+func (p *Postgres) ListClusterEvents(ctx context.Context, clusterID types.ID, limit int) ([]types.Event, error) {
+	rows, err := p.db.Query(ctx, `SELECT type, resource, payload, ts FROM events WHERE cluster_id=$1::uuid ORDER BY ts DESC LIMIT $2`, clusterID.String(), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -308,17 +398,11 @@ func (p *Postgres) ListClusters(ctx context.Context, limit int, cursor string, l
 	if limit <= 0 {
 		limit = 50
 	}
-	last := 0
-	for i := 0; i < len(cursor); i++ {
-		c := cursor[i]
-		if c < '0' || c > '9' {
-			break
-		}
-		last = last*10 + int(c-'0')
-	}
+	// parse UUID cursor (ignore errors -> treat as zero UUID lower bound)
+	lastID, _ := types.ParseID(cursor)
 	// build where clause
-	where := []string{"id > $1"}
-	args := []any{last}
+	where := []string{"id > $1::uuid"}
+	args := []any{lastID.String()}
 	idx := 2
 	if labelSelector != "" {
 		// parse simple k=v pairs
@@ -352,7 +436,7 @@ func (p *Postgres) ListClusters(ctx context.Context, limit int, cursor string, l
 			idx++
 		}
 	}
-	q := "SELECT id, name, labels, created_at FROM clusters WHERE " + strings.Join(where, " AND ") + " ORDER BY id ASC LIMIT $" + strconv.Itoa(idx)
+	q := "SELECT id::text, name, labels, created_at FROM clusters WHERE " + strings.Join(where, " AND ") + " ORDER BY id ASC LIMIT $" + strconv.Itoa(idx)
 	args = append(args, limit)
 	rows, err := p.db.Query(ctx, q, args...)
 	if err != nil {
@@ -363,13 +447,16 @@ func (p *Postgres) ListClusters(ctx context.Context, limit int, cursor string, l
 	next := ""
 	for rows.Next() {
 		var c types.Cluster
-		if err := rows.Scan(&c.ID, &c.Name, &c.Labels, &c.CreatedAt); err != nil {
+		var idStr string
+		if err := rows.Scan(&idStr, &c.Name, &c.Labels, &c.CreatedAt); err != nil {
 			return nil, "", err
 		}
+		id, _ := types.ParseID(idStr)
+		c.ID = id
 		out = append(out, c)
 	}
 	if len(out) == limit {
-		next = strconv.Itoa(out[len(out)-1].ID)
+		next = out[len(out)-1].ID.String()
 	}
 	return out, next, nil
 }

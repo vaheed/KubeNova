@@ -37,6 +37,28 @@ func InstallAgent(ctx context.Context, kubeconfig []byte, image, managerURL stri
 	return applyAll(ctx, cfg, image, managerURL)
 }
 
+// UninstallAgent removes agent resources from the target cluster. Best-effort and idempotent.
+func UninstallAgent(ctx context.Context, kubeconfig []byte) error {
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	if err != nil {
+		return err
+	}
+	cset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return err
+	}
+	ns := "kubenova-system"
+	// delete in safe order
+	_ = cset.AutoscalingV2().HorizontalPodAutoscalers(ns).Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
+	_ = cset.AppsV1().Deployments(ns).Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
+	_ = cset.CoreV1().ServiceAccounts(ns).Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
+	_ = cset.RbacV1().ClusterRoleBindings().Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
+	_ = cset.RbacV1().ClusterRoles().Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
+	// Namespace may contain other artifacts; try delete if it only hosted agent. Best-effort.
+	// _ = cset.CoreV1().Namespaces().Delete(ctx, ns, metav1.DeleteOptions{})
+	return nil
+}
+
 func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) error {
 	cset, err := kubernetes.NewForConfig(cfg)
 	if err != nil {

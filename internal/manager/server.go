@@ -138,16 +138,17 @@ func (s *Server) ingestEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	// cluster optional via query id
-	var cid *int
+	// cluster optional via query id (UUID)
+	var cid *types.ID
 	if v := chi.URLParam(r, "id"); v != "" {
 	}
 	if q := r.URL.Query().Get("cluster_id"); q != "" {
-		id := atoi(q)
-		cid = &id
+		if id, err := types.ParseID(q); err == nil {
+			cid = &id
+		}
 	}
 	if cid != nil {
-		logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("ingest_events", zap.Int("cluster_id", *cid), zap.Int("count", len(list)))
+		logging.WithTrace(r.Context(), logging.FromContext(r.Context())).Info("ingest_events", zap.String("cluster_id", cid.String()), zap.Int("count", len(list)))
 	}
 	if err := s.store.AddEvents(r.Context(), cid, list); err != nil {
 		http.Error(w, err.Error(), 500)
