@@ -272,12 +272,26 @@ paths:
     get:
       summary: Version info
       responses:
-        '200': { description: ok, content: { application/json: { schema: { type: object } } } }
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+              examples:
+                version:
+                  value: { version: "1.0.0", commit: "abcdef", buildDate: "2025-01-01T00:00:00Z" }
   /api/v1/features:
     get:
       summary: Feature flags
       responses:
-        '200': { description: ok, content: { application/json: { schema: { type: object } } } }
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+              examples:
+                features:
+                  value: { tenancy: true, proxy: true, appDelivery: true }
 
   # Access & Tokens
   /api/v1/tokens:
@@ -405,6 +419,14 @@ paths:
       summary: Bootstrap a system component on the cluster
       responses:
         '202': { description: started }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
   /api/v1/clusters/{c}/capabilities:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
     get:
@@ -481,30 +503,74 @@ paths:
               type: object
               properties:
                 owners: { type: array, items: { type: string } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200': { description: ok }
+        '422':
+          description: invalid owners list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
   /api/v1/clusters/{c}/tenants/{t}/quotas:
     put:
       summary: Set tenant quotas
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
       requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200': { description: ok }
+        '422':
+          description: invalid quotas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
   /api/v1/clusters/{c}/tenants/{t}/limits:
     put:
       summary: Set tenant resource limits
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
       requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200': { description: ok }
+        '422':
+          description: invalid limits
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
   /api/v1/clusters/{c}/tenants/{t}/network-policies:
     put:
       summary: Configure default network policies for tenant
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
       requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200': { description: ok }
+        '422':
+          description: invalid network policies
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
   /api/v1/clusters/{c}/tenants/{t}/summary:
     get:
       summary: Summary of tenant resources and usage
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/TenantSummary' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantSummary' }
+              examples:
+                summary:
+                  value: { namespaces: ["acme-system","acme-dev"], quotas: { cpu: "4", memory: "8Gi" }, usages: { cpu: "1", memory: "2Gi" } }
 
   # Projects
   /api/v1/clusters/{c}/tenants/{t}/projects:
@@ -543,7 +609,15 @@ paths:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
     get:
       summary: Get project
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+              examples:
+                project:
+                  value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
     put:
       summary: Update project
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
@@ -561,18 +635,49 @@ paths:
     get:
       summary: Issue a short-lived kubeconfig scoped to tenant/project via proxy
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/KubeconfigResponse' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KubeconfigResponse' }
+              examples:
+                kubeconfig:
+                  value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
 
   # PolicySets
   /api/v1/clusters/{c}/tenants/{t}/policysets:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
     get:
       summary: List PolicySets
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } }
+              examples:
+                list:
+                  value: [ { name: "baseline", description: "Base guardrails" } ]
     post:
       summary: Create PolicySet
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PolicySet' } } } }
-      responses: { '200': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/PolicySet' } } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicySet' }
+            examples:
+              create:
+                value: { name: "baseline", description: "Base guardrails", rules: [] }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicySet' }
+              examples:
+                created:
+                  value: { name: "baseline", description: "Base guardrails" }
   /api/v1/clusters/{c}/tenants/{t}/policysets/{name}:
     parameters:
       - { $ref: '#/components/parameters/ClusterParam' }
@@ -583,10 +688,25 @@ paths:
         schema: { type: string }
     get:
       summary: Get PolicySet
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/PolicySet' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicySet' }
+              examples:
+                item:
+                  value: { name: "baseline", description: "Base guardrails" }
     put:
       summary: Update PolicySet
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PolicySet' } } } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicySet' }
+            examples:
+              update:
+                value: { name: "baseline", description: "Updated", rules: [] }
       responses: { '200': { description: ok } }
     delete:
       summary: Delete PolicySet
@@ -595,7 +715,15 @@ paths:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
     get:
       summary: Get curated PolicySet catalog
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } }
+              examples:
+                catalog:
+                  value: [ { name: "baseline", description: "Base guardrails" } ]
 
   # Apps
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps:
@@ -785,28 +913,75 @@ paths:
   /api/v1/catalog/components:
     get:
       summary: List component definitions
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } }
+              examples:
+                list:
+                  value: [ { name: "web", type: "component", description: "Web service" } ]
   /api/v1/catalog/traits:
     get:
       summary: List trait definitions
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } }
+              examples:
+                list:
+                  value: [ { name: "scaler", type: "trait", description: "Scale deployments" } ]
   /api/v1/catalog/workflows:
     get:
       summary: List workflow definitions
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } }
+              examples:
+                list:
+                  value: [ { name: "rollout", type: "workflow", description: "Rolling updates" } ]
 
   # Workflows/Operations
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/run:
     post:
       summary: Run workflow with optional steps
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { steps: { type: array, items: { type: string } } } } } } }
-      responses: { '202': { description: started, content: { application/json: { schema: { $ref: '#/components/schemas/WorkflowRun' } } } } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { steps: { type: array, items: { type: string } } } }
+            examples:
+              run:
+                value: { steps: ["deploy", "verify"] }
+      responses:
+        '202':
+          description: started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowRun' }
+              examples:
+                started:
+                  value: { id: "run-123", status: "Running", startedAt: "2025-01-01T00:00:00Z" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/runs:
     get:
       summary: List workflow runs
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' } ]
-      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/WorkflowRun' } } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/WorkflowRun' } }
+              examples:
+                runs:
+                  value: [ { id: "run-123", status: "Succeeded", startedAt: "2025-01-01T00:00:00Z", finishedAt: "2025-01-01T00:05:00Z" } ]
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/runs/{id}:
     get:
       summary: Get workflow run by id
@@ -818,7 +993,15 @@ paths:
           in: path
           required: true
           schema: { type: string }
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/WorkflowRun' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowRun' }
+              examples:
+                run:
+                  value: { id: "run-123", status: "Succeeded", startedAt: "2025-01-01T00:00:00Z", finishedAt: "2025-01-01T00:05:00Z" }
 
   # Usage & Quota
   /api/v1/tenants/{t}/usage:
@@ -832,7 +1015,15 @@ paths:
         - name: cluster
           in: query
           schema: { type: string, nullable: true }
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/UsageReport' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageReport' }
+              examples:
+                tenantUsage:
+                  value: { window: "24h", cpu: "2", memory: "4Gi", pods: 12 }
   /api/v1/projects/{p}/usage:
     get:
       summary: Usage report for a project
@@ -844,12 +1035,35 @@ paths:
         - name: cluster
           in: query
           schema: { type: string, nullable: true }
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/UsageReport' } } } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageReport' }
+              examples:
+                projectUsage:
+                  value: { window: "24h", cpu: "1", memory: "1Gi", pods: 5 }
 
   # Access & Tokens (kubeconfig issuance)
   /api/v1/tenants/{t}/kubeconfig:
     post:
       summary: Issue a tenant-scoped kubeconfig via proxy
       parameters: [ { $ref: '#/components/parameters/TenantParam' } ]
-      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { project: { type: string }, role: { type: string, enum: [tenantOwner, projectDev, readOnly], default: readOnly }, ttlSeconds: { type: integer, minimum: 60, maximum: 86400, default: 3600 } } } } } }
-      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/KubeconfigResponse' } } } } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { project: { type: string }, role: { type: string, enum: [tenantOwner, projectDev, readOnly], default: readOnly }, ttlSeconds: { type: integer, minimum: 60, maximum: 86400, default: 3600 } } }
+            examples:
+              grant:
+                value: { role: "readOnly", ttlSeconds: 3600 }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KubeconfigResponse' }
+              examples:
+                kubeconfig:
+                  value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
