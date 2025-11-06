@@ -63,21 +63,22 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 	st := store.NewMemory()
 	api := NewAPIServer(st)
 	fv := &fakeVela{}
-	api.newVela = func([]byte) interface {
-		Deploy(context.Context, string, string) error
-		Suspend(context.Context, string, string) error
-		Resume(context.Context, string, string) error
-		Rollback(context.Context, string, string, *int) error
-		Status(context.Context, string, string) (map[string]any, error)
-		Revisions(context.Context, string, string) ([]map[string]any, error)
-		Diff(context.Context, string, string, int, int) (map[string]any, error)
-		Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
-		SetTraits(context.Context, string, string, []map[string]any) error
-		SetPolicies(context.Context, string, string, []map[string]any) error
-		ImageUpdate(context.Context, string, string, string, string, string) error
-	} {
-		return fv
-	}
+    api.newVela = func([]byte) interface {
+        Deploy(context.Context, string, string) error
+        Suspend(context.Context, string, string) error
+        Resume(context.Context, string, string) error
+        Rollback(context.Context, string, string, *int) error
+        Status(context.Context, string, string) (map[string]any, error)
+        Revisions(context.Context, string, string) ([]map[string]any, error)
+        Diff(context.Context, string, string, int, int) (map[string]any, error)
+        Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
+        SetTraits(context.Context, string, string, []map[string]any) error
+        SetPolicies(context.Context, string, string, []map[string]any) error
+        ImageUpdate(context.Context, string, string, string, string, string) error
+        DeleteApp(context.Context, string, string) error
+    } {
+        return fv
+    }
 
 	r := chi.NewRouter()
 	_ = HandlerWithOptions(api, ChiServerOptions{BaseRouter: r})

@@ -173,6 +173,10 @@ curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/
 curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:delete" $AUTH -i
 ```
 
+Note
+- Traits/Policies return 200 OK with no response body.
+- Image Update and Delete return 202 Accepted with no response body; operations are asynchronous and idempotent.
+
 ## 6) PolicySets
 
 ```bash

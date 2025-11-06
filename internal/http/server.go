@@ -27,19 +27,20 @@ type APIServer struct {
 	requireAuth bool
 	jwtKey      []byte
 	newCapsule  func([]byte) capib.Client
-	newVela     func([]byte) interface {
-		Deploy(context.Context, string, string) error
-		Suspend(context.Context, string, string) error
-		Resume(context.Context, string, string) error
-		Rollback(context.Context, string, string, *int) error
-		Status(context.Context, string, string) (map[string]any, error)
-		Revisions(context.Context, string, string) ([]map[string]any, error)
-		Diff(context.Context, string, string, int, int) (map[string]any, error)
-		Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
-		SetTraits(context.Context, string, string, []map[string]any) error
-		SetPolicies(context.Context, string, string, []map[string]any) error
-		ImageUpdate(context.Context, string, string, string, string, string) error
-	}
+    newVela     func([]byte) interface {
+        Deploy(context.Context, string, string) error
+        Suspend(context.Context, string, string) error
+        Resume(context.Context, string, string) error
+        Rollback(context.Context, string, string, *int) error
+        Status(context.Context, string, string) (map[string]any, error)
+        Revisions(context.Context, string, string) ([]map[string]any, error)
+        Diff(context.Context, string, string, int, int) (map[string]any, error)
+        Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
+        SetTraits(context.Context, string, string, []map[string]any) error
+        SetPolicies(context.Context, string, string, []map[string]any) error
+        ImageUpdate(context.Context, string, string, string, string, string) error
+        DeleteApp(context.Context, string, string) error
+    }
 	psMu       sync.RWMutex
 	policysets map[string]map[string]PolicySet // tenantUID -> name -> item
 	runsMu     sync.RWMutex
@@ -53,21 +54,22 @@ func NewAPIServer(st store.Store) *APIServer {
 		requireAuth: parseBool(os.Getenv("KUBENOVA_REQUIRE_AUTH")),
 		jwtKey:      []byte(os.Getenv("JWT_SIGNING_KEY")),
 		newCapsule:  capib.New,
-		newVela: func(b []byte) interface {
-			Deploy(context.Context, string, string) error
-			Suspend(context.Context, string, string) error
-			Resume(context.Context, string, string) error
-			Rollback(context.Context, string, string, *int) error
-			Status(context.Context, string, string) (map[string]any, error)
-			Revisions(context.Context, string, string) ([]map[string]any, error)
-			Diff(context.Context, string, string, int, int) (map[string]any, error)
-			Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
-			SetTraits(context.Context, string, string, []map[string]any) error
-			SetPolicies(context.Context, string, string, []map[string]any) error
-			ImageUpdate(context.Context, string, string, string, string, string) error
-		} {
-			return velab.New(b)
-		},
+        newVela: func(b []byte) interface {
+            Deploy(context.Context, string, string) error
+            Suspend(context.Context, string, string) error
+            Resume(context.Context, string, string) error
+            Rollback(context.Context, string, string, *int) error
+            Status(context.Context, string, string) (map[string]any, error)
+            Revisions(context.Context, string, string) ([]map[string]any, error)
+            Diff(context.Context, string, string, int, int) (map[string]any, error)
+            Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
+            SetTraits(context.Context, string, string, []map[string]any) error
+            SetPolicies(context.Context, string, string, []map[string]any) error
+            ImageUpdate(context.Context, string, string, string, string, string) error
+            DeleteApp(context.Context, string, string) error
+        } {
+            return velab.New(b)
+        },
 		policysets: map[string]map[string]PolicySet{},
 		runsByID:   map[string]WorkflowRun{},
 		runsByApp:  map[string][]WorkflowRun{},
@@ -688,10 +690,18 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsRunsId(w http.Response
 
 // (POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:delete)
 func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsADelete(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, a AppParam) {
-	if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") {
-		return
-	}
-	w.WriteHeader(http.StatusAccepted)
+    if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") {
+        return
+    }
+    var kb []byte
+    if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
+        kb, _ = base64.StdEncoding.DecodeString(enc)
+    }
+    if err := s.newVela(kb).DeleteApp(r.Context(), string(p), string(a)); err != nil {
+        s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+        return
+    }
+    w.WriteHeader(http.StatusAccepted)
 }
 
 // helpers
@@ -701,25 +711,67 @@ func ptrWorkflowRunStatus(s WorkflowRunStatus) *WorkflowRunStatus { return &s }
 
 // (GET /api/v1/clusters/{c}/tenants)
 func (s *APIServer) GetApiV1ClustersCTenants(w http.ResponseWriter, r *http.Request, c ClusterParam, params GetApiV1ClustersCTenantsParams) {
-	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
-		return
-	}
-	items, err := s.st.ListTenants(r.Context())
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
-		return
-	}
-	out := make([]Tenant, 0, len(items))
-	for _, t := range items {
-		tn := Tenant{Name: t.Name, Labels: &t.Labels, Annotations: &t.Annotations}
-		if t.UID != "" {
-			u := t.UID
-			tn.Uid = &u
-		}
-		out = append(out, tn)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+    if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+        return
+    }
+    items, err := s.st.ListTenants(r.Context())
+    if err != nil {
+        s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+        return
+    }
+    owner := ""
+    if params.Owner != nil {
+        owner = string(*params.Owner)
+    }
+    selectors := map[string]string{}
+    if params.LabelSelector != nil {
+        raw := string(*params.LabelSelector)
+        if raw != "" {
+            parts := strings.Split(raw, ",")
+            for _, p := range parts {
+                kv := strings.SplitN(strings.TrimSpace(p), "=", 2)
+                if len(kv) == 2 {
+                    selectors[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+                }
+            }
+        }
+    }
+    matches := func(t kn.Tenant) bool {
+        if owner != "" {
+            ok := false
+            for _, o := range t.Owners {
+                if o == owner {
+                    ok = true
+                    break
+                }
+            }
+            if !ok {
+                return false
+            }
+        }
+        if len(selectors) > 0 {
+            for k, v := range selectors {
+                if t.Labels[k] != v {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+    out := make([]Tenant, 0, len(items))
+    for _, t := range items {
+        if !matches(t) {
+            continue
+        }
+        tn := Tenant{Name: t.Name, Labels: &t.Labels, Annotations: &t.Annotations}
+        if t.UID != "" {
+            u := t.UID
+            tn.Uid = &u
+        }
+        out = append(out, tn)
+    }
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(out)
 }
 
 // (POST /api/v1/clusters/{c}/tenants)

@@ -58,6 +58,14 @@ func TestAppOperations(t *testing.T) {
 	doStatus(t, httpc, http.MethodPost, base+"/api/v1/clusters/"+info.Name+"/tenants/"+tenant+"/projects/"+project+"/apps/"+app+":resume", nil, http.StatusAccepted)
 	body, _ := json.Marshal(map[string]any{"toRevision": 1})
 	doStatus(t, httpc, http.MethodPost, base+"/api/v1/clusters/"+info.Name+"/tenants/"+tenant+"/projects/"+project+"/apps/"+app+":rollback", bytes.NewReader(body), http.StatusAccepted)
+
+	// Traits, Policies, Image Update
+	traits, _ := json.Marshal([]map[string]any{{"type": "scaler", "properties": map[string]any{"replicas": 2}}})
+	doStatus(t, httpc, http.MethodPut, base+"/api/v1/clusters/"+info.Name+"/tenants/"+tenant+"/projects/"+project+"/apps/"+app+"/traits", bytes.NewReader(traits), http.StatusOK)
+	pols, _ := json.Marshal([]map[string]any{{"type": "rollout", "properties": map[string]any{"maxUnavailable": 1}}})
+	doStatus(t, httpc, http.MethodPut, base+"/api/v1/clusters/"+info.Name+"/tenants/"+tenant+"/projects/"+project+"/apps/"+app+"/policies", bytes.NewReader(pols), http.StatusOK)
+	img, _ := json.Marshal(map[string]any{"component": "web", "image": "busybox", "tag": "latest"})
+	doStatus(t, httpc, http.MethodPost, base+"/api/v1/clusters/"+info.Name+"/tenants/"+tenant+"/projects/"+project+"/apps/"+app+"/image-update", bytes.NewReader(img), http.StatusAccepted)
 }
 
 func doStatus(t *testing.T, c *http.Client, method, url string, body *bytes.Reader, want int) {

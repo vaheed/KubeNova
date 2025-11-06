@@ -237,6 +237,7 @@ Notes
 - The adapter uses dynamic client for `Application` and `ApplicationRevision` in `core.oam.dev/v1beta1`.
 - Logs are aggregated from Pods labeled with `app.oam.dev/name` and optional `app.oam.dev/component`.
 - Catalog endpoints are curated views of KubeVela definitions; they don’t expose raw objects.
+- SetTraits/SetPolicies update `spec.traits`/`spec.policies`; ImageUpdate updates the matching component `properties.image` (creates the component if missing).
 
 ---
 

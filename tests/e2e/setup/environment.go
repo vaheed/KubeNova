@@ -92,15 +92,22 @@ func InitSuiteEnvironment(ctx context.Context, cfg Config) (*Environment, error)
 			suiteEnvErr = err
 			return
 		}
-		if err := env.ensureImages(ctx); err != nil {
-			suiteEnvErr = err
-			return
-		}
-		if err := env.ensureManager(ctx); err != nil {
-			suiteEnvErr = err
-			return
-		}
-		suiteEnv = env
+        if err := env.ensureImages(ctx); err != nil {
+            suiteEnvErr = err
+            return
+        }
+        // If Vela ops are enabled for the suite, proactively install Vela Core
+        if enabled, _ := lookupEnvBool("E2E_VELA_OPS"); enabled {
+            if err := env.ensureVelaCore(ctx); err != nil {
+                suiteEnvErr = err
+                return
+            }
+        }
+        if err := env.ensureManager(ctx); err != nil {
+            suiteEnvErr = err
+            return
+        }
+        suiteEnv = env
 	})
 	if errors.Is(suiteEnvErr, ErrSuiteSkipped) {
 		return nil, ErrSuiteSkipped
@@ -261,6 +268,29 @@ func (e *Environment) ensureManager(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// ensureVelaCore installs KubeVela core chart when E2E_VELA_OPS is enabled.
+func (e *Environment) ensureVelaCore(ctx context.Context) error {
+    e.logger.Info("ensure_vela_core.start")
+    // Add repo (idempotent)
+    if cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", "repo", "add", "kubevela", "https://kubevela.github.io/charts"); err == nil {
+        _ = cmd.Run()
+    }
+    if cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", "repo", "update"); err == nil {
+        _ = cmd.Run()
+    }
+    args := []string{"upgrade", "--install", "vela-core", "kubevela/vela-core", "-n", "vela-system", "--create-namespace", "--wait", "--timeout", e.cfg.WaitTimeout.String()}
+    cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", args...)
+    if err != nil {
+        return err
+    }
+    cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+    if err := cmd.Run(); err != nil {
+        return fmt.Errorf("helm install vela-core: %w", err)
+    }
+    e.logger.Info("ensure_vela_core.deployed")
+    return nil
 }
 
 func (e *Environment) waitForDeployment(ctx context.Context, namespace, name string) error {
