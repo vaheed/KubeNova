@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agent
+  name: kubenova-agent
   namespace: kubenova-system
-  labels: { app: agent }
+  labels: { app: kubenova-agent }
 spec:
   replicas: 2
-  selector: { matchLabels: { app: agent } }
+  selector: { matchLabels: { app: kubenova-agent } }
   template:
     metadata:
-      labels: { app: agent }
+      labels: { app: kubenova-agent }
     spec:
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: agent
+      serviceAccountName: kubenova-agent
       containers:
         - name: agent
           image: "{{IMAGE}}"

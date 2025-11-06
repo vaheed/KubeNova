@@ -1,19 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agent
-  labels: { app: agent }
+  name: kubenova-agent
+  labels: { app: kubenova-agent }
 spec:
   replicas: 2
   selector:
-    matchLabels: {app: agent}
+    matchLabels: {app: kubenova-agent}
   template:
     metadata:
-      labels: {app: agent}
+      labels: {app: kubenova-agent}
     spec:
       securityContext:
         runAsNonRoot: true
-      serviceAccountName: agent
+        fsGroup: 65532
+      serviceAccountName: kubenova-agent
       containers:
         - name: agent
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -21,6 +22,9 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
           readinessProbe:
             httpGet: { path: /healthz, port: 8082 }
             initialDelaySeconds: 5
@@ -45,4 +49,7 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
         {{- end }}

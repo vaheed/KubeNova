@@ -1,0 +1,1308 @@
+openapi: 3.1.0
+info:
+  title: KubeNova API
+  version: 0.9.1
+  description: |
+    Single KubeNova REST API surface for multi-cluster tenancy and app delivery.
+    Notes:
+    - JWT (HS256) is required for most endpoints.
+    - No vendor resource kinds or URLs are exposed.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ClusterParam:
+      name: c
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f-]{36}$'
+    TenantParam:
+      name: t
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f-]{36}$'
+    ProjectParam:
+      name: p
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f-]{36}$'
+    AppParam:
+      name: a
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f-]{36}$'
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    LabelSelector:
+      name: labelSelector
+      in: query
+      schema: { type: string }
+    OwnerFilter:
+      name: owner
+      in: query
+      schema: { type: string }
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: KN-400, KN-401, KN-403, KN-404, KN-409, KN-422, KN-500
+        message: { type: string }
+        details: {}
+    Page:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: {} }
+        nextCursor: { type: string, nullable: true }
+    Condition:
+      type: object
+      properties:
+        type: { type: string }
+        status: { type: string, enum: [True, False, Unknown] }
+        reason: { type: string }
+        message: { type: string }
+        lastTransitionTime: { type: string, format: date-time }
+    Cluster:
+      type: object
+      required: [name]
+      properties:
+        uid:
+          type: string
+          description: Stable unique identifier
+          format: uuid
+          pattern: '^[0-9a-f-]{36}$'
+        name: { type: string }
+        displayName: { type: string }
+        labels: { type: object, additionalProperties: { type: string } }
+        createdAt: { type: string, format: date-time }
+        conditions: { type: array, items: { $ref: '#/components/schemas/Condition' } }
+    ClusterRegistration:
+      type: object
+      required: [name, kubeconfig]
+      properties:
+        name: { type: string }
+        kubeconfig: { type: string, format: byte }
+        labels: { type: object, additionalProperties: { type: string } }
+    ClusterCapabilities:
+      type: object
+      properties:
+        tenancy: { type: boolean }
+        vela: { type: boolean }
+        proxy: { type: boolean }
+    Tenant:
+      type: object
+      required: [name]
+      properties:
+        uid:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f-]{36}$'
+        name: { type: string }
+        owners: { type: array, items: { type: string } }
+        labels: { type: object, additionalProperties: { type: string } }
+        annotations: { type: object, additionalProperties: { type: string } }
+        createdAt: { type: string, format: date-time }
+    TenantSummary:
+      type: object
+      properties:
+        namespaces: { type: array, items: { type: string } }
+        quotas: { type: object, additionalProperties: { type: string } }
+        usages: { type: object, additionalProperties: { type: string } }
+    Project:
+      type: object
+      required: [name]
+      properties:
+        uid:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f-]{36}$'
+        name: { type: string }
+        labels: { type: object, additionalProperties: { type: string } }
+        annotations: { type: object, additionalProperties: { type: string } }
+        createdAt: { type: string, format: date-time }
+    ProjectAccess:
+      type: object
+      properties:
+        members:
+          type: array
+          items:
+            type: object
+            required: [subject, role]
+            properties:
+              subject: { type: string }
+              role: { type: string, enum: [tenantOwner, projectDev, readOnly] }
+    PolicySet:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        rules: { type: array, items: { type: object } }
+        attachedTo:
+          type: array
+          items:
+            type: object
+            properties:
+              tenant: { type: string }
+              project: { type: string }
+    App:
+      type: object
+      required: [name]
+      properties:
+        uid:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f-]{36}$'
+        name: { type: string }
+        description: { type: string }
+        components: { type: array, items: { type: object } }
+        traits: { type: array, items: { type: object } }
+        policies: { type: array, items: { type: object } }
+        createdAt: { type: string, format: date-time }
+    AppStatus:
+      type: object
+      properties:
+        phase: { type: string, enum: [Pending, Deploying, Running, Suspended, Failed] }
+        healthy: { type: boolean }
+        conditions: { type: array, items: { $ref: '#/components/schemas/Condition' } }
+        lastUpdated: { type: string, format: date-time }
+    AppRevision:
+      type: object
+      properties:
+        revision: { type: integer }
+        createdAt: { type: string, format: date-time }
+        summary: { type: object }
+    AppDiff:
+      type: object
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+        changes: { type: array, items: { type: object } }
+    LogLine:
+      type: object
+      properties:
+        ts: { type: string, format: date-time }
+        component: { type: string }
+        message: { type: string }
+    CatalogItem:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [component, trait, workflow] }
+        description: { type: string }
+        schema: { type: object }
+    WorkflowRun:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [Running, Succeeded, Failed] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+    UsageReport:
+      type: object
+      properties:
+        window: { type: string }
+        cpu: { type: string }
+        memory: { type: string }
+        pods: { type: integer }
+    TokenRequest:
+      type: object
+      required: [subject]
+      properties:
+        subject: { type: string }
+        roles: { type: array, items: { type: string, enum: [admin, ops, tenantOwner, projectDev, readOnly] } }
+        ttlSeconds: { type: integer, minimum: 60, maximum: 2592000, default: 3600 }
+    TokenResponse:
+      type: object
+      properties:
+        token: { type: string }
+        expiresAt: { type: string, format: date-time }
+    MeResponse:
+      type: object
+      properties:
+        subject: { type: string }
+        roles: { type: array, items: { type: string } }
+    KubeconfigResponse:
+      type: object
+      properties:
+        kubeconfig: { type: string, format: byte }
+        expiresAt: { type: string, format: date-time }
+
+paths:
+  # System
+  /api/v1/healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        '200': { description: ok }
+  /api/v1/readyz:
+    get:
+      summary: Readiness probe
+      responses:
+        '200': { description: ok }
+  /api/v1/version:
+    get:
+      summary: Version info
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+              examples:
+                version:
+                  value: { version: "0.9.1", commit: "abcdef", buildDate: "2025-01-01T00:00:00Z" }
+  /api/v1/features:
+    get:
+      summary: Feature flags
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+              examples:
+                features:
+                  value: { tenancy: true, proxy: true, appDelivery: true }
+
+  # Access & Tokens
+  /api/v1/tokens:
+    post:
+      summary: Issue a JWT for API access
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TokenRequest' } } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+              examples:
+                success:
+                  value: { token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", expiresAt: "2025-01-01T12:00:00Z" }
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                unauthorized:
+                  value: { code: "KN-401", message: "missing bearer token" }
+  /api/v1/me:
+    get:
+      summary: Return subject and roles of the caller
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeResponse' }
+              examples:
+                me:
+                  value: { subject: "alice@example.com", roles: ["admin"] }
+
+  # Clusters
+  /api/v1/clusters:
+    get:
+      summary: List clusters
+      parameters: [ { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/LabelSelector' } ]
+      responses:
+        '200':
+          description: ok
+          headers:
+            X-Next-Cursor:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Cluster' } }
+              examples:
+                page:
+                  value:
+                    - { uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
+    post:
+      summary: Register a cluster using kubeconfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClusterRegistration' }
+            examples:
+              register:
+                value:
+                  name: kind
+                  kubeconfig: YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==
+                  labels: { env: dev }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cluster' }
+              examples:
+                created:
+                  value: { uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
+        '422':
+          description: validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-422", message: "name and kubeconfig required" }
+  /api/v1/clusters/{c}:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    get:
+      summary: Get cluster
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cluster' }
+              examples:
+                cluster:
+                  value:
+                    uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60"
+                    name: "kind"
+                    conditions:
+                      - { type: "AgentReady", status: "True", lastTransitionTime: "2025-01-01T00:01:00Z" }
+                      - { type: "AddonsReady", status: "True", lastTransitionTime: "2025-01-01T00:02:00Z" }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+    delete:
+      summary: Delete cluster
+      responses:
+        '204': { description: deleted }
+  /api/v1/clusters/{c}/bootstrap/{component}:
+    parameters:
+      - { $ref: '#/components/parameters/ClusterParam' }
+      - name: component
+        in: path
+        required: true
+        schema: { type: string, enum: [tenancy, proxy, app-delivery] }
+    post:
+      summary: Bootstrap a system component on the cluster
+      responses:
+        '202': { description: started }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+  /api/v1/clusters/{c}/capabilities:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    get:
+      summary: Get cluster capabilities
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClusterCapabilities' }
+              examples:
+                caps:
+                  value: { tenancy: true, vela: true, proxy: true }
+
+  # Tenants
+  /api/v1/clusters/{c}/tenants:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/LabelSelector' }, { $ref: '#/components/parameters/OwnerFilter' } ]
+    get:
+      summary: List tenants
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Tenant' } }
+              examples:
+                list:
+                  value:
+                    - { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
+    post:
+      summary: Create tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Tenant' }
+            examples:
+              create:
+                value: { name: "acme", owners: ["owner@example.com"], labels: { team: platform } }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+              examples:
+                created:
+                  value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
+        '422':
+          description: validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+  /api/v1/clusters/{c}/tenants/{t}:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+    get:
+      summary: Get tenant
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+              examples:
+                tenant:
+                  value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+    delete:
+      summary: Delete tenant
+      responses:
+        '204': { description: deleted }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+  /api/v1/clusters/{c}/tenants/{t}/owners:
+    put:
+      summary: Replace tenant owners
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owners: { type: array, items: { type: string } }
+      responses:
+        '200': { description: ok }
+        '404':
+          description: tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+        '422':
+          description: invalid owners list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+  /api/v1/clusters/{c}/tenants/{t}/quotas:
+    put:
+      summary: Set tenant quotas
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
+      responses:
+        '200': { description: ok }
+        '404':
+          description: tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+        '422':
+          description: invalid quotas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+  /api/v1/clusters/{c}/tenants/{t}/limits:
+    put:
+      summary: Set tenant resource limits
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
+      responses:
+        '200': { description: ok }
+        '404':
+          description: tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+        '422':
+          description: invalid limits
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+  /api/v1/clusters/{c}/tenants/{t}/network-policies:
+    put:
+      summary: Configure default network policies for tenant
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '200': { description: ok }
+        '404':
+          description: tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+        '422':
+          description: invalid network policies
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+  /api/v1/clusters/{c}/tenants/{t}/summary:
+    get:
+      summary: Summary of tenant resources and usage
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantSummary' }
+              examples:
+                summary:
+                  value: { namespaces: ["acme-system","acme-dev"], quotas: { cpu: "4", memory: "8Gi" }, usages: { cpu: "1", memory: "2Gi" } }
+
+  # Projects
+  /api/v1/clusters/{c}/tenants/{t}/projects:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+    get:
+      summary: List projects for tenant
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Project' } }
+              examples:
+                list:
+                  value: [ { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" } ]
+    post:
+      summary: Create project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Project' }
+            examples:
+              create:
+                value: { name: "web" }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+              examples:
+                created:
+                  value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
+        '422':
+          description: validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
+    get:
+      summary: Get project
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+              examples:
+                project:
+                  value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+    put:
+      summary: Update project
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+      responses: { '200': { description: ok } }
+    delete:
+      summary: Delete project
+      responses: { '204': { description: deleted } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access:
+    put:
+      summary: Set project access members and roles
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectAccess' } } } }
+      responses: { '200': { description: ok } }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig:
+    get:
+      summary: Issue a short-lived kubeconfig scoped to tenant/project via proxy
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KubeconfigResponse' }
+              examples:
+                kubeconfig:
+                  value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+
+  # PolicySets
+  /api/v1/clusters/{c}/tenants/{t}/policysets:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
+    get:
+      summary: List PolicySets
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } }
+              examples:
+                list:
+                  value: [ { name: "baseline", description: "Base guardrails" } ]
+    post:
+      summary: Create PolicySet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicySet' }
+            examples:
+              create:
+                value: { name: "baseline", description: "Base guardrails", rules: [] }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicySet' }
+              examples:
+                created:
+                  value: { name: "baseline", description: "Base guardrails" }
+  /api/v1/clusters/{c}/tenants/{t}/policysets/{name}:
+    parameters:
+      - { $ref: '#/components/parameters/ClusterParam' }
+      - { $ref: '#/components/parameters/TenantParam' }
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Get PolicySet
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicySet' }
+              examples:
+                item:
+                  value: { name: "baseline", description: "Base guardrails" }
+    put:
+      summary: Update PolicySet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicySet' }
+            examples:
+              update:
+                value: { name: "baseline", description: "Updated", rules: [] }
+      responses: { '200': { description: ok } }
+    delete:
+      summary: Delete PolicySet
+      responses: { '204': { description: deleted } }
+  /api/v1/clusters/{c}/policysets/catalog:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    get:
+      summary: Get curated PolicySet catalog
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } }
+              examples:
+                catalog:
+                  value: [ { name: "baseline", description: "Base guardrails" } ]
+
+  # Apps
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
+    get:
+      summary: List apps
+      parameters: [ { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' } ]
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/App' } }
+              examples:
+                list:
+                  value: [ { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" } ]
+    post:
+      summary: Create app
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/App' }
+            examples:
+              create:
+                value: { name: "hello" }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+              examples:
+                created:
+                  value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
+        '422':
+          description: validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+    get:
+      summary: Get app
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+              examples:
+                app:
+                  value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+    put:
+      summary: Update app
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } }
+      responses:
+        '200': { description: ok }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+        '422':
+          description: invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+    delete:
+      summary: Delete app
+      responses:
+        '202': { description: deletion started }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:deploy:
+    post:
+      summary: Deploy app
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses:
+        '202': { description: started }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:suspend:
+    post:
+      summary: Suspend app
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses:
+        '202': { description: started }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:resume:
+    post:
+      summary: Resume app
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses:
+        '202': { description: started }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:rollback:
+    post:
+      summary: Roll back app to previous revision
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, properties: { toRevision: { type: integer } } } } }
+      responses:
+        '202': { description: started }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:delete:
+    post:
+      summary: Delete app (idempotent)
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses: { '202': { description: started } }
+
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/status:
+    get:
+      summary: Get app status
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppStatus' }
+              examples:
+                status:
+                  value: { phase: "Running", healthy: true, conditions: [ { type: "Available", status: "True" } ] }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/revisions:
+    get:
+      summary: List app revisions
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AppRevision' } }
+              examples:
+                revisions:
+                  value: [ { revision: 1, createdAt: "2025-01-01T00:00:00Z" } ]
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/diff/{revA}/{revB}:
+    get:
+      summary: Diff between two app revisions
+      parameters:
+        - { $ref: '#/components/parameters/ClusterParam' }
+        - { $ref: '#/components/parameters/TenantParam' }
+        - { $ref: '#/components/parameters/ProjectParam' }
+        - { $ref: '#/components/parameters/AppParam' }
+        - name: revA
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: revB
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppDiff' }
+              examples:
+                diff:
+                  value: { from: 1, to: 2, changes: [] }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/logs/{component}:
+    get:
+      summary: Stream or fetch component logs
+      parameters:
+        - { $ref: '#/components/parameters/ClusterParam' }
+        - { $ref: '#/components/parameters/TenantParam' }
+        - { $ref: '#/components/parameters/ProjectParam' }
+        - { $ref: '#/components/parameters/AppParam' }
+        - name: component
+          in: path
+          required: true
+          schema: { type: string }
+        - name: follow
+          in: query
+          schema: { type: boolean, default: false }
+        - name: tail
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 200 }
+        - name: sinceSeconds
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 604800 }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/LogLine' } }
+              examples:
+                logs:
+                  value: [ { ts: "2025-01-01T00:00:00Z", component: "web", message: "started" } ]
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits:
+    put:
+      summary: Replace app traits
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: array, items: { type: object } }
+            examples:
+              traits:
+                value: [ { type: "scaler", properties: { replicas: 2 } } ]
+      responses:
+        '200': { description: ok }
+        '422':
+          description: invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/policies:
+    put:
+      summary: Replace app policies
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: array, items: { type: object } }
+            examples:
+              policies:
+                value: [ { type: "rollout", properties: { maxUnavailable: 1 } } ]
+      responses:
+        '200': { description: ok }
+        '422':
+          description: invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/image-update:
+    post:
+      summary: Update image for an app component
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { component: { type: string }, image: { type: string }, tag: { type: string } }, required: [component, image] }
+            examples:
+              img:
+                value: { component: "web", image: "nginx", tag: "1.25.3" }
+      responses:
+        '202': { description: started }
+        '422':
+          description: invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+
+  # Catalog
+  /api/v1/catalog/components:
+    get:
+      summary: List component definitions
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } }
+              examples:
+                list:
+                  value: [ { name: "web", type: "component", description: "Web service" } ]
+  /api/v1/catalog/traits:
+    get:
+      summary: List trait definitions
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } }
+              examples:
+                list:
+                  value: [ { name: "scaler", type: "trait", description: "Scale deployments" } ]
+  /api/v1/catalog/workflows:
+    get:
+      summary: List workflow definitions
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } }
+              examples:
+                list:
+                  value: [ { name: "rollout", type: "workflow", description: "Rolling updates" } ]
+
+  # Workflows/Operations
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/run:
+    post:
+      summary: Run workflow with optional steps
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { steps: { type: array, items: { type: string } } } }
+            examples:
+              run:
+                value: { steps: ["deploy", "verify"] }
+      responses:
+        '202':
+          description: started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowRun' }
+              examples:
+                started:
+                  value: { id: "run-123", status: "Running", startedAt: "2025-01-01T00:00:00Z" }
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/runs:
+    get:
+      summary: List workflow runs
+      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' } ]
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/WorkflowRun' } }
+              examples:
+                runs:
+                  value: [ { id: "run-123", status: "Succeeded", startedAt: "2025-01-01T00:00:00Z", finishedAt: "2025-01-01T00:05:00Z" } ]
+  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/runs/{id}:
+    get:
+      summary: Get workflow run by id
+      parameters:
+        - { $ref: '#/components/parameters/ClusterParam' }
+        - { $ref: '#/components/parameters/TenantParam' }
+        - { $ref: '#/components/parameters/ProjectParam' }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowRun' }
+              examples:
+                run:
+                  value: { id: "run-123", status: "Succeeded", startedAt: "2025-01-01T00:00:00Z", finishedAt: "2025-01-01T00:05:00Z" }
+
+  # Usage & Quota
+  /api/v1/tenants/{t}/usage:
+    get:
+      summary: Usage report for a tenant
+      parameters:
+        - { $ref: '#/components/parameters/TenantParam' }
+        - name: range
+          in: query
+          schema: { type: string, enum: [1h, 24h, 7d, 30d], default: 24h }
+        - name: cluster
+          in: query
+          schema: { type: string, nullable: true }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageReport' }
+              examples:
+                tenantUsage:
+                  value: { window: "24h", cpu: "2", memory: "4Gi", pods: 12 }
+  /api/v1/projects/{p}/usage:
+    get:
+      summary: Usage report for a project
+      parameters:
+        - { $ref: '#/components/parameters/ProjectParam' }
+        - name: range
+          in: query
+          schema: { type: string, enum: [1h, 24h, 7d, 30d], default: 24h }
+        - name: cluster
+          in: query
+          schema: { type: string, nullable: true }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageReport' }
+              examples:
+                projectUsage:
+                  value: { window: "24h", cpu: "1", memory: "1Gi", pods: 5 }
+
+  # Access & Tokens (kubeconfig issuance)
+  /api/v1/tenants/{t}/kubeconfig:
+    post:
+      summary: Issue a tenant-scoped kubeconfig via proxy
+      parameters: [ { $ref: '#/components/parameters/TenantParam' } ]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { project: { type: string }, role: { type: string, enum: [tenantOwner, projectDev, readOnly], default: readOnly }, ttlSeconds: { type: integer, minimum: 60, maximum: 86400, default: 3600 } } }
+            examples:
+              grant:
+                value: { role: "readOnly", ttlSeconds: 3600 }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KubeconfigResponse' }
+              examples:
+                kubeconfig:
+                  value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }

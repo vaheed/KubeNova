@@ -92,15 +92,22 @@ func InitSuiteEnvironment(ctx context.Context, cfg Config) (*Environment, error)
 			suiteEnvErr = err
 			return
 		}
-		if err := env.ensureImages(ctx); err != nil {
-			suiteEnvErr = err
-			return
-		}
-		if err := env.ensureManager(ctx); err != nil {
-			suiteEnvErr = err
-			return
-		}
-		suiteEnv = env
+        if err := env.ensureImages(ctx); err != nil {
+            suiteEnvErr = err
+            return
+        }
+        // If Vela ops are enabled for the suite, proactively install Vela Core
+        if enabled, _ := lookupEnvBool("E2E_VELA_OPS"); enabled {
+            if err := env.ensureVelaCore(ctx); err != nil {
+                suiteEnvErr = err
+                return
+            }
+        }
+        if err := env.ensureManager(ctx); err != nil {
+            suiteEnvErr = err
+            return
+        }
+        suiteEnv = env
 	})
 	if errors.Is(suiteEnvErr, ErrSuiteSkipped) {
 		return nil, ErrSuiteSkipped
@@ -199,7 +206,7 @@ func (e *Environment) ensureImages(ctx context.Context) error {
 	}
 	tag := fmt.Sprintf("e2e-%d", time.Now().UnixNano())
 	managerImage := fmt.Sprintf("kubenova-manager:%s", tag)
-	agentImage := fmt.Sprintf("agent:%s", tag)
+	agentImage := fmt.Sprintf("kubenova-agent:%s", tag)
 	builds := []struct {
 		image      string
 		dockerfile string
@@ -234,26 +241,35 @@ func (e *Environment) ensureImages(ctx context.Context) error {
 }
 
 func (e *Environment) ensureManager(ctx context.Context) error {
-	e.logger.Info("ensure_manager.start")
-	args := []string{"upgrade", "--install", e.cfg.ManagerReleaseName, e.cfg.ManagerChartPath, "-n", e.cfg.ManagerNamespace, "--create-namespace",
-		"--set", fmt.Sprintf("image.repository=%s", repositoryPart(e.cfg.ManagerImage)),
-		"--set", fmt.Sprintf("image.tag=%s", tagPart(e.cfg.ManagerImage)),
-		"--set", "env.KUBENOVA_REQUIRE_AUTH=false",
-		"--set", fmt.Sprintf("env.AGENT_IMAGE=%s", e.cfg.AgentImage),
-		"--wait", "--timeout", e.cfg.WaitTimeout.String(),
-	}
-	cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", args...)
-	if err != nil {
-		return err
-	}
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("helm install manager: %w", err)
-	}
-	e.logger.Info("ensure_manager.deployed")
-	if err := e.waitForDeployment(ctx, e.cfg.ManagerNamespace, e.cfg.ManagerReleaseName); err != nil {
-		return err
-	}
+    e.logger.Info("ensure_manager.start")
+    args := []string{"upgrade", "--install", e.cfg.ManagerReleaseName, e.cfg.ManagerChartPath, "-n", e.cfg.ManagerNamespace, "--create-namespace",
+        "--set", fmt.Sprintf("image.repository=%s", repositoryPart(e.cfg.ManagerImage)),
+        "--set", fmt.Sprintf("image.tag=%s", tagPart(e.cfg.ManagerImage)),
+        "--set", "env.KUBENOVA_REQUIRE_AUTH=false",
+        "--set", fmt.Sprintf("env.AGENT_IMAGE=%s", e.cfg.AgentImage),
+    }
+    cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", args...)
+    if err != nil {
+        return err
+    }
+    cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+    if err := cmd.Run(); err != nil {
+        // Retry once in case of transient API rate limiter or connection hiccup
+        e.logger.Error("ensure_manager.helm_first_attempt_failed", slog.String("error", err.Error()))
+        time.Sleep(5 * time.Second)
+        cmd2, e2 := e.command(ctx, e.cfg.HelmBinary, "helm", args...)
+        if e2 != nil {
+            return e2
+        }
+        cmd2.Stdout, cmd2.Stderr = os.Stdout, os.Stderr
+        if err2 := cmd2.Run(); err2 != nil {
+            return fmt.Errorf("helm install manager (retry): %w", err2)
+        }
+    }
+    e.logger.Info("ensure_manager.deployed")
+    if err := e.waitForDeployment(ctx, e.cfg.ManagerNamespace, e.cfg.ManagerReleaseName); err != nil {
+        return err
+    }
 	if err := e.startPortForward(ctx); err != nil {
 		return err
 	}
@@ -261,6 +277,29 @@ func (e *Environment) ensureManager(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// ensureVelaCore installs KubeVela core chart when E2E_VELA_OPS is enabled.
+func (e *Environment) ensureVelaCore(ctx context.Context) error {
+    e.logger.Info("ensure_vela_core.start")
+    // Add repo (idempotent)
+    if cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", "repo", "add", "kubevela", "https://kubevela.github.io/charts"); err == nil {
+        _ = cmd.Run()
+    }
+    if cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", "repo", "update"); err == nil {
+        _ = cmd.Run()
+    }
+    args := []string{"upgrade", "--install", "vela-core", "kubevela/vela-core", "-n", "vela-system", "--create-namespace", "--wait", "--timeout", e.cfg.WaitTimeout.String()}
+    cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", args...)
+    if err != nil {
+        return err
+    }
+    cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+    if err := cmd.Run(); err != nil {
+        return fmt.Errorf("helm install vela-core: %w", err)
+    }
+    e.logger.Info("ensure_vela_core.deployed")
+    return nil
 }
 
 func (e *Environment) waitForDeployment(ctx context.Context, namespace, name string) error {

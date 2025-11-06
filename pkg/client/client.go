@@ -12,13 +12,14 @@ import (
 )
 
 type Client struct {
-	base  string
-	http  *http.Client
-	token string
+	base    string
+	http    *http.Client
+	token   string
+	cluster string
 }
 
 func New(base, token string) *Client {
-	return &Client{base: trim(base), http: http.DefaultClient, token: token}
+	return &Client{base: trim(base), http: http.DefaultClient, token: token, cluster: "c"}
 }
 
 func trim(s string) string {
@@ -45,9 +46,9 @@ func (c *Client) req(ctx context.Context, method, path string, body any) (*http.
 	return req, nil
 }
 
-// Tenants
+// Tenants (new API)
 func (c *Client) ListTenants(ctx context.Context) ([]types.Tenant, error) {
-	req, _ := c.req(ctx, http.MethodGet, "/api/v1/tenants", nil)
+	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants", nil)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -60,7 +61,7 @@ func (c *Client) ListTenants(ctx context.Context) ([]types.Tenant, error) {
 	return v, nil
 }
 func (c *Client) CreateTenant(ctx context.Context, t types.Tenant) (types.Tenant, error) {
-	req, _ := c.req(ctx, http.MethodPost, "/api/v1/tenants", t)
+	req, _ := c.req(ctx, http.MethodPost, "/api/v1/clusters/"+c.cluster+"/tenants", t)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return types.Tenant{}, err
@@ -76,7 +77,7 @@ func (c *Client) CreateTenant(ctx context.Context, t types.Tenant) (types.Tenant
 
 // Projects
 func (c *Client) CreateProject(ctx context.Context, p types.Project) (types.Project, error) {
-	req, _ := c.req(ctx, http.MethodPost, "/api/v1/projects", p)
+	req, _ := c.req(ctx, http.MethodPost, "/api/v1/clusters/"+c.cluster+"/tenants/"+p.Tenant+"/projects", p)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return types.Project{}, err
@@ -87,7 +88,7 @@ func (c *Client) CreateProject(ctx context.Context, p types.Project) (types.Proj
 	return v, nil
 }
 func (c *Client) ListProjects(ctx context.Context, tenant string) ([]types.Project, error) {
-	req, _ := c.req(ctx, http.MethodGet, "/api/v1/tenants/"+tenant+"/projects", nil)
+	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenant+"/projects", nil)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -100,7 +101,7 @@ func (c *Client) ListProjects(ctx context.Context, tenant string) ([]types.Proje
 
 // Apps
 func (c *Client) CreateApp(ctx context.Context, a types.App) (types.App, error) {
-	req, _ := c.req(ctx, http.MethodPost, "/api/v1/apps", a)
+	req, _ := c.req(ctx, http.MethodPost, "/api/v1/clusters/"+c.cluster+"/tenants/"+a.Tenant+"/projects/"+a.Project+"/apps", a)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return types.App{}, err
@@ -111,7 +112,7 @@ func (c *Client) CreateApp(ctx context.Context, a types.App) (types.App, error) 
 	return v, nil
 }
 func (c *Client) ListApps(ctx context.Context, tenant, project string) ([]types.App, error) {
-	req, _ := c.req(ctx, http.MethodGet, "/api/v1/projects/"+tenant+"/"+project+"/apps", nil)
+	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenant+"/projects/"+project+"/apps", nil)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -123,7 +124,7 @@ func (c *Client) ListApps(ctx context.Context, tenant, project string) ([]types.
 }
 
 func (c *Client) IssueKubeconfig(ctx context.Context, g types.KubeconfigGrant) (types.KubeconfigGrant, error) {
-	req, _ := c.req(ctx, http.MethodPost, "/api/v1/kubeconfig-grants", g)
+	req, _ := c.req(ctx, http.MethodPost, "/api/v1/tenants/"+g.Tenant+"/kubeconfig", g)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return types.KubeconfigGrant{}, err

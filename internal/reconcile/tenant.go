@@ -7,14 +7,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// TenantReconciler mirrors KubeNova Tenant state to Capsule Tenant.
+// TenantReconciler mirrors KubeNova Tenant state to the platform Tenancy.
 // In this lightweight implementation we simply no-op to keep the
 // controller-runtime manager alive for smoke tests while maintaining
 // the pluggable structure for future work.
 type TenantReconciler struct{ client.Client }
 
 func (r *TenantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconcile.Result, error) {
-	// TODO: integrate Capsule tenant via unstructured object
+	// Integration with the underlying tenancy controller will be handled via an adapter.
+	// Tracked in cleanup-report.md under “Deferred items”.
 	return reconcile.Result{}, nil
 }
 
