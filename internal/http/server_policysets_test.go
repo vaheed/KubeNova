@@ -51,67 +51,67 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	resp.Body.Close()
 	ten := tjson["uid"].(string)
 
-    // PolicySet create (allowed)
-    psBody := []byte(`{"name":"baseline"}`)
-    req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets", bytes.NewReader(psBody))
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "tenantOwner")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, err = http.DefaultClient.Do(req)
+	// PolicySet create (allowed)
+	psBody := []byte(`{"name":"baseline"}`)
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets", bytes.NewReader(psBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "tenantOwner")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, err = http.DefaultClient.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("policyset create: %v %s", err, resp.Status)
 	}
 	resp.Body.Close()
 
 	// PolicySet create forbidden for readOnly
-    req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets", bytes.NewReader(psBody))
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "readOnly")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets", bytes.NewReader(psBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "readOnly")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403, got %s", resp.Status)
 	}
 	resp.Body.Close()
 
 	// List & get
-    req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets", nil)
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "readOnly")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets", nil)
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "readOnly")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("policyset list: %s", resp.Status)
 	}
 	resp.Body.Close()
-    req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets/baseline", nil)
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "readOnly")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets/baseline", nil)
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "readOnly")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("policyset get: %s", resp.Status)
 	}
 	resp.Body.Close()
 
 	// Update & delete
-    req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets/baseline", bytes.NewReader([]byte(`{"name":"baseline","rules":[]}`)))
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "tenantOwner")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets/baseline", bytes.NewReader([]byte(`{"name":"baseline","rules":[]}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "tenantOwner")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("policyset update: %s", resp.Status)
 	}
 	resp.Body.Close()
-    req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets/baseline", nil)
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "tenantOwner")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets/baseline", nil)
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "tenantOwner")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("policyset delete: %s", resp.Status)
 	}
@@ -119,12 +119,12 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 
 	// Project kubeconfig (create project first)
 	pb := []byte(`{"name":"web"}`)
-    req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects", bytes.NewReader(pb))
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "tenantOwner")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects", bytes.NewReader(pb))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "tenantOwner")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("project create: %s", resp.Status)
 	}
@@ -132,22 +132,22 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&pjson)
 	resp.Body.Close()
 	pr := pjson["uid"].(string)
-    req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/kubeconfig", nil)
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "projectDev")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/kubeconfig", nil)
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "projectDev")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("project kubeconfig: %s", resp.Status)
 	}
 	resp.Body.Close()
 
 	// Tenant kubeconfig
-    req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tenants/"+ten+"/kubeconfig", bytes.NewReader(nil))
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "readOnly")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tenants/"+ten+"/kubeconfig", bytes.NewReader(nil))
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "readOnly")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("tenant kubeconfig: %s", resp.Status)
 	}
@@ -156,12 +156,12 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	// Workflows run/list/get
 	// Create app first
 	ab := []byte(`{"name":"hello"}`)
-    req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps", bytes.NewReader(ab))
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "projectDev")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps", bytes.NewReader(ab))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "projectDev")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("app create: %s", resp.Status)
 	}
@@ -169,12 +169,12 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&ajson)
 	resp.Body.Close()
 	app := ajson["uid"].(string)
-    req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps/"+app+"/workflow/run", bytes.NewReader([]byte(`{"steps":["deploy"]}`)))
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "projectDev")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps/"+app+"/workflow/run", bytes.NewReader([]byte(`{"steps":["deploy"]}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "projectDev")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("workflow run: %s", resp.Status)
 	}
@@ -183,21 +183,21 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	resp.Body.Close()
 	runID := run["id"].(string)
 	// list
-    req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps/"+app+"/workflow/runs", nil)
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "projectDev")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps/"+app+"/workflow/runs", nil)
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "projectDev")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("runs list: %s", resp.Status)
 	}
 	resp.Body.Close()
 	// get by id
-    req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps/runs/"+runID, nil)
-    req.Header.Set("Authorization", "Bearer test")
-    req.Header.Set("X-KN-Roles", "projectDev")
-    req.Header.Set("X-KN-Tenant", "acme")
-    resp, _ = http.DefaultClient.Do(req)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps/runs/"+runID, nil)
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("X-KN-Roles", "projectDev")
+	req.Header.Set("X-KN-Tenant", "acme")
+	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("run get: %s", resp.Status)
 	}
