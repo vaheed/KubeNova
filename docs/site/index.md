@@ -1,4 +1,6 @@
 ---
+title: KubeNova API v1 — Interactive Guide
+---
 
 # KubeNova API v1 — Interactive Guide
 
