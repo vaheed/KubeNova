@@ -241,26 +241,35 @@ func (e *Environment) ensureImages(ctx context.Context) error {
 }
 
 func (e *Environment) ensureManager(ctx context.Context) error {
-	e.logger.Info("ensure_manager.start")
-	args := []string{"upgrade", "--install", e.cfg.ManagerReleaseName, e.cfg.ManagerChartPath, "-n", e.cfg.ManagerNamespace, "--create-namespace",
-		"--set", fmt.Sprintf("image.repository=%s", repositoryPart(e.cfg.ManagerImage)),
-		"--set", fmt.Sprintf("image.tag=%s", tagPart(e.cfg.ManagerImage)),
-		"--set", "env.KUBENOVA_REQUIRE_AUTH=false",
-		"--set", fmt.Sprintf("env.AGENT_IMAGE=%s", e.cfg.AgentImage),
-		"--wait", "--timeout", e.cfg.WaitTimeout.String(),
-	}
-	cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", args...)
-	if err != nil {
-		return err
-	}
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("helm install manager: %w", err)
-	}
-	e.logger.Info("ensure_manager.deployed")
-	if err := e.waitForDeployment(ctx, e.cfg.ManagerNamespace, e.cfg.ManagerReleaseName); err != nil {
-		return err
-	}
+    e.logger.Info("ensure_manager.start")
+    args := []string{"upgrade", "--install", e.cfg.ManagerReleaseName, e.cfg.ManagerChartPath, "-n", e.cfg.ManagerNamespace, "--create-namespace",
+        "--set", fmt.Sprintf("image.repository=%s", repositoryPart(e.cfg.ManagerImage)),
+        "--set", fmt.Sprintf("image.tag=%s", tagPart(e.cfg.ManagerImage)),
+        "--set", "env.KUBENOVA_REQUIRE_AUTH=false",
+        "--set", fmt.Sprintf("env.AGENT_IMAGE=%s", e.cfg.AgentImage),
+    }
+    cmd, err := e.command(ctx, e.cfg.HelmBinary, "helm", args...)
+    if err != nil {
+        return err
+    }
+    cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+    if err := cmd.Run(); err != nil {
+        // Retry once in case of transient API rate limiter or connection hiccup
+        e.logger.Error("ensure_manager.helm_first_attempt_failed", slog.String("error", err.Error()))
+        time.Sleep(5 * time.Second)
+        cmd2, e2 := e.command(ctx, e.cfg.HelmBinary, "helm", args...)
+        if e2 != nil {
+            return e2
+        }
+        cmd2.Stdout, cmd2.Stderr = os.Stdout, os.Stderr
+        if err2 := cmd2.Run(); err2 != nil {
+            return fmt.Errorf("helm install manager (retry): %w", err2)
+        }
+    }
+    e.logger.Info("ensure_manager.deployed")
+    if err := e.waitForDeployment(ctx, e.cfg.ManagerNamespace, e.cfg.ManagerReleaseName); err != nil {
+        return err
+    }
 	if err := e.startPortForward(ctx); err != nil {
 		return err
 	}
