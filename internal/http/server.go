@@ -322,16 +322,38 @@ func (s *APIServer) DeleteApiV1ClustersC(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	ident := string(c)
-	// resolve id: allow numeric id or name lookup
-	id, errN := strconv.Atoi(ident)
-	if errN != nil || strconv.Itoa(id) != ident {
-		// lookup by name to get id
-		cl, _, err := s.st.GetClusterByName(r.Context(), ident)
+	// resolve id and kubeconfig: accept id or name
+	var (
+		id  int
+		enc string
+		err error
+	)
+	if idN, errN := strconv.Atoi(ident); errN == nil && strconv.Itoa(idN) == ident {
+		var cl kn.Cluster
+		cl, enc, err = s.st.GetCluster(r.Context(), idN)
 		if err != nil {
 			s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 			return
 		}
 		id = cl.ID
+	} else {
+		cl, enc2, err2 := s.st.GetClusterByName(r.Context(), ident)
+		if err2 != nil {
+			s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+			return
+		}
+		id = cl.ID
+		enc = enc2
+	}
+	// Attempt to uninstall agent and related resources from target cluster
+	if enc != "" {
+		kb, _ := base64.StdEncoding.DecodeString(enc)
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		defer cancel()
+		if err := clusterpkg.UninstallAgent(ctx, kb); err != nil {
+			s.writeError(w, http.StatusInternalServerError, "KN-500", "failed to remove cluster dependencies")
+			return
+		}
 	}
 	if err := s.st.DeleteCluster(r.Context(), id); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
