@@ -475,6 +475,14 @@ paths:
               examples:
                 created:
                   value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
+        '422':
+          description: validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
   /api/v1/clusters/{c}/tenants/{t}:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
     get:
@@ -488,9 +496,26 @@ paths:
               examples:
                 tenant:
                   value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
     delete:
       summary: Delete tenant
-      responses: { '204': { description: deleted } }
+      responses:
+        '204': { description: deleted }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
   /api/v1/clusters/{c}/tenants/{t}/owners:
     put:
       summary: Replace tenant owners
@@ -505,6 +530,14 @@ paths:
                 owners: { type: array, items: { type: string } }
       responses:
         '200': { description: ok }
+        '404':
+          description: tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
         '422':
           description: invalid owners list
           content:
@@ -520,6 +553,14 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
       responses:
         '200': { description: ok }
+        '404':
+          description: tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
         '422':
           description: invalid quotas
           content:
@@ -535,6 +576,14 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
       responses:
         '200': { description: ok }
+        '404':
+          description: tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
         '422':
           description: invalid limits
           content:
@@ -550,6 +599,14 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
       responses:
         '200': { description: ok }
+        '404':
+          description: tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
         '422':
           description: invalid network policies
           content:
@@ -605,6 +662,14 @@ paths:
               examples:
                 created:
                   value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
+        '422':
+          description: validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
     get:
@@ -618,6 +683,14 @@ paths:
               examples:
                 project:
                   value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
     put:
       summary: Update project
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
@@ -644,6 +717,14 @@ paths:
               examples:
                 kubeconfig:
                   value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
 
   # PolicySets
   /api/v1/clusters/{c}/tenants/{t}/policysets:
@@ -759,6 +840,14 @@ paths:
               examples:
                 created:
                   value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
+        '422':
+          description: validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
     get:
@@ -772,29 +861,90 @@ paths:
               examples:
                 app:
                   value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
     put:
       summary: Update app
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200': { description: ok }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
+        '422':
+          description: invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
     delete:
       summary: Delete app
-      responses: { '202': { description: deletion started } }
+      responses:
+        '202': { description: deletion started }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "not found" }
 
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:deploy:
     post:
       summary: Deploy app
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses: { '202': { description: started } }
+      responses:
+        '202': { description: started }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:suspend:
     post:
       summary: Suspend app
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses: { '202': { description: started } }
+      responses:
+        '202': { description: started }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:resume:
     post:
       summary: Resume app
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses: { '202': { description: started } }
+      responses:
+        '202': { description: started }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:rollback:
     post:
       summary: Roll back app to previous revision
@@ -802,7 +952,16 @@ paths:
       requestBody:
         required: false
         content: { application/json: { schema: { type: object, properties: { toRevision: { type: integer } } } } }
-      responses: { '202': { description: started } }
+      responses:
+        '202': { description: started }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:delete:
     post:
       summary: Delete app (idempotent)
@@ -822,6 +981,14 @@ paths:
               examples:
                 status:
                   value: { phase: "Running", healthy: true, conditions: [ { type: "Available", status: "True" } ] }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/revisions:
     get:
       summary: List app revisions
@@ -835,6 +1002,14 @@ paths:
               examples:
                 revisions:
                   value: [ { revision: 1, createdAt: "2025-01-01T00:00:00Z" } ]
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/diff/{revA}/{revB}:
     get:
       summary: Diff between two app revisions
@@ -860,6 +1035,14 @@ paths:
               examples:
                 diff:
                   value: { from: 1, to: 2, changes: [] }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/logs/{component}:
     get:
       summary: Stream or fetch component logs
@@ -890,24 +1073,59 @@ paths:
               examples:
                 logs:
                   value: [ { ts: "2025-01-01T00:00:00Z", component: "web", message: "started" } ]
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits:
     put:
       summary: Replace app traits
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
       requestBody: { required: true, content: { application/json: { schema: { type: array, items: { type: object } } } } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200': { description: ok }
+        '422':
+          description: invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/policies:
     put:
       summary: Replace app policies
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
       requestBody: { required: true, content: { application/json: { schema: { type: array, items: { type: object } } } } }
-      responses: { '200': { description: ok } }
+      responses:
+        '200': { description: ok }
+        '422':
+          description: invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
   /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/image-update:
     post:
       summary: Update image for an app component
       parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { component: { type: string }, image: { type: string }, tag: { type: string } }, required: [component, image] } } } }
-      responses: { '202': { description: started } }
+      responses:
+        '202': { description: started }
+        '422':
+          description: invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
 
   # Catalog
   /api/v1/catalog/components:
