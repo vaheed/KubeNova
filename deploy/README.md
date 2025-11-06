@@ -3,7 +3,7 @@
 Helm charts and deployment assets.
 
 - `helm/manager` – chart for Manager (API)
-- `helm/kubenova-agent` – chart for Agent
+- `helm/agent` – chart for Agent
 
 Publishing
 - CI publishes charts in two formats:
