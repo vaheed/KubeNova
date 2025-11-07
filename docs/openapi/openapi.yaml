@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: KubeNova API
-  version: 0.9.1
+  version: 0.9.3
   description: |
     Single KubeNova REST API surface for multi-cluster tenancy and app delivery.
     Notes:
@@ -279,7 +279,7 @@ paths:
               schema: { type: object }
               examples:
                 version:
-                  value: { version: "0.9.1", commit: "abcdef", buildDate: "2025-01-01T00:00:00Z" }
+                  value: { version: "0.9.3", commit: "abcdef", buildDate: "2025-01-01T00:00:00Z" }
   /api/v1/features:
     get:
       summary: Feature flags

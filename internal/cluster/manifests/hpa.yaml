@@ -1,15 +1,15 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: kubenova-agent
+  name: agent
   namespace: kubenova-system
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: kubenova-agent
-  minReplicas: 2
-  maxReplicas: 5
+    name: agent
+  minReplicas: 1
+  maxReplicas: 3
   metrics:
     - type: Resource
       resource:

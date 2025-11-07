@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2025-11-07
+
+### Changed
+- Enforce UUIDs for all resource path params (clusters, tenants, projects, apps). Remove name-based fallbacks. API responses include `uid` consistently.
+- Manager auto-installs Agent asynchronously on cluster registration; improved RBAC for bootstrap.
+- Agent deployment defaults to a single replica; HPA min/max set to 1 to avoid scaling above one by default.
+- Standardize in-cluster resource names to `agent` (Deployment/SA/Role/Binding/HPA) instead of `kubenova-agent`.
+- CI builds multi-arch images on `main` and tags (amd64+arm64).
+- Bump API version to 0.9.3.
+
+### Fixed
+- Postgres ListClusters now returns `uid` field; clusters list shows IDs.
+- Policy/trait/image-update endpoints consistently resolve cluster by UID and use project/app names resolved from UIDs.
+
+---
+
 ## [0.9.1] - 2025-11-07
 
 ### Added

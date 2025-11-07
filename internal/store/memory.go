@@ -47,11 +47,7 @@ func (m *Memory) CreateTenant(ctx context.Context, t types.Tenant) error {
 	}
 	t.CreatedAt = stamp(t.CreatedAt)
 	if t.UID == "" {
-		if t.Name != "" {
-			t.UID = t.Name
-		} else {
-			t.UID = uuidNew()
-		}
+		t.UID = uuidNew()
 	}
 	m.tenants[t.Name] = t
 	m.tenantByUID[t.UID] = t.Name
@@ -112,11 +108,7 @@ func (m *Memory) CreateProject(ctx context.Context, p types.Project) error {
 	}
 	p.CreatedAt = stamp(p.CreatedAt)
 	if p.UID == "" {
-		if p.Name != "" {
-			p.UID = p.Name
-		} else {
-			p.UID = uuidNew()
-		}
+		p.UID = uuidNew()
 	}
 	m.projects[p.Tenant][p.Name] = p
 	m.projectByUID[p.UID] = p
@@ -186,11 +178,7 @@ func (m *Memory) CreateApp(ctx context.Context, a types.App) error {
 	}
 	a.CreatedAt = stamp(a.CreatedAt)
 	if a.UID == "" {
-		if a.Name != "" {
-			a.UID = a.Name
-		} else {
-			a.UID = uuidNew()
-		}
+		a.UID = uuidNew()
 	}
 	m.apps[a.Tenant][a.Project][a.Name] = a
 	m.appByUID[a.UID] = a
@@ -272,11 +260,7 @@ func (m *Memory) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigE
 	id := types.NewID()
 	c.ID = id
 	if c.UID == "" {
-		if c.Name != "" {
-			c.UID = c.Name
-		} else {
-			c.UID = uuidNew()
-		}
+		c.UID = uuidNew()
 	}
 	m.clusters[id] = memCluster{c: c, enc: kubeconfigEnc}
 	m.byName[c.Name] = id

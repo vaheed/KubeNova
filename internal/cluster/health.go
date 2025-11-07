@@ -32,9 +32,9 @@ func ComputeClusterConditions(ctx context.Context, kubeconfig []byte, e2eFake bo
 	now := time.Now().UTC()
 	// AgentReady
 	agentReady := false
-	if dep, err := cset.AppsV1().Deployments("kubenova-system").Get(ctx, "kubenova-agent", metav1.GetOptions{}); err == nil {
+	if dep, err := cset.AppsV1().Deployments("kubenova-system").Get(ctx, "agent", metav1.GetOptions{}); err == nil {
 		if dep.Status.ReadyReplicas >= 2 {
-			if _, err := cset.AutoscalingV2().HorizontalPodAutoscalers("kubenova-system").Get(ctx, "kubenova-agent", metav1.GetOptions{}); err == nil {
+			if _, err := cset.AutoscalingV2().HorizontalPodAutoscalers("kubenova-system").Get(ctx, "agent", metav1.GetOptions{}); err == nil {
 				agentReady = true
 			}
 		}

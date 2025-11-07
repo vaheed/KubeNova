@@ -46,6 +46,51 @@ func (c *Client) req(ctx context.Context, method, path string, body any) (*http.
 	return req, nil
 }
 
+// --- helpers to resolve UUIDs by name for new API ---
+func (c *Client) tenantUID(ctx context.Context, name string) (string, error) {
+	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants", nil)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var arr []struct {
+		Uid  *string `json:"uid"`
+		Name string  `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&arr); err != nil {
+		return "", err
+	}
+	for _, it := range arr {
+		if it.Name == name && it.Uid != nil && *it.Uid != "" {
+			return *it.Uid, nil
+		}
+	}
+	return "", fmt.Errorf("tenant not found: %s", name)
+}
+
+func (c *Client) projectUID(ctx context.Context, tenantUID, name string) (string, error) {
+	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenantUID+"/projects", nil)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var arr []struct {
+		Uid  *string `json:"uid"`
+		Name string  `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&arr); err != nil {
+		return "", err
+	}
+	for _, it := range arr {
+		if it.Name == name && it.Uid != nil && *it.Uid != "" {
+			return *it.Uid, nil
+		}
+	}
+	return "", fmt.Errorf("project not found: %s", name)
+}
+
 // Tenants (new API)
 func (c *Client) ListTenants(ctx context.Context) ([]types.Tenant, error) {
 	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants", nil)
@@ -77,7 +122,11 @@ func (c *Client) CreateTenant(ctx context.Context, t types.Tenant) (types.Tenant
 
 // Projects
 func (c *Client) CreateProject(ctx context.Context, p types.Project) (types.Project, error) {
-	req, _ := c.req(ctx, http.MethodPost, "/api/v1/clusters/"+c.cluster+"/tenants/"+p.Tenant+"/projects", p)
+	tenUID, err := c.tenantUID(ctx, p.Tenant)
+	if err != nil {
+		return types.Project{}, err
+	}
+	req, _ := c.req(ctx, http.MethodPost, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenUID+"/projects", p)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return types.Project{}, err
@@ -88,7 +137,11 @@ func (c *Client) CreateProject(ctx context.Context, p types.Project) (types.Proj
 	return v, nil
 }
 func (c *Client) ListProjects(ctx context.Context, tenant string) ([]types.Project, error) {
-	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenant+"/projects", nil)
+	tenUID, err := c.tenantUID(ctx, tenant)
+	if err != nil {
+		return nil, err
+	}
+	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenUID+"/projects", nil)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -101,7 +154,15 @@ func (c *Client) ListProjects(ctx context.Context, tenant string) ([]types.Proje
 
 // Apps
 func (c *Client) CreateApp(ctx context.Context, a types.App) (types.App, error) {
-	req, _ := c.req(ctx, http.MethodPost, "/api/v1/clusters/"+c.cluster+"/tenants/"+a.Tenant+"/projects/"+a.Project+"/apps", a)
+	tenUID, err := c.tenantUID(ctx, a.Tenant)
+	if err != nil {
+		return types.App{}, err
+	}
+	prUID, err := c.projectUID(ctx, tenUID, a.Project)
+	if err != nil {
+		return types.App{}, err
+	}
+	req, _ := c.req(ctx, http.MethodPost, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenUID+"/projects/"+prUID+"/apps", a)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return types.App{}, err
@@ -112,7 +173,15 @@ func (c *Client) CreateApp(ctx context.Context, a types.App) (types.App, error) 
 	return v, nil
 }
 func (c *Client) ListApps(ctx context.Context, tenant, project string) ([]types.App, error) {
-	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenant+"/projects/"+project+"/apps", nil)
+	tenUID, err := c.tenantUID(ctx, tenant)
+	if err != nil {
+		return nil, err
+	}
+	prUID, err := c.projectUID(ctx, tenUID, project)
+	if err != nil {
+		return nil, err
+	}
+	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenUID+"/projects/"+prUID+"/apps", nil)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err

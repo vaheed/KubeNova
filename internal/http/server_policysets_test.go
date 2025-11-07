@@ -33,12 +33,15 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("register cluster: %v %s", err, resp.Status)
 	}
+	var cjson map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&cjson)
 	resp.Body.Close()
+	cuid := cjson["uid"].(string)
 
 	// Create tenant
 	tb := map[string]any{"name": "acme"}
 	bb, _ := json.Marshal(tb)
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants", bytes.NewReader(bb))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+cuid+"/tenants", bytes.NewReader(bb))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "tenantOwner")
@@ -53,7 +56,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 
 	// PolicySet create (allowed)
 	psBody := []byte(`{"name":"baseline"}`)
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets", bytes.NewReader(psBody))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/policysets", bytes.NewReader(psBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "tenantOwner")
@@ -65,7 +68,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	resp.Body.Close()
 
 	// PolicySet create forbidden for readOnly
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets", bytes.NewReader(psBody))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/policysets", bytes.NewReader(psBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "readOnly")
@@ -77,7 +80,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	resp.Body.Close()
 
 	// List & get
-	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets", nil)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/policysets", nil)
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "readOnly")
 	req.Header.Set("X-KN-Tenant", "acme")
@@ -86,7 +89,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 		t.Fatalf("policyset list: %s", resp.Status)
 	}
 	resp.Body.Close()
-	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets/baseline", nil)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/policysets/baseline", nil)
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "readOnly")
 	req.Header.Set("X-KN-Tenant", "acme")
@@ -97,7 +100,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	resp.Body.Close()
 
 	// Update & delete
-	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets/baseline", bytes.NewReader([]byte(`{"name":"baseline","rules":[]}`)))
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/policysets/baseline", bytes.NewReader([]byte(`{"name":"baseline","rules":[]}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "tenantOwner")
@@ -107,7 +110,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 		t.Fatalf("policyset update: %s", resp.Status)
 	}
 	resp.Body.Close()
-	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/policysets/baseline", nil)
+	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/policysets/baseline", nil)
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "tenantOwner")
 	req.Header.Set("X-KN-Tenant", "acme")
@@ -119,7 +122,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 
 	// Project kubeconfig (create project first)
 	pb := []byte(`{"name":"web"}`)
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects", bytes.NewReader(pb))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/projects", bytes.NewReader(pb))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "tenantOwner")
@@ -132,7 +135,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&pjson)
 	resp.Body.Close()
 	pr := pjson["uid"].(string)
-	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/kubeconfig", nil)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/projects/"+pr+"/kubeconfig", nil)
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "projectDev")
 	req.Header.Set("X-KN-Tenant", "acme")
@@ -156,7 +159,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	// Workflows run/list/get
 	// Create app first
 	ab := []byte(`{"name":"hello"}`)
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps", bytes.NewReader(ab))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/projects/"+pr+"/apps", bytes.NewReader(ab))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "projectDev")
@@ -169,7 +172,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&ajson)
 	resp.Body.Close()
 	app := ajson["uid"].(string)
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps/"+app+"/workflow/run", bytes.NewReader([]byte(`{"steps":["deploy"]}`)))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/projects/"+pr+"/apps/"+app+"/workflow/run", bytes.NewReader([]byte(`{"steps":["deploy"]}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "projectDev")
@@ -183,7 +186,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	resp.Body.Close()
 	runID := run["id"].(string)
 	// list
-	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps/"+app+"/workflow/runs", nil)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/projects/"+pr+"/apps/"+app+"/workflow/runs", nil)
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "projectDev")
 	req.Header.Set("X-KN-Tenant", "acme")
@@ -193,7 +196,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	}
 	resp.Body.Close()
 	// get by id
-	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/kind/tenants/"+ten+"/projects/"+pr+"/apps/runs/"+runID, nil)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/projects/"+pr+"/apps/runs/"+runID, nil)
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "projectDev")
 	req.Header.Set("X-KN-Tenant", "acme")

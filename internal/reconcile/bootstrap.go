@@ -22,7 +22,8 @@ func BootstrapHelmJob(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	job.Spec.Template.Spec.ServiceAccountName = "kubenova-agent"
+	// Use a dedicated bootstrap SA with elevated permissions (cluster-admin) for Helm installs
+	job.Spec.Template.Spec.ServiceAccountName = "agent-bootstrap"
 	job.Spec.BackoffLimit = int32ptr(1)
 	job.Spec.Template.Spec.Containers = []corev1.Container{{
 		Name:    "helm",

@@ -47,8 +47,8 @@ OCI charts in GitHub Packages (GHCR)
   - ghcr.io/vaheed/kubenova-charts/manager
   - ghcr.io/vaheed/kubenova-charts/agent
 - Branch/tag mapping
-  - develop: chart version is suffixed with -dev (e.g., 0.9.1-dev). A lightweight OCI tag alias dev also points to the same artifact.
-  - main: chart version is the normal semver (e.g., 0.9.1). A lightweight OCI tag alias latest also points to the same artifact.
+  - develop: chart version is suffixed with -dev (e.g., 0.9.3-dev). A lightweight OCI tag alias dev also points to the same artifact.
+  - main: chart version is the normal semver (e.g., 0.9.3). A lightweight OCI tag alias latest also points to the same artifact.
   - release tags (vX.Y.Z): an additional OCI tag alias vX.Y.Z is applied to the published artifact.
 - Examples (OCI)
 ```
@@ -56,12 +56,12 @@ helm registry login ghcr.io -u <user> -p <token>
 # Pull latest main (alias)
 helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version latest
 # Pull a specific version
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.1
+helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.3
 # Pull develop stream
 helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version dev     # requires Helm that supports tag aliases
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.1-dev
+helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.3-dev
 # Pull a release tag alias
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version v0.9.1   # alias to the same 0.9.1 artifact
+helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version v0.9.3   # alias to the same 0.9.3 artifact
 ```
 ```
 

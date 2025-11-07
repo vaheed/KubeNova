@@ -64,7 +64,18 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	resp.Body.Close()
 
 	body, _ := json.Marshal(map[string]string{"cpu": "2"})
-	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/cluster-a/tenants/acme/quotas", bytes.NewReader(body))
+	// create tenant to get UID
+	tb, _ := json.Marshal(Tenant{Name: "acme"})
+	r2, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/cluster-a/tenants", bytes.NewReader(tb))
+	r2.Header.Set("Content-Type", "application/json")
+	rr, _ := http.DefaultClient.Do(r2)
+	var tnt Tenant
+	_ = json.NewDecoder(rr.Body).Decode(&tnt)
+	rr.Body.Close()
+	if tnt.Uid == nil {
+		t.Fatalf("tenant uid missing")
+	}
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/cluster-a/tenants/"+*tnt.Uid+"/quotas", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -75,7 +86,7 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/cluster-a/tenants/acme/limits", bytes.NewReader(body))
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/cluster-a/tenants/"+*tnt.Uid+"/limits", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -87,7 +98,7 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	resp.Body.Close()
 
 	nb, _ := json.Marshal(map[string]any{"defaultDeny": true})
-	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/cluster-a/tenants/acme/network-policies", bytes.NewReader(nb))
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/cluster-a/tenants/"+*tnt.Uid+"/network-policies", bytes.NewReader(nb))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {

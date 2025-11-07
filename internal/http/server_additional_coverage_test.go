@@ -33,8 +33,8 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	defer ts.Close()
 
 	// Seed a cluster via API to back bootstrap and kubeconfig-backed flows.
-	kcfg := base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nclusters: []\ncontexts: []\n"))
-	reqBody := []byte(`{"name":"kind","kubeconfig":"` + kcfg + `"}`)
+	kcfg1 := base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nclusters: []\ncontexts: []\n"))
+	reqBody := []byte(`{"name":"kind","kubeconfig":"` + kcfg1 + `"}`)
 	resp, err := http.Post(ts.URL+"/api/v1/clusters", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		t.Fatalf("register cluster: %v", err)
@@ -42,6 +42,8 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("register cluster status: %s", resp.Status)
 	}
+	var cl Cluster
+	_ = json.NewDecoder(resp.Body).Decode(&cl)
 	resp.Body.Close()
 
 	// Seed tenant and project directly in the store (UIDs default to names)
@@ -49,7 +51,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	_ = st.CreateProject(context.Background(), kn.Project{Tenant: "acme", Name: "proj1"})
 
 	// 1) Bootstrap component
-	resp, err = http.Post(ts.URL+"/api/v1/clusters/kind/bootstrap/tenancy", "application/json", nil)
+	resp, err = http.Post(ts.URL+"/api/v1/clusters/"+*cl.Uid+"/bootstrap/tenancy", "application/json", nil)
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
@@ -59,7 +61,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	resp.Body.Close()
 
 	// 2) PolicySet catalog
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/kind/policysets/catalog")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + *cl.Uid + "/policysets/catalog")
 	if err != nil {
 		t.Fatalf("catalog: %v", err)
 	}
@@ -75,7 +77,21 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 
 	// 3) Replace tenant owners
 	owners := []byte(`{"owners":["owner@example.com"]}`)
-	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/kind/tenants/acme/owners", bytes.NewReader(owners))
+	// create cluster and tenant to get UIDs
+	kcfg2 := base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nclusters: []\ncontexts: []\n"))
+	reg := []byte(`{"name":"kind","kubeconfig":"` + kcfg2 + `"}`)
+	resp2, _ := http.Post(ts.URL+"/api/v1/clusters", "application/json", bytes.NewReader(reg))
+	var c Cluster
+	_ = json.NewDecoder(resp2.Body).Decode(&c)
+	resp2.Body.Close()
+	tb, _ := json.Marshal(Tenant{Name: "acme"})
+	rq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants", bytes.NewReader(tb))
+	rq.Header.Set("Content-Type", "application/json")
+	rr, _ := http.DefaultClient.Do(rq)
+	var tnt Tenant
+	_ = json.NewDecoder(rr.Body).Decode(&tnt)
+	rr.Body.Close()
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/owners", bytes.NewReader(owners))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -87,7 +103,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	resp.Body.Close()
 
 	// 4) Tenant summary
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/kind/tenants/acme/summary")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + *c.Uid + "/tenants/" + *tnt.Uid + "/summary")
 	if err != nil {
 		t.Fatalf("tenant summary: %v", err)
 	}
@@ -99,7 +115,15 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	resp.Body.Close()
 
 	// 5) Project access update
-	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/kind/tenants/acme/projects/proj1/access", bytes.NewReader([]byte(`{"members":[]}`)))
+	// create a project
+	pb, _ := json.Marshal(Project{Name: "proj1"})
+	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects", bytes.NewReader(pb))
+	rq.Header.Set("Content-Type", "application/json")
+	rr, _ = http.DefaultClient.Do(rq)
+	var pr Project
+	_ = json.NewDecoder(rr.Body).Decode(&pr)
+	rr.Body.Close()
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/access", bytes.NewReader([]byte(`{"members":[]}`)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -111,7 +135,15 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	resp.Body.Close()
 
 	// 6) App delete action (idempotent)
-	resp, err = http.Post(ts.URL+"/api/v1/clusters/kind/tenants/acme/projects/proj1/apps/appA:delete", "application/json", nil)
+	// create app
+	ab, _ := json.Marshal(App{Name: "appA"})
+	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps", bytes.NewReader(ab))
+	rq.Header.Set("Content-Type", "application/json")
+	rr, _ = http.DefaultClient.Do(rq)
+	var ap App
+	_ = json.NewDecoder(rr.Body).Decode(&ap)
+	rr.Body.Close()
+	resp, err = http.Post(ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+":delete", "application/json", nil)
 	if err != nil {
 		t.Fatalf("app delete: %v", err)
 	}
@@ -121,7 +153,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	resp.Body.Close()
 
 	// 7) Project usage
-	resp, err = http.Get(ts.URL + "/api/v1/projects/proj1/usage")
+	resp, err = http.Get(ts.URL + "/api/v1/projects/" + *pr.Uid + "/usage")
 	if err != nil {
 		t.Fatalf("project usage: %v", err)
 	}
@@ -136,7 +168,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	}
 
 	// 8) Tenant usage
-	resp, err = http.Get(ts.URL + "/api/v1/tenants/acme/usage")
+	resp, err = http.Get(ts.URL + "/api/v1/tenants/" + *tnt.Uid + "/usage")
 	if err != nil {
 		t.Fatalf("tenant usage: %v", err)
 	}
