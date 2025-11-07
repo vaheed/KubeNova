@@ -1,15 +1,15 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kubenova-agent
-  labels: { app: kubenova-agent }
+  name: agent
+  labels: { app: agent }
 spec:
-  replicas: 2
+  replicas: 1
   selector:
-    matchLabels: {app: kubenova-agent}
+    matchLabels: {app: agent}
   template:
     metadata:
-      labels: {app: kubenova-agent}
+      labels: {app: agent}
     spec:
       securityContext:
         runAsNonRoot: true

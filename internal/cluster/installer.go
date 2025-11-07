@@ -49,11 +49,11 @@ func UninstallAgent(ctx context.Context, kubeconfig []byte) error {
 	}
 	ns := "kubenova-system"
 	// delete in safe order
-	_ = cset.AutoscalingV2().HorizontalPodAutoscalers(ns).Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
-	_ = cset.AppsV1().Deployments(ns).Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
-	_ = cset.CoreV1().ServiceAccounts(ns).Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
-	_ = cset.RbacV1().ClusterRoleBindings().Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
-	_ = cset.RbacV1().ClusterRoles().Delete(ctx, "kubenova-agent", metav1.DeleteOptions{})
+	_ = cset.AutoscalingV2().HorizontalPodAutoscalers(ns).Delete(ctx, "agent", metav1.DeleteOptions{})
+	_ = cset.AppsV1().Deployments(ns).Delete(ctx, "agent", metav1.DeleteOptions{})
+	_ = cset.CoreV1().ServiceAccounts(ns).Delete(ctx, "agent", metav1.DeleteOptions{})
+	_ = cset.RbacV1().ClusterRoleBindings().Delete(ctx, "agent", metav1.DeleteOptions{})
+	_ = cset.RbacV1().ClusterRoles().Delete(ctx, "agent", metav1.DeleteOptions{})
 	// Namespace may contain other artifacts; try delete if it only hosted agent. Best-effort.
 	// _ = cset.CoreV1().Namespaces().Delete(ctx, ns, metav1.DeleteOptions{})
 	return nil
@@ -68,7 +68,16 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 	scheme := unstructuredScheme()
 	dec := serializer.NewCodecFactory(scheme).UniversalDeserializer()
 	// Loop embedded files
-	items := []string{"namespace.yaml", "serviceaccount.yaml", "clusterrole.yaml", "clusterrolebinding.yaml", "deployment.yaml", "hpa.yaml"}
+	items := []string{
+		"namespace.yaml",
+		"serviceaccount.yaml",
+		"clusterrole.yaml",
+		"clusterrolebinding.yaml",
+		"bootstrap-serviceaccount.yaml",
+		"bootstrap-clusterrolebinding.yaml",
+		"deployment.yaml",
+		"hpa.yaml",
+	}
 	for _, name := range items {
 		b, err := manifests.ReadFile("manifests/" + name)
 		if err != nil {
@@ -111,11 +120,11 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 	// Wait for agent 2/2 ready with backoff
 	var ready bool
 	ns := "kubenova-system"
-	logging.L.Info("agent.wait.ready", zap.String("namespace", ns), zap.String("name", "kubenova-agent"))
+	logging.L.Info("agent.wait.ready", zap.String("namespace", ns), zap.String("name", "agent"))
 	check := func() (bool, error) {
-		dep, err := cset.AppsV1().Deployments(ns).Get(ctx, "kubenova-agent", metav1.GetOptions{})
+		dep, err := cset.AppsV1().Deployments(ns).Get(ctx, "agent", metav1.GetOptions{})
 		if err == nil && dep.Status.ReadyReplicas >= 2 {
-			if _, err := cset.AutoscalingV2().HorizontalPodAutoscalers(ns).Get(ctx, "kubenova-agent", metav1.GetOptions{}); err == nil {
+			if _, err := cset.AutoscalingV2().HorizontalPodAutoscalers(ns).Get(ctx, "agent", metav1.GetOptions{}); err == nil {
 				ready = true
 				return false, nil
 			}

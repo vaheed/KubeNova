@@ -46,11 +46,7 @@ func (p *Postgres) Close(ctx context.Context) error { p.db.Close(); return nil }
 func (p *Postgres) CreateTenant(ctx context.Context, t types.Tenant) error {
 	t.CreatedAt = stamp(t.CreatedAt)
 	if t.UID == "" {
-		if t.Name != "" {
-			t.UID = t.Name
-		} else {
-			t.UID = types.NewID().String()
-		}
+		t.UID = types.NewID().String()
 	}
 	_, err := p.db.Exec(ctx, `INSERT INTO tenants(uid, name, created_at) VALUES ($1,$2,$3) ON CONFLICT (name) DO NOTHING`, t.UID, t.Name, t.CreatedAt)
 	return err
@@ -98,11 +94,7 @@ func (p *Postgres) DeleteTenant(ctx context.Context, name string) error {
 func (p *Postgres) CreateProject(ctx context.Context, pr types.Project) error {
 	pr.CreatedAt = stamp(pr.CreatedAt)
 	if pr.UID == "" {
-		if pr.Name != "" {
-			pr.UID = pr.Name
-		} else {
-			pr.UID = types.NewID().String()
-		}
+		pr.UID = types.NewID().String()
 	}
 	_, err := p.db.Exec(ctx, `INSERT INTO projects(uid, tenant, name) VALUES ($1,$2,$3) ON CONFLICT (tenant,name) DO NOTHING`, pr.UID, pr.Tenant, pr.Name)
 	return err
@@ -150,11 +142,7 @@ func (p *Postgres) DeleteProject(ctx context.Context, tenant, name string) error
 func (p *Postgres) CreateApp(ctx context.Context, a types.App) error {
 	a.CreatedAt = stamp(a.CreatedAt)
 	if a.UID == "" {
-		if a.Name != "" {
-			a.UID = a.Name
-		} else {
-			a.UID = types.NewID().String()
-		}
+		a.UID = types.NewID().String()
 	}
 	_, err := p.db.Exec(ctx, `INSERT INTO apps(uid, tenant, project, name) VALUES ($1,$2,$3,$4) ON CONFLICT (tenant,project,name) DO NOTHING`, a.UID, a.Tenant, a.Project, a.Name)
 	return err
@@ -216,11 +204,7 @@ func EnvOrMemory() (Store, func(context.Context) error, error) {
 // Clusters
 func (p *Postgres) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (types.ID, error) {
 	if c.UID == "" {
-		if c.Name != "" {
-			c.UID = c.Name
-		} else {
-			c.UID = types.NewID().String()
-		}
+		c.UID = types.NewID().String()
 	}
 	var idStr string
 	err := p.db.QueryRow(ctx, `INSERT INTO clusters(uid, name, kubeconfig_enc, labels) VALUES ($1,$2,$3,$4) RETURNING id::text`, c.UID, c.Name, kubeconfigEnc, mapToJSONB(c.Labels)).Scan(&idStr)

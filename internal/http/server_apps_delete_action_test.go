@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -77,12 +78,35 @@ func TestAppDeleteActionInvokesBackend(t *testing.T) {
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 
-	// Register a cluster to provide kubeconfig to backend
+	// set up minimal objects to get UIDs
 	kcfg := base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nclusters: []\ncontexts: []\n"))
-	_, _ = http.Post(ts.URL+"/api/v1/clusters", "application/json",
-		bytes.NewReader([]byte(`{"name":"c","kubeconfig":"`+kcfg+`"}`)))
-
-	resp, err := http.Post(ts.URL+"/api/v1/clusters/c/tenants/t/projects/p/apps/a:delete", "application/json", nil)
+	reqBody := []byte(`{"name":"c","kubeconfig":"` + kcfg + `"}`)
+	resp2, _ := http.Post(ts.URL+"/api/v1/clusters", "application/json", bytes.NewReader(reqBody))
+	var c Cluster
+	_ = json.NewDecoder(resp2.Body).Decode(&c)
+	resp2.Body.Close()
+	tb, _ := json.Marshal(Tenant{Name: "t"})
+	rq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants", bytes.NewReader(tb))
+	rq.Header.Set("Content-Type", "application/json")
+	rr, _ := http.DefaultClient.Do(rq)
+	var tnt Tenant
+	_ = json.NewDecoder(rr.Body).Decode(&tnt)
+	rr.Body.Close()
+	pb, _ := json.Marshal(Project{Name: "p"})
+	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects", bytes.NewReader(pb))
+	rq.Header.Set("Content-Type", "application/json")
+	rr, _ = http.DefaultClient.Do(rq)
+	var pr Project
+	_ = json.NewDecoder(rr.Body).Decode(&pr)
+	rr.Body.Close()
+	ab, _ := json.Marshal(App{Name: "a"})
+	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps", bytes.NewReader(ab))
+	rq.Header.Set("Content-Type", "application/json")
+	rr, _ = http.DefaultClient.Do(rq)
+	var ap App
+	_ = json.NewDecoder(rr.Body).Decode(&ap)
+	rr.Body.Close()
+	resp, err := http.Post(ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+":delete", "application/json", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
