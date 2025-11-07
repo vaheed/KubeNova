@@ -98,6 +98,8 @@ jobs:
         run: |
           docker build -t manager:scan -f build/Dockerfile.manager .
           docker build -t kubenova-agent:scan -f build/Dockerfile.agent .
+          docker save manager:scan -o manager-scan.tar
+          docker save kubenova-agent:scan -o kubenova-agent-scan.tar
       - name: Clean Trivy cache dir (avoid tar restore conflicts)
         run: rm -rf ~/.cache/trivy || true
       - name: Cache Trivy DB
@@ -109,7 +111,15 @@ jobs:
       - name: Trivy image scan (Manager)
         uses: aquasecurity/trivy-action@0.20.0
         with:
-          image-ref: 'manager:scan'
+          input: 'manager-scan.tar'
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Trivy image scan (Agent)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          input: 'kubenova-agent-scan.tar'
           format: 'table'
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
@@ -250,11 +260,3 @@ jobs:
             echo "Tagging $src -> $dst"
             oras copy "$src" "$dst"
           done
-      - name: Trivy image scan (Agent)
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: 'kubenova-agent:scan'
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
-          exit-code: '1'
