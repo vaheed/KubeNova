@@ -14,7 +14,7 @@ spec:
       securityContext:
         runAsNonRoot: true
         fsGroup: 65532
-      serviceAccountName: kubenova-agent
+      serviceAccountName: agent
       containers:
         - name: agent
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
