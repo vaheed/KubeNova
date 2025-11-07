@@ -7,5 +7,4 @@ Container build assets.
 
 Notes
 - Images are built in CI and pushed to GHCR.
-- E2E uses the Agent image locally and loads it into Kind.
 - Keep base images up to date and prefer distroless for minimal attack surface.

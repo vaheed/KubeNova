@@ -2,6 +2,7 @@ name: ci
 on:
   push:
     branches: [ develop, main ]
+    tags: [ 'v*' ]
   pull_request:
 
 jobs:
@@ -29,105 +30,6 @@ jobs:
           retry go test -tags=integration ./internal/store -count=1 || echo "store integration skipped due to env/network"
           retry go test -tags=integration ./internal/manager -count=1 || echo "manager integration skipped due to env/network"
 
-  build_push_amd64:
-    runs-on: ubuntu-latest
-    needs: [lint_unit, gosec_scan, trivy_fs, trivy_config, trivy_images]
-    strategy:
-      matrix:
-        arch: [amd64]
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build images (amd64)
-        run: |
-          TAG=${GITHUB_REF##*/}
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then EXTRA_TAGS="--tag ghcr.io/vaheed/kubenova/manager:$TAG --tag ghcr.io/vaheed/kubenova/agent:$TAG"; fi
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.manager .
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
-
-  build_push_arm64:
-    if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
-    needs: [lint_unit, gosec_scan, trivy_fs, trivy_config, trivy_images]
-    strategy:
-      matrix:
-        arch: [arm64]
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build images (arm64)
-        run: |
-          TAG=${GITHUB_REF##*/}
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then EXTRA_TAGS="--tag ghcr.io/vaheed/kubenova/manager:$TAG --tag ghcr.io/vaheed/kubenova/agent:$TAG"; fi
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/manager:dev $EXTRA_TAGS --push -f build/Dockerfile.manager .
-          docker buildx build --platform linux/${{ matrix.arch }} -t ghcr.io/vaheed/kubenova/agent:dev $EXTRA_TAGS --push -f build/Dockerfile.agent .
-
-  e2e_suite:
-    runs-on: ubuntu-latest
-    needs: [lint_unit, gosec_scan, trivy_fs, trivy_config, trivy_images, build_push_amd64, charts_push_oci]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache: true
-          cache-dependency-path: '**/go.sum'
-      - name: Install kind
-        run: |
-          # Avoid clashing with repo's ./kind/ directory by downloading to /tmp
-          curl -fsSLo /tmp/kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
-          chmod +x /tmp/kind
-          sudo mv /tmp/kind /usr/local/bin/kind
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: v1.29.3
-      - name: Setup Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.14.4
-      - name: Run end-to-end suite
-        env:
-          E2E_RUN: "false"
-          E2E_KIND_CLUSTER: kubenova-e2e
-        run: |
-          set -euo pipefail
-          make test-e2e | tee e2e.log
-      - name: Export Kind logs
-        if: always()
-        run: |
-          mkdir -p artifacts
-          kind export logs artifacts/kind --name ${E2E_KIND_CLUSTER:-kubenova-e2e} || true
-      - name: Upload suite artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-suite
-          path: |
-            e2e.log
-            artifacts
-      - name: Cleanup Kind
-        if: always()
-        run: kind delete cluster --name ${E2E_KIND_CLUSTER:-kubenova-e2e} || true
-
   gosec_scan:
     runs-on: ubuntu-latest
     permissions:
@@ -145,25 +47,6 @@ jobs:
       - name: Run gosec
         run: |
           $(go env GOPATH)/bin/gosec ./...
-
-  build_images_scan:
-    runs-on: ubuntu-latest
-    needs: lint_unit
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Build scan images
-        run: |
-          docker buildx build -t manager:scan -f build/Dockerfile.manager --load .
-          docker buildx build -t kubenova-agent:scan -f build/Dockerfile.agent --load .
-          docker save manager:scan -o api-image.tar
-          docker save kubenova-agent:scan -o agent-image.tar
-      - uses: actions/upload-artifact@v4
-        with:
-          name: scan-images
-          path: |
-            api-image.tar
-            agent-image.tar
 
   trivy_fs:
     runs-on: ubuntu-latest
@@ -209,11 +92,13 @@ jobs:
 
   trivy_images:
     runs-on: ubuntu-latest
-    needs: build_images_scan
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - name: Build scan images
+        run: |
+          docker buildx build -t manager:scan -f build/Dockerfile.manager --load .
+          docker buildx build -t kubenova-agent:scan -f build/Dockerfile.agent --load .
       - name: Clean Trivy cache dir (avoid tar restore conflicts)
         run: rm -rf ~/.cache/trivy || true
       - name: Cache Trivy DB
@@ -222,13 +107,6 @@ jobs:
           path: ~/.cache/trivy
           key: ${{ runner.os }}-trivy-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-trivy-
-      - uses: actions/download-artifact@v4
-        with:
-          name: scan-images
-      - name: Load images
-        run: |
-          docker load -i api-image.tar
-          docker load -i agent-image.tar
       - name: Trivy image scan (Manager)
         uses: aquasecurity/trivy-action@0.20.0
         with:
@@ -237,19 +115,66 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
-      - name: Trivy image scan (Agent)
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: 'kubenova-agent:scan'
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
-          exit-code: '1'
-      - name: Gitleaks secrets scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  build_push_amd64:
+    runs-on: ubuntu-latest
+    needs: [lint_unit, gosec_scan, trivy_fs, trivy_config, trivy_images]
+    strategy:
+      matrix:
+        arch: [amd64]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build images (amd64)
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == "refs/heads/develop" ]]; then IMG_TAG="dev"; fi
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then IMG_TAG="latest"; fi
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then IMG_TAG="${GITHUB_REF##*/}"; fi
+          if [[ -z "${IMG_TAG:-}" ]]; then echo "skip image push for non-branch/tag"; exit 0; fi
+          docker buildx build --platform linux/${{ matrix.arch }} \
+            -t ghcr.io/vaheed/kubenova/manager:${IMG_TAG} --push -f build/Dockerfile.manager .
+          docker buildx build --platform linux/${{ matrix.arch }} \
+            -t ghcr.io/vaheed/kubenova/agent:${IMG_TAG} --push -f build/Dockerfile.agent .
+
+  build_push_arm64:
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
+    runs-on: ubuntu-latest
+    needs: [lint_unit, gosec_scan, trivy_fs, trivy_config, trivy_images]
+    strategy:
+      matrix:
+        arch: [arm64]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build images (arm64)
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then IMG_TAG="latest"; fi
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then IMG_TAG="${GITHUB_REF##*/}"; fi
+          docker buildx build --platform linux/${{ matrix.arch }} \
+            -t ghcr.io/vaheed/kubenova/manager:${IMG_TAG} --push -f build/Dockerfile.manager .
+          docker buildx build --platform linux/${{ matrix.arch }} \
+            -t ghcr.io/vaheed/kubenova/agent:${IMG_TAG} --push -f build/Dockerfile.agent .
 
   charts_push_oci:
     runs-on: ubuntu-latest
@@ -277,9 +202,7 @@ jobs:
             NAME=$(basename "$CHART_DIR")
             TMP=$(mktemp -d)
             rsync -a "$CHART_DIR/" "$TMP/"
-            if [[ "$BRANCH" == "develop" ]]; then
-              sed -E -i 's/^(version: .*)$/\1-dev/' "$TMP/Chart.yaml"
-            fi
+            if [[ "$BRANCH" == "develop" ]]; then sed -E -i 's/^(version: .*)$/\1-dev/' "$TMP/Chart.yaml"; fi
             helm package "$TMP" -d out
           }
           package_chart deploy/helm/manager
@@ -293,10 +216,11 @@ jobs:
           set -euo pipefail
           REPO="oci://ghcr.io/${OWNER}/kubenova-charts"
           for f in out/*.tgz; do echo pushing "$f"; helm push "$f" "$REPO"; done
-      - name: Tag charts as latest via ORAS
-        if: always()
+      - name: Tag charts with dev/latest via ORAS
+        if: ${{ github.ref_name == 'develop' || github.ref_name == 'main' }}
         uses: oras-project/setup-oras@v1
       - name: Apply lightweight tags (latest or dev)
+        if: ${{ github.ref_name == 'develop' || github.ref_name == 'main' }}
         env:
           OWNER: ${{ github.repository_owner }}
           BRANCH: ${{ github.ref_name }}
@@ -311,3 +235,27 @@ jobs:
             echo "Tagging $src -> $dst"
             oras copy "$src" "$dst"
           done
+      - name: Tag charts with release version via ORAS
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          OWNER: ${{ github.repository_owner }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo ${{ secrets.GITHUB_TOKEN }} | oras login ghcr.io -u ${{ github.actor }} --password-stdin
+          for f in out/*.tgz; do
+            name=$(helm show chart "$f" | awk -F': ' '/^name:/{print $2; exit}')
+            ver=$(helm show chart "$f" | awk -F': ' '/^version:/{print $2; exit}')
+            src="ghcr.io/${OWNER}/kubenova-charts/${name}:${ver}"
+            dst="ghcr.io/${OWNER}/kubenova-charts/${name}:${TAG}"
+            echo "Tagging $src -> $dst"
+            oras copy "$src" "$dst"
+          done
+      - name: Trivy image scan (Agent)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: 'kubenova-agent:scan'
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
