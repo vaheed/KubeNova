@@ -27,20 +27,20 @@ type APIServer struct {
 	requireAuth bool
 	jwtKey      []byte
 	newCapsule  func([]byte) capib.Client
-    newVela     func([]byte) interface {
-        Deploy(context.Context, string, string) error
-        Suspend(context.Context, string, string) error
-        Resume(context.Context, string, string) error
-        Rollback(context.Context, string, string, *int) error
-        Status(context.Context, string, string) (map[string]any, error)
-        Revisions(context.Context, string, string) ([]map[string]any, error)
-        Diff(context.Context, string, string, int, int) (map[string]any, error)
-        Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
-        SetTraits(context.Context, string, string, []map[string]any) error
-        SetPolicies(context.Context, string, string, []map[string]any) error
-        ImageUpdate(context.Context, string, string, string, string, string) error
-        DeleteApp(context.Context, string, string) error
-    }
+	newVela     func([]byte) interface {
+		Deploy(context.Context, string, string) error
+		Suspend(context.Context, string, string) error
+		Resume(context.Context, string, string) error
+		Rollback(context.Context, string, string, *int) error
+		Status(context.Context, string, string) (map[string]any, error)
+		Revisions(context.Context, string, string) ([]map[string]any, error)
+		Diff(context.Context, string, string, int, int) (map[string]any, error)
+		Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
+		SetTraits(context.Context, string, string, []map[string]any) error
+		SetPolicies(context.Context, string, string, []map[string]any) error
+		ImageUpdate(context.Context, string, string, string, string, string) error
+		DeleteApp(context.Context, string, string) error
+	}
 	psMu       sync.RWMutex
 	policysets map[string]map[string]PolicySet // tenantUID -> name -> item
 	runsMu     sync.RWMutex
@@ -54,22 +54,22 @@ func NewAPIServer(st store.Store) *APIServer {
 		requireAuth: parseBool(os.Getenv("KUBENOVA_REQUIRE_AUTH")),
 		jwtKey:      []byte(os.Getenv("JWT_SIGNING_KEY")),
 		newCapsule:  capib.New,
-        newVela: func(b []byte) interface {
-            Deploy(context.Context, string, string) error
-            Suspend(context.Context, string, string) error
-            Resume(context.Context, string, string) error
-            Rollback(context.Context, string, string, *int) error
-            Status(context.Context, string, string) (map[string]any, error)
-            Revisions(context.Context, string, string) ([]map[string]any, error)
-            Diff(context.Context, string, string, int, int) (map[string]any, error)
-            Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
-            SetTraits(context.Context, string, string, []map[string]any) error
-            SetPolicies(context.Context, string, string, []map[string]any) error
-            ImageUpdate(context.Context, string, string, string, string, string) error
-            DeleteApp(context.Context, string, string) error
-        } {
-            return velab.New(b)
-        },
+		newVela: func(b []byte) interface {
+			Deploy(context.Context, string, string) error
+			Suspend(context.Context, string, string) error
+			Resume(context.Context, string, string) error
+			Rollback(context.Context, string, string, *int) error
+			Status(context.Context, string, string) (map[string]any, error)
+			Revisions(context.Context, string, string) ([]map[string]any, error)
+			Diff(context.Context, string, string, int, int) (map[string]any, error)
+			Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
+			SetTraits(context.Context, string, string, []map[string]any) error
+			SetPolicies(context.Context, string, string, []map[string]any) error
+			ImageUpdate(context.Context, string, string, string, string, string) error
+			DeleteApp(context.Context, string, string) error
+		} {
+			return velab.New(b)
+		},
 		policysets: map[string]map[string]PolicySet{},
 		runsByID:   map[string]WorkflowRun{},
 		runsByApp:  map[string][]WorkflowRun{},
@@ -287,16 +287,40 @@ func (s *APIServer) PostApiV1Clusters(w http.ResponseWriter, r *http.Request) {
 	}
 	// Store encoded kubeconfig
 	enc := base64.StdEncoding.EncodeToString(in.Kubeconfig)
-	// Persist via store (id is opaque; not returned on API)
-	_, err := s.st.CreateCluster(r.Context(), toTypesCluster(in), enc)
+	// Persist via store
+	id, err := s.st.CreateCluster(r.Context(), toTypesCluster(in), enc)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
+	// Read back to include assigned UID/labels
+	cl, encBack, _ := s.st.GetClusterByName(r.Context(), in.Name)
 	now := time.Now().UTC()
 	out := Cluster{Name: in.Name, CreatedAt: &now}
+	if cl.UID != "" {
+		u := cl.UID
+		out.Uid = &u
+	}
 	if in.Labels != nil {
 		out.Labels = in.Labels
+	}
+	// Kick off async Agent install; do not block API response
+	if encBack != "" {
+		kb, _ := base64.StdEncoding.DecodeString(encBack)
+		image := strings.TrimSpace(os.Getenv("AGENT_IMAGE"))
+		mgrURL := strings.TrimSpace(os.Getenv("MANAGER_URL_PUBLIC"))
+		go func(cid kn.ID, kubeconfig []byte, img, url string) {
+			// Best-effort eventing
+			_ = s.st.AddEvents(context.Background(), &cid, []kn.Event{{Type: "cluster", Resource: "agent", Payload: map[string]any{"phase": "install_start"}, TS: time.Now().UTC()}})
+			if img == "" {
+				img = "ghcr.io/vaheed/kubenova/agent:latest"
+			}
+			if err := clusterpkg.InstallAgent(context.Background(), kubeconfig, img, url); err != nil {
+				_ = s.st.AddEvents(context.Background(), &cid, []kn.Event{{Type: "cluster", Resource: "agent", Payload: map[string]any{"phase": "install_error", "error": err.Error()}, TS: time.Now().UTC()}})
+				return
+			}
+			_ = s.st.AddEvents(context.Background(), &cid, []kn.Event{{Type: "cluster", Resource: "agent", Payload: map[string]any{"phase": "install_done"}, TS: time.Now().UTC()}})
+		}(id, kb, image, mgrURL)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -331,6 +355,10 @@ func (s *APIServer) GetApiV1Clusters(w http.ResponseWriter, r *http.Request, par
 			u := it.UID
 			dto.Uid = &u
 		}
+		if len(it.Labels) > 0 {
+			m := it.Labels
+			dto.Labels = &m
+		}
 		out = append(out, dto)
 	}
 	if next != "" {
@@ -355,6 +383,18 @@ func (s *APIServer) GetApiV1ClustersC(w http.ResponseWriter, r *http.Request, c 
 	conds := clusterpkg.ComputeClusterConditions(r.Context(), kb, parseBool(os.Getenv("KUBENOVA_E2E_FAKE")))
 	// map to DTO
 	out := Cluster{Name: cl.Name}
+	if cl.UID != "" {
+		u := cl.UID
+		out.Uid = &u
+	}
+	if !cl.CreatedAt.IsZero() {
+		t := cl.CreatedAt
+		out.CreatedAt = &t
+	}
+	if len(cl.Labels) > 0 {
+		m := cl.Labels
+		out.Labels = &m
+	}
 	outConds := make([]Condition, 0, len(conds))
 	for _, x := range conds {
 		typ := x.Type
@@ -376,14 +416,9 @@ func (s *APIServer) DeleteApiV1ClustersC(w http.ResponseWriter, r *http.Request,
 	if !s.requireRoles(w, r, "admin", "ops") {
 		return
 	}
-	ident := string(c)
-	// Require UUID id in path
-	id, err := kn.ParseID(ident)
-	if err != nil {
-		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid UUID")
-		return
-	}
-	cl, enc, err := s.st.GetCluster(r.Context(), id)
+	// Treat path param as cluster UID for consistency with GET and other routes
+	uid := string(c)
+	cl, enc, err := s.st.GetClusterByUID(r.Context(), uid)
 	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
@@ -690,18 +725,18 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsRunsId(w http.Response
 
 // (POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:delete)
 func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsADelete(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, a AppParam) {
-    if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") {
-        return
-    }
-    var kb []byte
-    if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
-        kb, _ = base64.StdEncoding.DecodeString(enc)
-    }
-    if err := s.newVela(kb).DeleteApp(r.Context(), string(p), string(a)); err != nil {
-        s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
-        return
-    }
-    w.WriteHeader(http.StatusAccepted)
+	if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") {
+		return
+	}
+	var kb []byte
+	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
+		kb, _ = base64.StdEncoding.DecodeString(enc)
+	}
+	if err := s.newVela(kb).DeleteApp(r.Context(), string(p), string(a)); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // helpers
@@ -711,67 +746,67 @@ func ptrWorkflowRunStatus(s WorkflowRunStatus) *WorkflowRunStatus { return &s }
 
 // (GET /api/v1/clusters/{c}/tenants)
 func (s *APIServer) GetApiV1ClustersCTenants(w http.ResponseWriter, r *http.Request, c ClusterParam, params GetApiV1ClustersCTenantsParams) {
-    if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
-        return
-    }
-    items, err := s.st.ListTenants(r.Context())
-    if err != nil {
-        s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
-        return
-    }
-    owner := ""
-    if params.Owner != nil {
-        owner = string(*params.Owner)
-    }
-    selectors := map[string]string{}
-    if params.LabelSelector != nil {
-        raw := string(*params.LabelSelector)
-        if raw != "" {
-            parts := strings.Split(raw, ",")
-            for _, p := range parts {
-                kv := strings.SplitN(strings.TrimSpace(p), "=", 2)
-                if len(kv) == 2 {
-                    selectors[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
-                }
-            }
-        }
-    }
-    matches := func(t kn.Tenant) bool {
-        if owner != "" {
-            ok := false
-            for _, o := range t.Owners {
-                if o == owner {
-                    ok = true
-                    break
-                }
-            }
-            if !ok {
-                return false
-            }
-        }
-        if len(selectors) > 0 {
-            for k, v := range selectors {
-                if t.Labels[k] != v {
-                    return false
-                }
-            }
-        }
-        return true
-    }
-    out := make([]Tenant, 0, len(items))
-    for _, t := range items {
-        if !matches(t) {
-            continue
-        }
-        tn := Tenant{Name: t.Name, Labels: &t.Labels, Annotations: &t.Annotations}
-        if t.UID != "" {
-            u := t.UID
-            tn.Uid = &u
-        }
-        out = append(out, tn)
-    }
-    w.Header().Set("Content-Type", "application/json")
-    _ = json.NewEncoder(w).Encode(out)
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	items, err := s.st.ListTenants(r.Context())
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	owner := ""
+	if params.Owner != nil {
+		owner = string(*params.Owner)
+	}
+	selectors := map[string]string{}
+	if params.LabelSelector != nil {
+		raw := string(*params.LabelSelector)
+		if raw != "" {
+			parts := strings.Split(raw, ",")
+			for _, p := range parts {
+				kv := strings.SplitN(strings.TrimSpace(p), "=", 2)
+				if len(kv) == 2 {
+					selectors[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+				}
+			}
+		}
+	}
+	matches := func(t kn.Tenant) bool {
+		if owner != "" {
+			ok := false
+			for _, o := range t.Owners {
+				if o == owner {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return false
+			}
+		}
+		if len(selectors) > 0 {
+			for k, v := range selectors {
+				if t.Labels[k] != v {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	out := make([]Tenant, 0, len(items))
+	for _, t := range items {
+		if !matches(t) {
+			continue
+		}
+		tn := Tenant{Name: t.Name, Labels: &t.Labels, Annotations: &t.Annotations}
+		if t.UID != "" {
+			u := t.UID
+			tn.Uid = &u
+		}
+		out = append(out, tn)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // (POST /api/v1/clusters/{c}/tenants)
@@ -1341,8 +1376,8 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsALogsComponent(w http.
 
 // System endpoints under /api/v1
 func (s *APIServer) GetApiV1Version(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Content-Type", "application/json")
-    _ = json.NewEncoder(w).Encode(map[string]any{"version": "0.9.1"})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"version": "0.9.1"})
 }
 
 func (s *APIServer) GetApiV1Features(w http.ResponseWriter, r *http.Request) {
