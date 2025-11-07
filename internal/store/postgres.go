@@ -436,7 +436,7 @@ func (p *Postgres) ListClusters(ctx context.Context, limit int, cursor string, l
 			idx++
 		}
 	}
-	q := "SELECT id::text, name, labels, created_at FROM clusters WHERE " + strings.Join(where, " AND ") + " ORDER BY id ASC LIMIT $" + strconv.Itoa(idx)
+	q := "SELECT id::text, uid, name, labels, created_at FROM clusters WHERE " + strings.Join(where, " AND ") + " ORDER BY id ASC LIMIT $" + strconv.Itoa(idx)
 	args = append(args, limit)
 	rows, err := p.db.Query(ctx, q, args...)
 	if err != nil {
@@ -448,7 +448,7 @@ func (p *Postgres) ListClusters(ctx context.Context, limit int, cursor string, l
 	for rows.Next() {
 		var c types.Cluster
 		var idStr string
-		if err := rows.Scan(&idStr, &c.Name, &c.Labels, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&idStr, &c.UID, &c.Name, &c.Labels, &c.CreatedAt); err != nil {
 			return nil, "", err
 		}
 		id, _ := types.ParseID(idStr)

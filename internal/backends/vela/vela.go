@@ -313,85 +313,85 @@ func (c *client) Logs(ctx context.Context, ns, name, component string, follow bo
 	return out, nil
 }
 func (c *client) SetTraits(ctx context.Context, ns, name string, traits []map[string]any) error {
-    u, err := c.dyn.Resource(appGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-    if err != nil {
-        return err
-    }
-    spec, _, _ := unstructured.NestedMap(u.Object, "spec")
-    // set traits as-is (array of objects)
-    arr := make([]interface{}, 0, len(traits))
-    for _, t := range traits {
-        arr = append(arr, t)
-    }
-    spec["traits"] = arr
-    if err := unstructured.SetNestedMap(u.Object, spec, "spec"); err != nil {
-        return err
-    }
-    _, err = c.dyn.Resource(appGVR).Namespace(ns).Update(ctx, u, metav1.UpdateOptions{})
-    return err
+	u, err := c.dyn.Resource(appGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	spec, _, _ := unstructured.NestedMap(u.Object, "spec")
+	// set traits as-is (array of objects)
+	arr := make([]interface{}, 0, len(traits))
+	for _, t := range traits {
+		arr = append(arr, t)
+	}
+	spec["traits"] = arr
+	if err := unstructured.SetNestedMap(u.Object, spec, "spec"); err != nil {
+		return err
+	}
+	_, err = c.dyn.Resource(appGVR).Namespace(ns).Update(ctx, u, metav1.UpdateOptions{})
+	return err
 }
 func (c *client) SetPolicies(ctx context.Context, ns, name string, policies []map[string]any) error {
-    u, err := c.dyn.Resource(appGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-    if err != nil {
-        return err
-    }
-    spec, _, _ := unstructured.NestedMap(u.Object, "spec")
-    arr := make([]interface{}, 0, len(policies))
-    for _, p := range policies {
-        arr = append(arr, p)
-    }
-    spec["policies"] = arr
-    if err := unstructured.SetNestedMap(u.Object, spec, "spec"); err != nil {
-        return err
-    }
-    _, err = c.dyn.Resource(appGVR).Namespace(ns).Update(ctx, u, metav1.UpdateOptions{})
-    return err
+	u, err := c.dyn.Resource(appGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	spec, _, _ := unstructured.NestedMap(u.Object, "spec")
+	arr := make([]interface{}, 0, len(policies))
+	for _, p := range policies {
+		arr = append(arr, p)
+	}
+	spec["policies"] = arr
+	if err := unstructured.SetNestedMap(u.Object, spec, "spec"); err != nil {
+		return err
+	}
+	_, err = c.dyn.Resource(appGVR).Namespace(ns).Update(ctx, u, metav1.UpdateOptions{})
+	return err
 }
 func (c *client) ImageUpdate(ctx context.Context, ns, name, component, image, tag string) error {
-    u, err := c.dyn.Resource(appGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-    if err != nil {
-        return err
-    }
-    spec, _, _ := unstructured.NestedMap(u.Object, "spec")
-    comps, _, _ := unstructured.NestedSlice(spec, "components")
-    // Build image reference
-    ref := image
-    if tag != "" {
-        ref = image + ":" + tag
-    }
-    found := false
-    for i := range comps {
-        if m, ok := comps[i].(map[string]any); ok {
-            if nm, ok2 := m["name"].(string); ok2 && nm == component {
-                // ensure properties map exists
-                props, _ := m["properties"].(map[string]any)
-                if props == nil {
-                    props = map[string]any{}
-                }
-                props["image"] = ref
-                m["properties"] = props
-                comps[i] = m
-                found = true
-                break
-            }
-        }
-    }
-    if !found {
-        comps = append(comps, map[string]any{
-            "name":       component,
-            "type":       "webservice",
-            "properties": map[string]any{"image": ref},
-        })
-    }
-    // write back
-    if err := unstructured.SetNestedSlice(spec, comps, "components"); err != nil {
-        return err
-    }
-    if err := unstructured.SetNestedMap(u.Object, spec, "spec"); err != nil {
-        return err
-    }
-    _, err = c.dyn.Resource(appGVR).Namespace(ns).Update(ctx, u, metav1.UpdateOptions{})
-    return err
+	u, err := c.dyn.Resource(appGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	spec, _, _ := unstructured.NestedMap(u.Object, "spec")
+	comps, _, _ := unstructured.NestedSlice(spec, "components")
+	// Build image reference
+	ref := image
+	if tag != "" {
+		ref = image + ":" + tag
+	}
+	found := false
+	for i := range comps {
+		if m, ok := comps[i].(map[string]any); ok {
+			if nm, ok2 := m["name"].(string); ok2 && nm == component {
+				// ensure properties map exists
+				props, _ := m["properties"].(map[string]any)
+				if props == nil {
+					props = map[string]any{}
+				}
+				props["image"] = ref
+				m["properties"] = props
+				comps[i] = m
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		comps = append(comps, map[string]any{
+			"name":       component,
+			"type":       "webservice",
+			"properties": map[string]any{"image": ref},
+		})
+	}
+	// write back
+	if err := unstructured.SetNestedSlice(spec, comps, "components"); err != nil {
+		return err
+	}
+	if err := unstructured.SetNestedMap(u.Object, spec, "spec"); err != nil {
+		return err
+	}
+	_, err = c.dyn.Resource(appGVR).Namespace(ns).Update(ctx, u, metav1.UpdateOptions{})
+	return err
 }
 
 func (c *client) patchSpec(ctx context.Context, ns, name string, fragment map[string]any) error {
