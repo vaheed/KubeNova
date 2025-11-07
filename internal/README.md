@@ -15,4 +15,4 @@ Private packages for the KubeNova Manager and Agent.
 
 Conventions
 - All operations are idempotent; reconcilers use finalizers and backoff.
-- New APIs/flows must include E2E coverage and structured telemetry.
+- New APIs/flows should include structured telemetry.

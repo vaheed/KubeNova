@@ -35,13 +35,11 @@ Scope: Entire repository.
 
 ## Do/Don’t
 - Do keep DTOs/helpers canonical (one package per concern).
-- Do add e2e coverage for new flows (Kind), with golden responses derived from OpenAPI examples.
 - Don’t add back‑compat shims or flags. Prefer explicit versioned changes to the OpenAPI if needed.
 - Don’t introduce new top‑level folders without discussion.
 
 ## Helpful Commands
 - Unit: `make test-unit`
-- E2E (Kind): `E2E_RUN=1 make test-e2e` (uses published `:dev` images from GHCR; no local builds)
 - Docs: `make docs-build`
 
 By committing, an agent asserts the checklist has been followed.

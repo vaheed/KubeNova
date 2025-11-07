@@ -8,13 +8,8 @@
 KubeNova acts as a **central control plane** for multi-tenant Kubernetes environments.  
 It coordinates **Capsule** for multi-tenancy and **KubeVela** for application delivery. 
 
-Quick Start (Kind)
-- make kind-up
-- make deploy-manager
- - Port-forward Manager and register the cluster:
-  - kubectl -n kubenova-system port-forward svc/kubenova-manager 8080:8080 &
-  - curl -XPOST localhost:8080/api/v1/clusters -H 'Content-Type: application/json' \
-    -d '{"name":"kind","kubeconfig":"'"$(base64 -w0 ~/.kube/config 2>/dev/null || base64 ~/.kube/config)"'"}'
+Quick Start
+- Deploy Manager via Helm (see flags below), then register a cluster via POST /api/v1/clusters.
 
 What happens
 - Manager stores the Cluster and installs the in-cluster Agent Deployment (replicas=2) and HPA.
@@ -27,9 +22,7 @@ Configuration
 - AGENT_IMAGE controls the image used for remote install.
 
 Tests
-- `make test-unit` – unit tests and integration stubs (the Go E2E suite is disabled by default).
-- `E2E_RUN=1 make test-e2e` – Kind-based end-to-end suite that uses published dev images from GHCR (`ghcr.io/vaheed/kubenova/*:dev`), registers a cluster, and verifies Capsule/capsule-proxy/KubeVela health. When `E2E_RUN=1` is omitted, the suite is skipped.
-  - Use `E2E_WAIT_TIMEOUT` to extend the suite's wait budget and HTTP timeouts when agent installation or add-on bootstrapping needs longer than the default 20 minutes.
+- `make test-unit` – unit tests and integration stubs.
 
 Docs
 - VitePress site at `docs/site`. Build with `make docs-build` and serve with `make docs-serve`.
@@ -37,7 +30,6 @@ Docs
 New features
 - Tenant listing supports `labelSelector` and `owner` filters.
 - App operations wired to KubeVela: traits, policies, image-update, delete action.
-- E2E: Set `E2E_VELA_OPS=1` to auto-install KubeVela Core in Kind and run ops scenario.
 
 Helm charts
 - CI publishes packaged charts to GitHub Pages:

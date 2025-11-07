@@ -260,3 +260,42 @@ curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" $AUTH | jq .
 ```bash
 curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_ID" $AUTH -i
 ```
+
+
+## 10) Force-clear finalizers for any Terminating namespaces
+```
+# 0) Keep core namespaces (don’t try to delete kube-node-lease/default/kube-*)
+CORE_NS='^(kube-system|kube-public|kube-node-lease|default|local-path-storage|metallb-system)$'
+
+# 1) Remove broken webhooks (capsule / cert-manager / kyverno / vela)
+for t in validatingwebhookconfigurations.admissionregistration.k8s.io \
+         mutatingwebhookconfigurations.admissionregistration.k8s.io; do
+  kubectl get "$t" -o name | grep -E 'capsule|projectcapsule|cert-manager|kyverno|vela' | xargs -r kubectl delete
+done
+
+# 2) Delete their CRDs (removes CR-level finalizers that can block NS deletion)
+kubectl get crd -o name | grep -E 'capsule|projectcapsule|cert-manager|kyverno|vela|kubevela' | xargs -r kubectl delete
+
+# 3) Delete non-core namespaces (don’t delete kube-* or default)
+for ns in $(kubectl get ns --no-headers | awk '{print $1}' | grep -vE "$CORE_NS"); do
+  echo "Deleting $ns"
+  kubectl delete ns "$ns" --wait=false
+done
+
+# 4) Force-clear finalizers for any Terminating namespaces
+for ns in $(kubectl get ns --no-headers | awk '$2=="Terminating"{print $1}'); do
+  echo "Forcing finalize $ns"
+  kubectl get ns "$ns" -o json \
+  | jq '.spec.finalizers=[]' \
+  | kubectl replace --raw "/api/v1/namespaces/$ns/finalize" -f -
+done
+
+# (If you don’t have jq)
+# for ns in $(kubectl get ns --no-headers | awk '$2=="Terminating"{print $1}'); do
+#   kubectl patch namespace "$ns" --type=json -p='[{"op":"remove","path":"/spec/finalizers"}]'
+# done
+
+# 5) Sanity check
+kubectl get ns
+kubectl get pods -A
+```
