@@ -82,7 +82,7 @@ func BootstrapHelmJob(ctx context.Context) error {
 	}
 	job.Spec.Template.Spec.Containers = []corev1.Container{{
 		Name:    "helm",
-		Image:   "alpine/helm:3.14.4",
+		Image:   "dtzar/helm-kubectl:3.14.4",
 		Command: []string{"/bin/sh", "-c"},
 		Env:     helmEnv,
 		SecurityContext: &corev1.SecurityContext{
@@ -96,12 +96,8 @@ func BootstrapHelmJob(ctx context.Context) error {
 		Args: []string{`set -euo pipefail
 set -x
 echo "[bootstrap] starting helm bootstrap"
-# prepare tools (install kubectl non-root)
-export PATH="/tmp/bin:$PATH"
-mkdir -p /tmp/bin /tmp/helm/cache /tmp/helm/config /tmp/helm/data
-KVER=$(curl -sSL https://storage.googleapis.com/kubernetes-release/release/stable.txt || echo v1.29.0)
-curl -sSL -o /tmp/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/${KVER}/bin/linux/amd64/kubectl || true
-chmod +x /tmp/bin/kubectl || true
+# prepare non-root helm dirs
+mkdir -p /tmp/helm/cache /tmp/helm/config /tmp/helm/data
 
 # Add repos (cert-manager required by Capsule and capsule-proxy)
 echo "[bootstrap] helm repo add"
