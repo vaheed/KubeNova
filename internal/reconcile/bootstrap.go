@@ -22,22 +22,39 @@ func BootstrapHelmJob(ctx context.Context) error {
 	ns := "kubenova-system"
 	name := "kubenova-bootstrap"
 	// If a previous job exists and failed, delete and recreate to self-heal.
-	if existing, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
-		// If it failed previously, clean it up and recreate; otherwise do nothing.
-		if existing.Status.Failed > 0 && existing.Status.Succeeded == 0 {
-			_ = client.BatchV1().Jobs(ns).Delete(ctx, name, metav1.DeleteOptions{})
-			// Wait briefly for deletion so we can recreate with the same name.
-			deadline := time.Now().Add(30 * time.Second)
-			for time.Now().Before(deadline) {
-				if _, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); errors.IsNotFound(err) {
-					break
-				}
-				time.Sleep(1 * time.Second)
-			}
-		} else {
-			return nil
-		}
-	}
+    if existing, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
+        // If it failed previously, clean it up and recreate; otherwise consider pod-level stuck states.
+        shouldRecreate := existing.Status.Failed > 0 && existing.Status.Succeeded == 0
+        if !shouldRecreate {
+            // Detect pods stuck in CreateContainerConfigError / ImagePullBackOff / ErrImagePull, etc.
+            podList, _ := client.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + name})
+            for _, p := range podList.Items {
+                if len(p.Status.ContainerStatuses) == 0 {
+                    continue
+                }
+                st := p.Status.ContainerStatuses[0].State
+                if st.Waiting != nil {
+                    switch st.Waiting.Reason {
+                    case "CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "CrashLoopBackOff":
+                        shouldRecreate = true
+                    }
+                }
+            }
+        }
+        if shouldRecreate {
+            _ = client.BatchV1().Jobs(ns).Delete(ctx, name, metav1.DeleteOptions{})
+            // Wait briefly for deletion so we can recreate with the same name.
+            deadline := time.Now().Add(30 * time.Second)
+            for time.Now().Before(deadline) {
+                if _, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); errors.IsNotFound(err) {
+                    break
+                }
+                time.Sleep(1 * time.Second)
+            }
+        } else {
+            return nil
+        }
+    }
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}
 	// Use a dedicated bootstrap SA with elevated permissions (cluster-admin) for Helm installs
 	job.Spec.Template.Spec.ServiceAccountName = "agent-bootstrap"
