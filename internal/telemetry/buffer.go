@@ -1,15 +1,15 @@
 package telemetry
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"log"
-	"net/http"
-	"os"
-	"time"
+    "bytes"
+    "context"
+    "encoding/json"
+    "log"
+    "net/http"
+    "os"
+    "time"
 
-	redis "github.com/redis/go-redis/v9"
+    redis "github.com/redis/go-redis/v9"
 )
 
 // RedisBuffer batches events/metrics/logs in Redis lists and pushes to manager.
@@ -21,6 +21,31 @@ type RedisBuffer struct {
 	tick time.Duration
 	stop chan struct{}
 	noop bool
+}
+
+// global buffer instance for convenience publishing from subpackages
+var global *RedisBuffer
+
+// SetGlobal sets the global buffer used by helpers below.
+func SetGlobal(b *RedisBuffer) { global = b }
+
+// PublishEvent enqueues an event payload to the manager if a global buffer exists.
+func PublishEvent(fields map[string]any) {
+    if global == nil {
+        return
+    }
+    global.Enqueue("events", fields)
+}
+
+// PublishStage is a convenience to publish bootstrap stages with status and message.
+func PublishStage(component, stage, status, message string) {
+    PublishEvent(map[string]any{
+        "ts":        time.Now().UTC().Format(time.RFC3339Nano),
+        "component": component,
+        "stage":     stage,
+        "status":    status,
+        "message":   message,
+    })
 }
 
 func NewRedisBuffer() *RedisBuffer {
