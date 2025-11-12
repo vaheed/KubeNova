@@ -49,6 +49,11 @@ func BootstrapHelmJob(ctx context.Context) error {
 		{Name: "CAPSULE_VERSION", Value: os.Getenv("CAPSULE_VERSION")},
 		{Name: "CAPSULE_PROXY_VERSION", Value: os.Getenv("CAPSULE_PROXY_VERSION")},
 		{Name: "VELA_CORE_VERSION", Value: os.Getenv("VELA_CORE_VERSION")},
+		// Ensure non-root user can write helm cache/config/data
+		{Name: "HOME", Value: "/tmp"},
+		{Name: "HELM_CACHE_HOME", Value: "/tmp/helm/cache"},
+		{Name: "HELM_CONFIG_HOME", Value: "/tmp/helm/config"},
+		{Name: "HELM_DATA_HOME", Value: "/tmp/helm/data"},
 	}
 	job.Spec.Template.Spec.Containers = []corev1.Container{{
 		Name:    "helm",
@@ -58,6 +63,8 @@ func BootstrapHelmJob(ctx context.Context) error {
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: boolPtr(false),
 			RunAsNonRoot:             boolPtr(true),
+			RunAsUser:                int64ptr(10001),
+			RunAsGroup:               int64ptr(10001),
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 			SeccompProfile:           &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 		},
@@ -102,3 +109,4 @@ helm upgrade --install vela-core kubevela/vela-core \
 
 func int32ptr(i int32) *int32 { return &i }
 func boolPtr(b bool) *bool    { return &b }
+func int64ptr(i int64) *int64 { return &i }
