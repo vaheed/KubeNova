@@ -14,6 +14,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -92,19 +93,44 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 		switch o := obj.(type) {
 		case *corev1.Namespace:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name))
-			_, _ = cset.CoreV1().Namespaces().Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.CoreV1().Namespaces().Create(ctx, o, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			}
 		case *corev1.ServiceAccount:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace))
-			_, _ = cset.CoreV1().ServiceAccounts(o.Namespace).Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.CoreV1().ServiceAccounts(o.Namespace).Create(ctx, o, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			}
 		case *rbacv1.ClusterRole:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name))
-			_, _ = cset.RbacV1().ClusterRoles().Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.RbacV1().ClusterRoles().Create(ctx, o, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			}
 		case *rbacv1.ClusterRoleBinding:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name))
-			_, _ = cset.RbacV1().ClusterRoleBindings().Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.RbacV1().ClusterRoleBindings().Create(ctx, o, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			}
 		case *appsv1.Deployment:
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace), zap.Int32("replicas", *o.Spec.Replicas))
-			_, _ = cset.AppsV1().Deployments(o.Namespace).Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.AppsV1().Deployments(o.Namespace).Create(ctx, o, metav1.CreateOptions{}); err != nil {
+				if apierrors.IsAlreadyExists(err) {
+					// Upsert: update image/env if needed
+					cur, getErr := cset.AppsV1().Deployments(o.Namespace).Get(ctx, o.Name, metav1.GetOptions{})
+					if getErr == nil && len(cur.Spec.Template.Spec.Containers) > 0 {
+						c := &cur.Spec.Template.Spec.Containers[0]
+						c.Image = image
+						// ensure env has MANAGER_URL and BATCH_INTERVAL_SECONDS if present in manifest
+						foundMgr := false
+						for i := range c.Env {
+							if c.Env[i].Name == "MANAGER_URL" {
+								c.Env[i].Value = managerURL
+								foundMgr = true
+							}
+						}
+						if !foundMgr {
+							c.Env = append(c.Env, corev1.EnvVar{Name: "MANAGER_URL", Value: managerURL})
+						}
+						_, _ = cset.AppsV1().Deployments(o.Namespace).Update(ctx, cur, metav1.UpdateOptions{})
+					}
+				}
+			}
 		case *autoscalingv2.HorizontalPodAutoscaler:
 			// MinReplicas is optional, guard to avoid nil deref
 			var min int32
@@ -112,7 +138,8 @@ func applyAll(ctx context.Context, cfg *rest.Config, image, managerURL string) e
 				min = *o.Spec.MinReplicas
 			}
 			logging.L.Info("agent.apply.ensure", zap.String("kind", gvk.Kind), zap.String("name", o.Name), zap.String("ns", o.Namespace), zap.Int32("min", min))
-			_, _ = cset.AutoscalingV2().HorizontalPodAutoscalers(o.Namespace).Create(ctx, o, metav1.CreateOptions{})
+			if _, err := cset.AutoscalingV2().HorizontalPodAutoscalers(o.Namespace).Create(ctx, o, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			}
 		default:
 			_ = gvk // ignored
 		}
