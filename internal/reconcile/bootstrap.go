@@ -86,6 +86,10 @@ func BootstrapHelmJob(ctx context.Context) error {
 		{Name: "HELM_CACHE_HOME", Value: "/tmp/helm/cache"},
 		{Name: "HELM_CONFIG_HOME", Value: "/tmp/helm/config"},
 		{Name: "HELM_DATA_HOME", Value: "/tmp/helm/data"},
+		// Proxy pass-through if set on the Agent
+		{Name: "HTTP_PROXY", Value: os.Getenv("HTTP_PROXY")},
+		{Name: "HTTPS_PROXY", Value: os.Getenv("HTTPS_PROXY")},
+		{Name: "NO_PROXY", Value: os.Getenv("NO_PROXY")},
 	}
 	job.Spec.Template.Spec.Containers = []corev1.Container{{
 		Name:    "helm",
