@@ -295,6 +295,10 @@ done
 #   kubectl patch namespace "$ns" --type=json -p='[{"op":"remove","path":"/spec/finalizers"}]'
 # done
 
+```bash
+for ns in $(kubectl get ns --no-headers | awk '{print $1}' | grep -vE '^(kube-system|kube-public|default|local-path-storage|metallb-system)$'); do   echo "Deleting namespace: $ns"; kubectl delete ns "$ns" --ignore-not-found; done
+```
+
 # 5) Sanity check
 kubectl get ns
 kubectl get pods -A

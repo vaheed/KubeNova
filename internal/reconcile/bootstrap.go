@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"strconv"
 )
 
 // Bootstrap addons by creating a one-shot Helm job that installs Capsule, capsule-proxy, and KubeVela if missing.
@@ -247,17 +248,26 @@ func monitorBootstrapJob(ctx context.Context, client *kubernetes.Clientset, ns, 
 				}
 				telemetry.PublishStage("bootstrap", "job", reason, "bootstrap job failed")
 				l.Info("bootstrap.job.failed", zap.String("reason", reason))
-				// Attempt self-heal: delete job and re-run bootstrap after backoff
+				// Attempt self-heal with bounded retries and exponential backoff stored in ConfigMap
+				tries := incrementRetry(ctx, client, ns, "kubenova-bootstrap-state", reason)
+				max := 6
+				if tries > max {
+					l.Error("bootstrap.retries.exhausted", zap.Int("tries", tries))
+					telemetry.PublishStage("bootstrap", "retry", "exhausted", "max retries reached; manual cleanup required")
+					return
+				}
+				backoff := time.Duration(tries*tries) * time.Second * 15 // 15s, 60s, 135s, ...
+				l.Info("bootstrap.retry.scheduled", zap.Int("try", tries), zap.Duration("after", backoff))
+				time.Sleep(backoff)
+				// delete existing job and recreate
 				_ = client.BatchV1().Jobs(ns).Delete(ctx, name, metav1.DeleteOptions{})
-				deadline := time.Now().Add(30 * time.Second)
-				for time.Now().Before(deadline) {
+				waitUntil := time.Now().Add(30 * time.Second)
+				for time.Now().Before(waitUntil) {
 					if _, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); errors.IsNotFound(err) {
 						break
 					}
 					time.Sleep(1 * time.Second)
 				}
-				// backoff before re-create
-				time.Sleep(15 * time.Second)
 				_ = BootstrapHelmJob(ctx)
 				return
 			}
@@ -276,4 +286,30 @@ func monitorBootstrapJob(ctx context.Context, client *kubernetes.Clientset, ns, 
 			})
 		}
 	}
+}
+
+// incrementRetry updates a ConfigMap counter for bootstrap retries and returns the new value.
+func incrementRetry(ctx context.Context, client *kubernetes.Clientset, ns, name, reason string) int {
+	cm, err := client.CoreV1().ConfigMaps(ns).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		cm = &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}, Data: map[string]string{"retries": "1", "lastReason": reason, "updatedAt": time.Now().UTC().Format(time.RFC3339)}}
+		if _, createErr := client.CoreV1().ConfigMaps(ns).Create(ctx, cm, metav1.CreateOptions{}); createErr == nil {
+			return 1
+		}
+	}
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+	n := 0
+	if v := cm.Data["retries"]; v != "" {
+		if i, convErr := strconv.Atoi(v); convErr == nil {
+			n = i
+		}
+	}
+	n++
+	cm.Data["retries"] = strconv.Itoa(n)
+	cm.Data["lastReason"] = reason
+	cm.Data["updatedAt"] = time.Now().UTC().Format(time.RFC3339)
+	_, _ = client.CoreV1().ConfigMaps(ns).Update(ctx, cm, metav1.UpdateOptions{})
+	return n
 }
