@@ -427,6 +427,40 @@ paths:
               examples:
                 missing:
                   value: { code: "KN-404", message: "cluster not found" }
+
+  /api/v1/clusters/{c}/cleanup:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    post:
+      summary: Cleanup platform resources to prepare for bootstrap
+      description: |
+        Removes broken webhooks, Vela cluster-gateway APIService, platform CRDs, and component namespaces (cert-manager, capsule-system, vela-system).
+        Returns 202 and performs work asynchronously.
+      responses:
+        '202':
+          description: accepted
+          content:
+            application/json:
+              examples:
+                accepted:
+                  value: { accepted: true }
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples: { missing: { value: { code: "KN-401", message: "missing bearer token" } } }
+        '403':
+          description: forbidden
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples: { deny: { value: { code: "KN-403", message: "forbidden" } } }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples: { missing: { value: { code: "KN-404", message: "cluster not found" } } }
   /api/v1/clusters/{c}/capabilities:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
     get:
