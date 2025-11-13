@@ -247,6 +247,18 @@ func monitorBootstrapJob(ctx context.Context, client *kubernetes.Clientset, ns, 
 				}
 				telemetry.PublishStage("bootstrap", "job", reason, "bootstrap job failed")
 				l.Info("bootstrap.job.failed", zap.String("reason", reason))
+				// Attempt self-heal: delete job and re-run bootstrap after backoff
+				_ = client.BatchV1().Jobs(ns).Delete(ctx, name, metav1.DeleteOptions{})
+				deadline := time.Now().Add(30 * time.Second)
+				for time.Now().Before(deadline) {
+					if _, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); errors.IsNotFound(err) {
+						break
+					}
+					time.Sleep(1 * time.Second)
+				}
+				// backoff before re-create
+				time.Sleep(15 * time.Second)
+				_ = BootstrapHelmJob(ctx)
 				return
 			}
 			if j.Status.Active > 0 && lastPhase != "active" {
