@@ -37,7 +37,8 @@ func BootstrapHelmJob(ctx context.Context) error {
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}
 	// Use a dedicated bootstrap SA with elevated permissions (cluster-admin) for Helm installs
 	job.Spec.Template.Spec.ServiceAccountName = "agent-bootstrap"
-	job.Spec.BackoffLimit = int32ptr(1)
+	// Do not let Job retry; one pod per attempt to avoid pod storms
+	job.Spec.BackoffLimit = int32ptr(0)
 	// Auto-clean finished jobs and pods after a few minutes to reduce clutter
 	job.Spec.TTLSecondsAfterFinished = int32ptr(300)
 	// Pass through optional chart version pins from the Agent env
@@ -86,7 +87,7 @@ echo "[bootstrap] installing cert-manager"
 # Pre-create namespaces to avoid helm namespace not found issues
 kubectl create ns cert-manager --dry-run=client -o yaml | kubectl apply -f -
 helm upgrade --install cert-manager jetstack/cert-manager \
-  -n cert-manager --create-namespace --set crds.enabled=true --wait --timeout 10m
+  -n cert-manager --create-namespace --set crds.enabled=true || true
 # Extra readiness checks for cert-manager deployments
 for d in cert-manager cert-manager-cainjector cert-manager-webhook; do
   kubectl -n cert-manager rollout status deploy/$d --timeout=10m || {
@@ -104,12 +105,12 @@ echo "[bootstrap] installing capsule"
 CAPS_VER=""; if [ -n "$CAPSULE_VERSION" ]; then CAPS_VER="--version $CAPSULE_VERSION"; fi
 kubectl create ns capsule-system --dry-run=client -o yaml | kubectl apply -f -
 helm upgrade --install capsule clastix/capsule \
-  -n capsule-system --create-namespace --set manager.leaderElection=true $CAPS_VER --wait --timeout 10m
+  -n capsule-system --create-namespace --set manager.leaderElection=true $CAPS_VER || true
 echo "[bootstrap] installing capsule-proxy"
 PROXY_VER=""; if [ -n "$CAPSULE_PROXY_VERSION" ]; then PROXY_VER="--version $CAPSULE_PROXY_VERSION"; fi
 helm upgrade --install capsule-proxy clastix/capsule-proxy \
   -n capsule-system --set service.enabled=true \
-  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' $PROXY_VER --wait --timeout 10m
+  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' $PROXY_VER || true
 # Extra readiness checks for capsule and proxy
 kubectl -n capsule-system rollout status deploy/capsule-controller-manager --timeout=10m || {
   echo "[bootstrap][error] capsule-controller-manager not ready";
