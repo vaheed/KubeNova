@@ -28,47 +28,11 @@ func BootstrapHelmJob(ctx context.Context) error {
 	name := "kubenova-bootstrap"
 	logging.FromContext(ctx).Info("bootstrap.job.check", zap.String("namespace", ns), zap.String("name", name))
 	telemetry.PublishStage("bootstrap", "check", "start", "checking existing job state")
-	// If a previous job exists and failed, delete and recreate to self-heal.
-	if existing, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
-		// If it failed previously, clean it up and recreate; otherwise consider pod-level stuck states.
-		shouldRecreate := existing.Status.Failed > 0 && existing.Status.Succeeded == 0
-		if !shouldRecreate {
-			// Detect pods stuck in CreateContainerConfigError / ImagePullBackOff / ErrImagePull, etc.
-			podList, _ := client.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + name})
-			for _, p := range podList.Items {
-				if len(p.Status.ContainerStatuses) == 0 {
-					continue
-				}
-				st := p.Status.ContainerStatuses[0].State
-				if st.Waiting != nil {
-					switch st.Waiting.Reason {
-					case "CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "CrashLoopBackOff":
-						shouldRecreate = true
-						logging.FromContext(ctx).Info("bootstrap.job.recreate_due_to_pod_state", zap.String("pod", p.Name), zap.String("reason", st.Waiting.Reason))
-						telemetry.PublishStage("bootstrap", "recreate", st.Waiting.Reason, p.Name)
-					}
-				}
-			}
-		}
-		if shouldRecreate {
-			logging.FromContext(ctx).Info("bootstrap.job.deleting")
-			telemetry.PublishStage("bootstrap", "delete", "start", "deleting failed/stuck job")
-			_ = client.BatchV1().Jobs(ns).Delete(ctx, name, metav1.DeleteOptions{})
-			// Wait briefly for deletion so we can recreate with the same name.
-			deadline := time.Now().Add(30 * time.Second)
-			for time.Now().Before(deadline) {
-				if _, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); errors.IsNotFound(err) {
-					logging.FromContext(ctx).Info("bootstrap.job.deleted")
-					telemetry.PublishStage("bootstrap", "delete", "ok", "job deleted")
-					break
-				}
-				time.Sleep(1 * time.Second)
-			}
-		} else {
-			logging.FromContext(ctx).Info("bootstrap.job.exists_ok")
-			telemetry.PublishStage("bootstrap", "exists", "ok", "job already present")
-			return nil
-		}
+	// If a previous job exists, do NOT recreate automatically. Surface status via logs/telemetry only.
+	if _, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
+		logging.FromContext(ctx).Info("bootstrap.job.exists_ok")
+		telemetry.PublishStage("bootstrap", "exists", "ok", "job already present")
+		return nil
 	}
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}
 	// Use a dedicated bootstrap SA with elevated permissions (cluster-admin) for Helm installs
@@ -119,6 +83,8 @@ helm repo update
 
 # Install cert-manager first and wait for readiness (installs CRDs)
 echo "[bootstrap] installing cert-manager"
+# Pre-create namespaces to avoid helm namespace not found issues
+kubectl create ns cert-manager --dry-run=client -o yaml | kubectl apply -f -
 helm upgrade --install cert-manager jetstack/cert-manager \
   -n cert-manager --create-namespace --set crds.enabled=true --wait --timeout 10m
 # Extra readiness checks for cert-manager deployments
@@ -136,6 +102,7 @@ done
 # Install Capsule and capsule-proxy (depends on cert-manager certs) and wait
 echo "[bootstrap] installing capsule"
 CAPS_VER=""; if [ -n "$CAPSULE_VERSION" ]; then CAPS_VER="--version $CAPSULE_VERSION"; fi
+kubectl create ns capsule-system --dry-run=client -o yaml | kubectl apply -f -
 helm upgrade --install capsule clastix/capsule \
   -n capsule-system --create-namespace --set manager.leaderElection=true $CAPS_VER --wait --timeout 10m
 echo "[bootstrap] installing capsule-proxy"
@@ -170,6 +137,7 @@ kubectl get crd tenants.capsule.clastix.io >/dev/null 2>&1 || {
 # Install KubeVela core and wait
 echo "[bootstrap] installing vela-core (multicluster disabled)"
 VELA_VER=""; if [ -n "$VELA_CORE_VERSION" ]; then VELA_VER="--version $VELA_CORE_VERSION"; fi
+kubectl create ns vela-system --dry-run=client -o yaml | kubectl apply -f -
 helm upgrade --install vela-core kubevela/vela-core \
   -n vela-system --create-namespace \
   --set admissionWebhooks.enabled=true \
@@ -252,27 +220,7 @@ func monitorBootstrapJob(ctx context.Context, client *kubernetes.Clientset, ns, 
 				}
 				telemetry.PublishStage("bootstrap", "job", reason, "bootstrap job failed")
 				l.Info("bootstrap.job.failed", zap.String("reason", reason))
-				// Attempt self-heal with bounded retries and exponential backoff stored in ConfigMap
-				tries := incrementRetry(ctx, client, ns, "kubenova-bootstrap-state", reason)
-				max := 6
-				if tries > max {
-					l.Error("bootstrap.retries.exhausted", zap.Int("tries", tries))
-					telemetry.PublishStage("bootstrap", "retry", "exhausted", "max retries reached; manual cleanup required")
-					return
-				}
-				backoff := time.Duration(tries*tries) * time.Second * 15 // 15s, 60s, 135s, ...
-				l.Info("bootstrap.retry.scheduled", zap.Int("try", tries), zap.Duration("after", backoff))
-				time.Sleep(backoff)
-				// delete existing job and recreate
-				_ = client.BatchV1().Jobs(ns).Delete(ctx, name, metav1.DeleteOptions{})
-				waitUntil := time.Now().Add(30 * time.Second)
-				for time.Now().Before(waitUntil) {
-					if _, err := client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{}); errors.IsNotFound(err) {
-						break
-					}
-					time.Sleep(1 * time.Second)
-				}
-				_ = BootstrapHelmJob(ctx)
+				// Do not auto-recreate. Leave failed job and surface diagnostics.
 				return
 			}
 			if j.Status.Active > 0 && lastPhase != "active" {
