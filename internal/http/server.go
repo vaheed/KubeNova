@@ -129,56 +129,37 @@ func decodePolicySet(stored kn.PolicySet) (PolicySet, error) {
 	return dto, nil
 }
 
-// applyPlan attaches quotas/limits and PolicySets for the given plan name to the tenant.
-func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request, t TenantParam) {
-	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
-	if err != nil {
-		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
-		return
-	}
-	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
-		return
-	}
-	var body struct {
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
-		return
-	}
-	if strings.TrimSpace(body.Name) == "" {
-		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
-		return
-	}
+// applyPlanToTenant attaches quotas/limits and PolicySets for the given plan name to the tenant UID.
+func (s *APIServer) applyPlanToTenant(ctx context.Context, tenantUID, planName string) (Plan, error) {
 	var plan *Plan
 	for i := range s.planCatalog {
-		if s.planCatalog[i].Name == body.Name {
+		if s.planCatalog[i].Name == planName {
 			plan = &s.planCatalog[i]
 			break
 		}
 	}
 	if plan == nil {
-		s.writeError(w, http.StatusNotFound, "KN-404", "plan not found")
-		return
+		return Plan{}, fmt.Errorf("plan not found")
+	}
+	ten, err := s.st.GetTenantByUID(ctx, tenantUID)
+	if err != nil {
+		return Plan{}, err
 	}
 	if ten.Labels == nil {
 		ten.Labels = map[string]string{}
 	}
 	clusterUID := ten.Labels["kubenova.cluster"]
 	if strings.TrimSpace(clusterUID) == "" {
-		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "tenant has no primary cluster")
-		return
+		return Plan{}, fmt.Errorf("tenant has no primary cluster")
 	}
-	_, enc, err := s.st.GetClusterByUID(r.Context(), clusterUID)
+	_, enc, err := s.st.GetClusterByUID(ctx, clusterUID)
 	if err != nil {
-		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
-		return
+		return Plan{}, err
 	}
 	kb, _ := base64.StdEncoding.DecodeString(enc)
 	caps := s.newCapsule(kb)
-	if err := caps.EnsureTenant(r.Context(), ten.Name, ten.Owners, ten.Labels); err != nil {
-		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
-		return
+	if err := caps.EnsureTenant(ctx, ten.Name, ten.Owners, ten.Labels); err != nil {
+		return Plan{}, err
 	}
 	// Apply quotas from plan (cpu/memory) and optional pods limits.
 	if len(plan.TenantQuotas) > 0 {
@@ -189,15 +170,13 @@ func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request,
 			}
 		}
 		if len(quotas) > 0 {
-			if err := caps.SetTenantQuotas(r.Context(), ten.Name, quotas); err != nil {
-				s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
-				return
+			if err := caps.SetTenantQuotas(ctx, ten.Name, quotas); err != nil {
+				return Plan{}, err
 			}
 		}
 		if pods, ok := plan.TenantQuotas["pods"]; ok {
-			if err := caps.SetTenantLimits(r.Context(), ten.Name, map[string]string{"pods": pods}); err != nil {
-				s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
-				return
+			if err := caps.SetTenantLimits(ctx, ten.Name, map[string]string{"pods": pods}); err != nil {
+				return Plan{}, err
 			}
 		}
 	}
@@ -211,8 +190,7 @@ func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request,
 			}
 		}
 		if cat == nil {
-			s.writeError(w, http.StatusInternalServerError, "KN-500", "plan references unknown policyset")
-			return
+			return Plan{}, fmt.Errorf("plan references unknown policyset")
 		}
 		dto := *cat
 		// Attach to tenant by name so policies/traits apply across all projects.
@@ -240,12 +218,10 @@ func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request,
 		dto.AttachedTo = &attached
 		ps, err := encodePolicySet(ten.UID, dto)
 		if err != nil {
-			s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset encode error")
-			return
+			return Plan{}, err
 		}
-		if err := s.st.CreatePolicySet(r.Context(), ps); err != nil {
-			s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
-			return
+		if err := s.st.CreatePolicySet(ctx, ps); err != nil {
+			return Plan{}, err
 		}
 	}
 	// Persist selected plan on tenant annotations.
@@ -253,7 +229,44 @@ func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request,
 		ten.Annotations = map[string]string{}
 	}
 	ten.Annotations["kubenova.io/plan"] = plan.Name
-	if err := s.st.UpdateTenant(r.Context(), ten); err != nil {
+	if err := s.st.UpdateTenant(ctx, ten); err != nil {
+		return Plan{}, err
+	}
+	return *plan, nil
+}
+
+// (PUT /api/v1/tenants/{t}/plan)
+func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request, t TenantParam) {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	plan, err := s.applyPlanToTenant(r.Context(), ten.UID, strings.TrimSpace(body.Name))
+	if err != nil {
+		// Map known error cases to KN-4xx where possible.
+		if strings.Contains(err.Error(), "plan not found") {
+			s.writeError(w, http.StatusNotFound, "KN-404", "plan not found")
+			return
+		}
+		if strings.Contains(err.Error(), "primary cluster") {
+			s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "tenant has no primary cluster")
+			return
+		}
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -1258,6 +1271,13 @@ func (s *APIServer) PostApiV1ClustersCTenants(w http.ResponseWriter, r *http.Req
 		if tt, e := s.st.GetTenant(r.Context(), t.Name); e == nil && tt.UID != "" {
 			u := tt.UID
 			in.Uid = &u
+			// If a plan was requested at creation time, apply it now.
+			if in.Plan != nil && strings.TrimSpace(*in.Plan) != "" {
+				if _, err := s.applyPlanToTenant(r.Context(), tt.UID, strings.TrimSpace(*in.Plan)); err != nil {
+					s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+					return
+				}
+			}
 		}
 	}
 	now := time.Now().UTC()
@@ -2111,6 +2131,12 @@ func toTypesTenant(in Tenant) kn.Tenant {
 	}
 	if in.Owners != nil {
 		out.Owners = *in.Owners
+	}
+	if in.Plan != nil && strings.TrimSpace(*in.Plan) != "" {
+		if out.Annotations == nil {
+			out.Annotations = map[string]string{}
+		}
+		out.Annotations["kubenova.io/plan"] = strings.TrimSpace(*in.Plan)
 	}
 	return out
 }

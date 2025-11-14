@@ -359,29 +359,74 @@ The catalog of plans lives in `docs/catalog/plans.json` and currently includes:
   - `tenantQuotas`: `cpu: 6`, `memory: 10Gi`, `pods: 200`.
   - `policysets`: `["baseline","baseline-security","gold-tier","gold-observability","bluegreen-rollout"]`.
 
-You can apply a plan to a tenant using existing APIs:
+You can apply a plan to a tenant using the Plans API:
 
 ```bash
 # Example: apply the gold plan to tenant acme/web
 
-# 1) Set tenant quotas from the plan
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/quotas" \
-  -H 'Content-Type: application/json' $AUTH \
-  -d '{"cpu":"6","memory":"10Gi"}'
+# 1) Inspect available plans
+curl -sS "$BASE/api/v1/plans" $AUTH | jq .
 
-# 2) Optionally cap pods at the plan level
-curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/limits" \
+# 2) Apply the gold plan to an existing tenant
+curl -sS -X PUT "$BASE/api/v1/tenants/$TENANT_ID/plan" \
   -H 'Content-Type: application/json' $AUTH \
-  -d '{"pods":"200"}'
+  -d '{"name":"gold"}' | jq .
 
-# 3) Attach the plan’s PolicySets to the tenant/project (see examples above)
-#    e.g. create baseline, baseline-security, gold-tier, gold-observability, bluegreen-rollout
+# KubeNova will:
+# - Set Capsule Tenant quotas/limits (cpu/memory/pods) based on the plan.
+# - Ensure the referenced PolicySets exist for this tenant and are attached.
+# - Persist the selected plan as tenant annotation: kubenova.io/plan=gold.
 ```
 
 This gives you a simple “plans” abstraction for CaaS/PaaS:
 
 - Pick a plan (`baseline` or `gold`) for each tenant.
 - Apply quotas once, and manage behavior via the associated PolicySets that are applied automatically on deploy.
+
+End-to-end example: create tenant with a plan
+
+```bash
+# 0) Register a cluster and capture CLUSTER_ID (see section 2)
+
+# 1) Create a tenant on that cluster with plan=gold
+TENANT_JSON=$(curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants" \
+  -H 'Content-Type: application/json' $AUTH \
+  -d '{
+    "name":"acme",
+    "owners":["owner@example.com"],
+    "labels":{"team":"platform"},
+    "plan":"gold"
+  }')
+TENANT_ID=$(echo "$TENANT_JSON" | jq -r .uid)
+
+# 2) Create a project and app under this tenant
+PROJECT_JSON=$(curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects" \
+  -H 'Content-Type: application/json' $AUTH \
+  -d '{"name":"web"}')
+PROJECT_ID=$(echo "$PROJECT_JSON" | jq -r .uid)
+
+APP_JSON=$(curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps" \
+  -H 'Content-Type: application/json' $AUTH \
+  -d '{"name":"hello"}')
+APP_ID=$(echo "$APP_JSON" | jq -r .uid)
+
+# 3) Deploy the app; gold plan quotas and PolicySets (baseline, security, rollout, observability)
+#    are already in place and will be applied on deploy via Vela traits/policies.
+curl -sS -X POST \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:deploy" \
+  $AUTH -i
+
+# 4) Check app status
+curl -sS \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/status" \
+  $AUTH | jq .
+```
+
+This flow shows the full lifecycle:
+
+- Register cluster → create tenant with `plan`.
+- Quotas + PolicySets are applied automatically based on the plan.
+- Projects/apps created under that tenant inherit the behavior and guardrails at deploy time.
 
 ## 7) Catalog
 

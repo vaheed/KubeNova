@@ -230,6 +230,7 @@ type Tenant struct {
 	Labels      *map[string]string `json:"labels,omitempty"`
 	Name        string             `json:"name"`
 	Owners      *[]string          `json:"owners,omitempty"`
+	Plan        *string            `json:"plan,omitempty"`
 	Uid         *string            `json:"uid,omitempty"`
 }
 

@@ -126,6 +126,9 @@ components:
           format: uuid
           pattern: '^[0-9a-f-]{36}$'
         name: { type: string }
+        plan:
+          type: string
+          description: Optional tenant plan name (e.g. baseline, gold)
         owners: { type: array, items: { type: string } }
         labels: { type: object, additionalProperties: { type: string } }
         annotations: { type: object, additionalProperties: { type: string } }
