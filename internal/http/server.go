@@ -43,6 +43,7 @@ type APIServer struct {
 		DeleteApp(context.Context, string, string) error
 	}
 	policysetCatalog []PolicySet
+	planCatalog      []Plan
 	runsMu           sync.RWMutex
 	runsByID         map[string]WorkflowRun
 	runsByApp        map[string][]WorkflowRun // key: tenantUID|projectUID|appUID
@@ -71,6 +72,7 @@ func NewAPIServer(st store.Store) *APIServer {
 			return velab.New(b)
 		},
 		policysetCatalog: loadPolicySetCatalog(),
+		planCatalog:      loadPlanCatalog(),
 		runsByID:         map[string]WorkflowRun{},
 		runsByApp:        map[string][]WorkflowRun{},
 	}
@@ -125,6 +127,138 @@ func decodePolicySet(stored kn.PolicySet) (PolicySet, error) {
 		dto.Name = stored.Name
 	}
 	return dto, nil
+}
+
+// applyPlan attaches quotas/limits and PolicySets for the given plan name to the tenant.
+func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request, t TenantParam) {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	var plan *Plan
+	for i := range s.planCatalog {
+		if s.planCatalog[i].Name == body.Name {
+			plan = &s.planCatalog[i]
+			break
+		}
+	}
+	if plan == nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "plan not found")
+		return
+	}
+	if ten.Labels == nil {
+		ten.Labels = map[string]string{}
+	}
+	clusterUID := ten.Labels["kubenova.cluster"]
+	if strings.TrimSpace(clusterUID) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "tenant has no primary cluster")
+		return
+	}
+	_, enc, err := s.st.GetClusterByUID(r.Context(), clusterUID)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	caps := s.newCapsule(kb)
+	if err := caps.EnsureTenant(r.Context(), ten.Name, ten.Owners, ten.Labels); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	// Apply quotas from plan (cpu/memory) and optional pods limits.
+	if len(plan.TenantQuotas) > 0 {
+		quotas := map[string]string{}
+		for k, v := range plan.TenantQuotas {
+			if k == "cpu" || k == "memory" {
+				quotas[k] = v
+			}
+		}
+		if len(quotas) > 0 {
+			if err := caps.SetTenantQuotas(r.Context(), ten.Name, quotas); err != nil {
+				s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+				return
+			}
+		}
+		if pods, ok := plan.TenantQuotas["pods"]; ok {
+			if err := caps.SetTenantLimits(r.Context(), ten.Name, map[string]string{"pods": pods}); err != nil {
+				s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+				return
+			}
+		}
+	}
+	// Ensure referenced PolicySets exist and are attached to this tenant.
+	for _, psName := range plan.Policysets {
+		var cat *PolicySet
+		for i := range s.policysetCatalog {
+			if s.policysetCatalog[i].Name == psName {
+				cat = &s.policysetCatalog[i]
+				break
+			}
+		}
+		if cat == nil {
+			s.writeError(w, http.StatusInternalServerError, "KN-500", "plan references unknown policyset")
+			return
+		}
+		dto := *cat
+		// Attach to tenant by name so policies/traits apply across all projects.
+		tenantName := ten.Name
+		attached := []struct {
+			Project *string `json:"project,omitempty"`
+			Tenant  *string `json:"tenant,omitempty"`
+		}{}
+		if dto.AttachedTo != nil {
+			attached = *dto.AttachedTo
+		}
+		found := false
+		for _, at := range attached {
+			if at.Tenant != nil && *at.Tenant == tenantName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			attached = append(attached, struct {
+				Project *string `json:"project,omitempty"`
+				Tenant  *string `json:"tenant,omitempty"`
+			}{Tenant: &tenantName})
+		}
+		dto.AttachedTo = &attached
+		ps, err := encodePolicySet(ten.UID, dto)
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset encode error")
+			return
+		}
+		if err := s.st.CreatePolicySet(r.Context(), ps); err != nil {
+			s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
+			return
+		}
+	}
+	// Persist selected plan on tenant annotations.
+	if ten.Annotations == nil {
+		ten.Annotations = map[string]string{}
+	}
+	ten.Annotations["kubenova.io/plan"] = plan.Name
+	if err := s.st.UpdateTenant(r.Context(), ten); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(plan)
 }
 
 // applyPolicySets inspects tenant-level PolicySets that are attached to the given
@@ -213,6 +347,28 @@ func loadPolicySetCatalog() []PolicySet {
 	if err := json.Unmarshal(b, &items); err != nil || len(items) == 0 {
 		desc := "Base guardrails"
 		return []PolicySet{{Name: "baseline", Description: &desc}}
+	}
+	return items
+}
+
+// Plan describes a tenant plan (quotas + PolicySets) loaded from docs/catalog/plans.json.
+type Plan struct {
+	Name         string            `json:"name"`
+	Description  *string           `json:"description,omitempty"`
+	TenantQuotas map[string]string `json:"tenantQuotas,omitempty"`
+	Policysets   []string          `json:"policysets,omitempty"`
+}
+
+// loadPlanCatalog loads the tenant plans catalog from data.
+func loadPlanCatalog() []Plan {
+	path := "docs/catalog/plans.json"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var items []Plan
+	if err := json.Unmarshal(b, &items); err != nil {
+		return nil
 	}
 	return items
 }
@@ -599,6 +755,30 @@ func (s *APIServer) GetApiV1ClustersCPolicysetsCatalog(w http.ResponseWriter, r 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(s.policysetCatalog)
+}
+
+// (GET /api/v1/plans)
+func (s *APIServer) GetApiV1Plans(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(s.planCatalog)
+}
+
+// (GET /api/v1/plans/{name})
+func (s *APIServer) GetApiV1PlansName(w http.ResponseWriter, r *http.Request, name string) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	for _, p := range s.planCatalog {
+		if p.Name == name {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(p)
+			return
+		}
+	}
+	s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 }
 
 // (GET /api/v1/clusters/{c}/tenants/{t}/policysets)

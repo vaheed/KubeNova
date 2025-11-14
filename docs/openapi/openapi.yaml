@@ -173,6 +173,18 @@ components:
             properties:
               tenant: { type: string }
               project: { type: string }
+    Plan:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tenantQuotas:
+          type: object
+          additionalProperties: { type: string }
+        policysets:
+          type: array
+          items: { type: string }
     App:
       type: object
       required: [name]
@@ -1339,4 +1351,65 @@ paths:
               schema: { $ref: '#/components/schemas/KubeconfigResponse' }
               examples:
                 kubeconfig:
-                  value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
+              value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
+  # Plans
+  /api/v1/plans:
+    get:
+      summary: List available tenant plans
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Plan' }
+  /api/v1/plans/{name}:
+    get:
+      summary: Get a specific tenant plan by name
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/v1/tenants/{t}/plan:
+    put:
+      summary: Apply a plan to a tenant (quotas + PolicySets)
+      parameters:
+        - { $ref: '#/components/parameters/TenantParam' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+        '404':
+          description: plan or tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: invalid payload or tenant has no primary cluster
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
