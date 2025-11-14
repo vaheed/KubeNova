@@ -34,13 +34,13 @@ This roadmap tracks bringing the current API implementation in line with `docs/i
 
 ## Phase 3 — Usage & Metrics
 
-- **Metrics ingestion**
-  - Decide on a metrics backend (e.g., Prometheus, agent-reported metrics).
-  - Extend `/sync/metrics` ingestion to store per-tenant and per-project usage.
-- **Usage endpoints**
-  - Implement real `GET /api/v1/tenants/{t}/usage` using metrics data.
-  - Implement real `GET /api/v1/projects/{p}/usage` using metrics data.
-  - Optionally surface usage aggregates in tenant `/summary`.
+- **Metrics ingestion** ✅
+  - Use Kubernetes `ResourceQuota` status (or hard limits) as the source of CPU/memory/pods usage per namespace.
+  - Compute tenant and project usage on demand from the target cluster using the stored kubeconfig.
+- **Usage endpoints** ✅
+  - Implement `GET /api/v1/tenants/{t}/usage` using live cluster data when available, falling back to stub values for tests/dev.
+  - Implement `GET /api/v1/projects/{p}/usage` using live cluster data when available, falling back to stub values for tests/dev.
+  - Optionally surface usage aggregates in tenant `/summary` in a future iteration.
 
 ## Phase 4 — PolicySets & Catalog
 

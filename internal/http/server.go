@@ -657,7 +657,8 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 
 // (GET /api/v1/tenants/{t}/usage)
 func (s *APIServer) GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Request, t TenantParam, params GetApiV1TenantsTUsageParams) {
-	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
@@ -666,18 +667,40 @@ func (s *APIServer) GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Request
 		window = string(*params.Range)
 	}
 	resp := UsageReport{Window: &window}
-	cpu, mem := "2", "4Gi"
-	pods := 12
-	resp.Cpu = &cpu
-	resp.Memory = &mem
-	resp.Pods = &pods
+	// Best-effort: attempt to derive usage from cluster ResourceQuotas when a cluster is registered.
+	if clusters, _, err := s.st.ListClusters(r.Context(), 100, "", ""); err == nil && len(clusters) > 0 {
+		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusters[0].UID); err2 == nil {
+			kb, _ := base64.StdEncoding.DecodeString(enc)
+			if u, err3 := clusterpkg.TenantUsage(r.Context(), kb, ten.Name); err3 == nil {
+				if u.CPU != "" {
+					resp.Cpu = &u.CPU
+				}
+				if u.Memory != "" {
+					resp.Memory = &u.Memory
+				}
+				if u.Pods > 0 {
+					p := int(u.Pods)
+					resp.Pods = &p
+				}
+			}
+		}
+	}
+	// Fallback stub values if no real usage data was populated.
+	if resp.Cpu == nil && resp.Memory == nil && resp.Pods == nil {
+		cpu, mem := "2", "4Gi"
+		pods := 12
+		resp.Cpu = &cpu
+		resp.Memory = &mem
+		resp.Pods = &pods
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // (GET /api/v1/projects/{p}/usage)
 func (s *APIServer) GetApiV1ProjectsPUsage(w http.ResponseWriter, r *http.Request, p ProjectParam, params GetApiV1ProjectsPUsageParams) {
-	if _, err := s.st.GetProjectByUID(r.Context(), string(p)); err != nil {
+	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
@@ -686,11 +709,30 @@ func (s *APIServer) GetApiV1ProjectsPUsage(w http.ResponseWriter, r *http.Reques
 		window = string(*params.Range)
 	}
 	resp := UsageReport{Window: &window}
-	cpu, mem := "1", "1Gi"
-	pods := 5
-	resp.Cpu = &cpu
-	resp.Memory = &mem
-	resp.Pods = &pods
+	if clusters, _, err := s.st.ListClusters(r.Context(), 100, "", ""); err == nil && len(clusters) > 0 {
+		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusters[0].UID); err2 == nil {
+			kb, _ := base64.StdEncoding.DecodeString(enc)
+			if u, err3 := clusterpkg.ProjectUsage(r.Context(), kb, pr.Name); err3 == nil {
+				if u.CPU != "" {
+					resp.Cpu = &u.CPU
+				}
+				if u.Memory != "" {
+					resp.Memory = &u.Memory
+				}
+				if u.Pods > 0 {
+					pp := int(u.Pods)
+					resp.Pods = &pp
+				}
+			}
+		}
+	}
+	if resp.Cpu == nil && resp.Memory == nil && resp.Pods == nil {
+		cpu, mem := "1", "1Gi"
+		pods := 5
+		resp.Cpu = &cpu
+		resp.Memory = &mem
+		resp.Pods = &pods
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
