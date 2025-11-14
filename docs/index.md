@@ -343,6 +343,46 @@ curl -sS \
 ```
 :::
 
+### Plans (quotas + PolicySets)
+
+For convenience, KubeNova can treat a “plan” as a bundle of:
+
+- Tenant-level quotas (CPU, memory, pods).
+- A set of PolicySets that should be attached to the tenant/projects.
+
+The catalog of plans lives in `docs/catalog/plans.json` and currently includes:
+
+- `baseline` plan
+  - `tenantQuotas`: `cpu: 2`, `memory: 4Gi`, `pods: 50`.
+  - `policysets`: `["baseline"]`.
+- `gold` plan
+  - `tenantQuotas`: `cpu: 6`, `memory: 10Gi`, `pods: 200`.
+  - `policysets`: `["baseline","baseline-security","gold-tier","gold-observability","bluegreen-rollout"]`.
+
+You can apply a plan to a tenant using existing APIs:
+
+```bash
+# Example: apply the gold plan to tenant acme/web
+
+# 1) Set tenant quotas from the plan
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/quotas" \
+  -H 'Content-Type: application/json' $AUTH \
+  -d '{"cpu":"6","memory":"10Gi"}'
+
+# 2) Optionally cap pods at the plan level
+curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/limits" \
+  -H 'Content-Type: application/json' $AUTH \
+  -d '{"pods":"200"}'
+
+# 3) Attach the plan’s PolicySets to the tenant/project (see examples above)
+#    e.g. create baseline, baseline-security, gold-tier, gold-observability, bluegreen-rollout
+```
+
+This gives you a simple “plans” abstraction for CaaS/PaaS:
+
+- Pick a plan (`baseline` or `gold`) for each tenant.
+- Apply quotas once, and manage behavior via the associated PolicySets that are applied automatically on deploy.
+
 ## 7) Catalog
 
 ```bash
