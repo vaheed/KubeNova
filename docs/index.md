@@ -96,6 +96,9 @@ TENANT_JSON=$(curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants" \
 export TENANT_ID=$(echo "$TENANT_JSON" | jq -r .uid)
 echo "$TENANT_ID"
 ```
+::: tip Tenant → Cluster mapping
+Tenants created via `/clusters/{c}/tenants` are bound to that cluster as their primary home. KubeNova records the cluster UID on the tenant (`labels.kubenova.cluster`), and usage/kubeconfig lookups use this mapping instead of guessing. If a tenant was created before this label existed, KubeNova falls back to the first registered cluster.
+:::
 
 List/get/owners/quotas/limits/netpols/summary
 ```bash

@@ -31,6 +31,9 @@ This roadmap tracks bringing the current API implementation in line with `docs/i
 - **Scoped project kubeconfig** ✅
   - Replace the current “raw cluster kubeconfig” stub with a project-scoped kubeconfig from capsule-proxy.
   - Ensure project kubeconfigs cannot list or mutate resources outside their namespace.
+- **Tenant/Project → Cluster mapping** ✅
+  - Record the primary cluster UID on tenants created via `/clusters/{c}/tenants` for usage and kubeconfig resolution.
+  - Use this mapping when computing `usage` and kubeconfigs, falling back to the first cluster only for legacy tenants.
 
 ## Phase 3 — Usage & Metrics
 

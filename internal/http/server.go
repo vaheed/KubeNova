@@ -668,8 +668,25 @@ func (s *APIServer) GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Request
 		window = string(*params.Range)
 	}
 	resp := UsageReport{Window: &window}
-	// Best-effort: attempt to derive usage from cluster ResourceQuotas when a cluster is registered.
-	if clusters, _, err := s.st.ListClusters(r.Context(), 100, "", ""); err == nil && len(clusters) > 0 {
+	// Prefer the tenant's primary cluster (kubenova.cluster label), fall back to first registered cluster.
+	clusterUID := ten.Labels["kubenova.cluster"]
+	if clusterUID != "" {
+		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusterUID); err2 == nil {
+			kb, _ := base64.StdEncoding.DecodeString(enc)
+			if u, err3 := clusterpkg.TenantUsage(r.Context(), kb, ten.Name); err3 == nil {
+				if u.CPU != "" {
+					resp.Cpu = &u.CPU
+				}
+				if u.Memory != "" {
+					resp.Memory = &u.Memory
+				}
+				if u.Pods > 0 {
+					p := int(u.Pods)
+					resp.Pods = &p
+				}
+			}
+		}
+	} else if clusters, _, err := s.st.ListClusters(r.Context(), 100, "", ""); err == nil && len(clusters) > 0 {
 		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusters[0].UID); err2 == nil {
 			kb, _ := base64.StdEncoding.DecodeString(enc)
 			if u, err3 := clusterpkg.TenantUsage(r.Context(), kb, ten.Name); err3 == nil {
@@ -710,7 +727,28 @@ func (s *APIServer) GetApiV1ProjectsPUsage(w http.ResponseWriter, r *http.Reques
 		window = string(*params.Range)
 	}
 	resp := UsageReport{Window: &window}
-	if clusters, _, err := s.st.ListClusters(r.Context(), 100, "", ""); err == nil && len(clusters) > 0 {
+	// Resolve primary cluster via tenant label when available; fallback to first cluster.
+	clusterUID := ""
+	if ten, err := s.st.GetTenant(r.Context(), pr.Tenant); err == nil {
+		clusterUID = ten.Labels["kubenova.cluster"]
+	}
+	if clusterUID != "" {
+		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusterUID); err2 == nil {
+			kb, _ := base64.StdEncoding.DecodeString(enc)
+			if u, err3 := clusterpkg.ProjectUsage(r.Context(), kb, pr.Name); err3 == nil {
+				if u.CPU != "" {
+					resp.Cpu = &u.CPU
+				}
+				if u.Memory != "" {
+					resp.Memory = &u.Memory
+				}
+				if u.Pods > 0 {
+					pp := int(u.Pods)
+					resp.Pods = &pp
+				}
+			}
+		}
+	} else if clusters, _, err := s.st.ListClusters(r.Context(), 100, "", ""); err == nil && len(clusters) > 0 {
 		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusters[0].UID); err2 == nil {
 			kb, _ := base64.StdEncoding.DecodeString(enc)
 			if u, err3 := clusterpkg.ProjectUsage(r.Context(), kb, pr.Name); err3 == nil {
@@ -882,6 +920,11 @@ func (s *APIServer) PostApiV1ClustersCTenants(w http.ResponseWriter, r *http.Req
 		return
 	}
 	t := toTypesTenant(in)
+	if t.Labels == nil {
+		t.Labels = map[string]string{}
+	}
+	// Record the primary cluster UID for this tenant for usage/kubeconfig lookups.
+	t.Labels["kubenova.cluster"] = string(c)
 	if err := s.st.CreateTenant(r.Context(), t); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
