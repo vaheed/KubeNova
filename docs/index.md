@@ -353,10 +353,10 @@ For convenience, KubeNova can treat a “plan” as a bundle of:
 The catalog of plans lives in `docs/catalog/plans.json` and currently includes:
 
 - `baseline` plan
-  - `tenantQuotas`: `cpu: 2`, `memory: 4Gi`, `pods: 50`.
+  - `tenantQuotas`: `cpu: 2`, `memory: 4Gi`, `pods: 50`, `storage: 20Gi`, `services.loadbalancers: 1`.
   - `policysets`: `["baseline"]`.
 - `gold` plan
-  - `tenantQuotas`: `cpu: 6`, `memory: 10Gi`, `pods: 200`.
+  - `tenantQuotas`: `cpu: 6`, `memory: 10Gi`, `pods: 200`, `storage: 200Gi`, `services.loadbalancers: 5`.
   - `policysets`: `["baseline","baseline-security","gold-tier","gold-observability","bluegreen-rollout"]`.
 
 You can apply a plan to a tenant using the Plans API:
@@ -420,12 +420,15 @@ curl -sS -X POST \
 curl -sS \
   "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/status" \
   $AUTH | jq .
+
+# 5) Check tenant summary (plan + quotas + usage)
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/summary" $AUTH | jq .
 ```
 
 This flow shows the full lifecycle:
 
 - Register cluster → create tenant with `plan`.
-- Quotas + PolicySets are applied automatically based on the plan.
+- Quotas (cpu/memory/pods/storage/services.loadbalancers) + PolicySets are applied automatically based on the plan.
 - Projects/apps created under that tenant inherit the behavior and guardrails at deploy time.
 
 ## 7) Catalog

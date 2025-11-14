@@ -165,9 +165,10 @@ func (s *APIServer) applyPlanToTenant(ctx context.Context, tenantUID, planName s
 	if len(plan.TenantQuotas) > 0 {
 		quotas := map[string]string{}
 		for k, v := range plan.TenantQuotas {
-			if k == "cpu" || k == "memory" {
-				quotas[k] = v
+			if k == "pods" {
+				continue
 			}
+			quotas[k] = v
 		}
 		if len(quotas) > 0 {
 			if err := caps.SetTenantQuotas(ctx, ten.Name, quotas); err != nil {

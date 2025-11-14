@@ -5,7 +5,9 @@
     "tenantQuotas": {
       "cpu": "2",
       "memory": "4Gi",
-      "pods": "50"
+      "pods": "50",
+      "storage": "20Gi",
+      "services.loadbalancers": "1"
     },
     "policysets": [
       "baseline"
@@ -17,7 +19,9 @@
     "tenantQuotas": {
       "cpu": "6",
       "memory": "10Gi",
-      "pods": "200"
+      "pods": "200",
+      "storage": "200Gi",
+      "services.loadbalancers": "5"
     },
     "policysets": [
       "baseline",
