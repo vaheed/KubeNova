@@ -115,12 +115,12 @@ This document includes:
 **Capsule** provides tenant isolation using namespaces, network policies, and admission controllers.  
 
 ```bash
-helm repo add clastix https://clastix.github.io/charts
+helm repo add projectcapsule https://projectcapsule.github.io/charts
 helm repo update
 
 kubectl create namespace capsule-system || true
 
-helm upgrade --install capsule clastix/capsule \
+helm upgrade --install capsule projectcapsule/capsule \
   --namespace capsule-system \
   --set manager.leaderElection=true
 
@@ -140,7 +140,7 @@ CRDs installed:
 **capsule-proxy** enforces tenant boundaries at API request level.
 
 ```bash
-helm upgrade --install capsule-proxy clastix/capsule-proxy \
+helm upgrade --install capsule-proxy projectcapsule/capsule-proxy \
   --namespace capsule-system \
   --set service.enabled=true \
   --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}'

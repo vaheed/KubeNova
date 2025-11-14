@@ -78,7 +78,7 @@ mkdir -p /tmp/helm/cache /tmp/helm/config /tmp/helm/data
 # Add repos (cert-manager required by Capsule and capsule-proxy)
 echo "[bootstrap] helm repo add"
 helm repo add jetstack https://charts.jetstack.io
-helm repo add clastix https://clastix.github.io/charts
+helm repo add projectcapsule https://projectcapsule.github.io/charts
 helm repo add kubevela https://kubevela.github.io/charts
 helm repo update
 
@@ -104,11 +104,11 @@ done
 echo "[bootstrap] installing capsule"
 CAPS_VER=""; if [ -n "$CAPSULE_VERSION" ]; then CAPS_VER="--version $CAPSULE_VERSION"; fi
 kubectl create ns capsule-system --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade --install capsule clastix/capsule \
+helm upgrade --install capsule projectcapsule/capsule \
   -n capsule-system --create-namespace --set manager.leaderElection=true $CAPS_VER || true
 echo "[bootstrap] installing capsule-proxy"
 PROXY_VER=""; if [ -n "$CAPSULE_PROXY_VERSION" ]; then PROXY_VER="--version $CAPSULE_PROXY_VERSION"; fi
-helm upgrade --install capsule-proxy clastix/capsule-proxy \
+helm upgrade --install capsule-proxy projectcapsule/capsule-proxy \
   -n capsule-system --set service.enabled=true \
   --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' $PROXY_VER || true
 # Extra readiness checks for capsule and proxy
