@@ -2,7 +2,9 @@ package reconcile
 
 import (
 	"context"
+
 	"github.com/vaheed/kubenova/internal/logging"
+	"github.com/vaheed/kubenova/internal/telemetry"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1api "k8s.io/apimachinery/pkg/api/meta"
@@ -69,6 +71,13 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 			return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
 		}
 		logging.FromContext(ctx).With(zap.String("adapter", "capsule"), zap.String("tenant", tenant)).Info("tenant ensured")
+		telemetry.PublishEvent(map[string]any{
+			"type":      "namespace",
+			"tenant":    tenant,
+			"project":   ns.Labels["kubenova.project"],
+			"name":      ns.Name,
+			"operation": "reconciled",
+		})
 		return reconcile.Result{}, nil
 	}
 	// Create namespace if missing

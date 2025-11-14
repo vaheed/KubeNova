@@ -144,8 +144,17 @@ func (b *RedisBuffer) flush(kind string) {
 		req, _ := http.NewRequest(http.MethodPost, b.base+"/sync/"+kind, bytes.NewReader(raw))
 		resp, err := b.http.Do(req)
 		if err != nil {
+			// Manager not reachable: requeue and stop this flush cycle
 			log.Printf("push %s error: %v", kind, err)
-			continue
+			_ = b.rdb.LPush(ctx, key, raw).Err()
+			return
+		}
+		if resp.StatusCode >= 500 {
+			// Server error: requeue and stop this flush cycle
+			log.Printf("push %s status: %s", kind, resp.Status)
+			_ = resp.Body.Close()
+			_ = b.rdb.LPush(ctx, key, raw).Err()
+			return
 		}
 		_ = resp.Body.Close()
 	}
