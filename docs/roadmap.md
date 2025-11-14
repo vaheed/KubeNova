@@ -16,7 +16,7 @@ This roadmap tracks bringing the current API implementation in line with `docs/i
   - Preserve `spec.resourceQuotas` when updating `limitRanges` and `networkPolicies`.
   - Store quotas in a KubeNova-owned annotation for compatibility across Capsule versions.
   - Make `/summary` stable even after multiple quota/limits/netpol updates.
-- **Tenant summary** ⚙️
+- **Tenant summary** ✅
   - List namespaces belonging to a tenant (via Capsule labels).
   - Return effective quotas and (later) usage in `/summary`.
 

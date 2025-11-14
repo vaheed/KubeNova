@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -1067,6 +1068,19 @@ func (s *APIServer) GetApiV1ClustersCTenantsTSummary(w http.ResponseWriter, r *h
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
+	// Best-effort usage aggregation: reuse the same cluster kubeconfig and compute usage across tenant namespaces.
+	usageMap := map[string]string{}
+	if u, err := clusterpkg.TenantUsage(r.Context(), kb, ten.Name); err == nil {
+		if u.CPU != "" {
+			usageMap["cpu"] = u.CPU
+		}
+		if u.Memory != "" {
+			usageMap["memory"] = u.Memory
+		}
+		if u.Pods > 0 {
+			usageMap["pods"] = fmt.Sprintf("%d", u.Pods)
+		}
+	}
 	resp := TenantSummary{}
 	if len(sum.Namespaces) > 0 {
 		ns := sum.Namespaces
@@ -1076,8 +1090,8 @@ func (s *APIServer) GetApiV1ClustersCTenantsTSummary(w http.ResponseWriter, r *h
 		q := sum.Quotas
 		resp.Quotas = &q
 	}
-	if len(sum.Usages) > 0 {
-		u := sum.Usages
+	if len(usageMap) > 0 {
+		u := usageMap
 		resp.Usages = &u
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -116,7 +116,7 @@ Quotas, limits, and network policies are applied at the Capsule `Tenant` level:
 - `quotas` → `spec.resourceQuotas` (plus a `kubenova.io/quotas` annotation for reporting).
 - `limits` → `spec.limitRanges`.
 - `network-policies` → `spec.networkPolicies`.
-`/summary` reports effective quotas and, when namespaces exist, lists namespaces labeled for the Tenant.
+`/summary` reports effective quotas, lists namespaces labeled for the Tenant, and includes a `usages` map derived from namespace `ResourceQuota` usage (cpu, memory, pods) when available.
 :::
 
 Filter tenants by labels and owner
@@ -257,6 +257,9 @@ curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" $AUTH | jq .
 ```json
 { "window": "24h", "cpu": "2", "memory": "4Gi", "pods": 12 }
 ```
+:::
+::: tip Usage data
+Tenant and project usage endpoints aggregate `cpu`, `memory`, and `pods` from Kubernetes `ResourceQuota` objects in the target cluster when a kubeconfig is registered. In development or when quotas are not available, they return example stub values to keep tests and scripts working.
 :::
 
 ::: details Example response — tenant kubeconfig
