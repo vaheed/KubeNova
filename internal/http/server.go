@@ -915,7 +915,12 @@ func (s *APIServer) PutApiV1ClustersCTenantsTQuotas(w http.ResponseWriter, r *ht
 	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
 		kb, _ = base64.StdEncoding.DecodeString(enc)
 	}
-	if err := s.newCapsule(kb).SetTenantQuotas(r.Context(), ten.Name, body); err != nil {
+	caps := s.newCapsule(kb)
+	if err := caps.EnsureTenant(r.Context(), ten.Name, ten.Owners, ten.Labels); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	if err := caps.SetTenantQuotas(r.Context(), ten.Name, body); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -941,7 +946,12 @@ func (s *APIServer) PutApiV1ClustersCTenantsTLimits(w http.ResponseWriter, r *ht
 	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
 		kb, _ = base64.StdEncoding.DecodeString(enc)
 	}
-	if err := s.newCapsule(kb).SetTenantLimits(r.Context(), ten.Name, body); err != nil {
+	caps := s.newCapsule(kb)
+	if err := caps.EnsureTenant(r.Context(), ten.Name, ten.Owners, ten.Labels); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	if err := caps.SetTenantLimits(r.Context(), ten.Name, body); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -967,7 +977,12 @@ func (s *APIServer) PutApiV1ClustersCTenantsTNetworkPolicies(w http.ResponseWrit
 	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
 		kb, _ = base64.StdEncoding.DecodeString(enc)
 	}
-	if err := s.newCapsule(kb).SetTenantNetworkPolicies(r.Context(), ten.Name, body); err != nil {
+	caps := s.newCapsule(kb)
+	if err := caps.EnsureTenant(r.Context(), ten.Name, ten.Owners, ten.Labels); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	if err := caps.SetTenantNetworkPolicies(r.Context(), ten.Name, body); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
