@@ -1,0 +1,13 @@
+[
+  {
+    "name": "baseline",
+    "description": "Base guardrails for tenant namespaces",
+    "rules": [
+      {
+        "kind": "NetworkPolicy",
+        "policy": "default-deny"
+      }
+    ]
+  }
+]
+

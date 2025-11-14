@@ -42,11 +42,10 @@ type APIServer struct {
 		ImageUpdate(context.Context, string, string, string, string, string) error
 		DeleteApp(context.Context, string, string) error
 	}
-	psMu       sync.RWMutex
-	policysets map[string]map[string]PolicySet // tenantUID -> name -> item
-	runsMu     sync.RWMutex
-	runsByID   map[string]WorkflowRun
-	runsByApp  map[string][]WorkflowRun // key: tenantUID|projectUID|appUID
+	policysetCatalog []PolicySet
+	runsMu           sync.RWMutex
+	runsByID         map[string]WorkflowRun
+	runsByApp        map[string][]WorkflowRun // key: tenantUID|projectUID|appUID
 }
 
 func NewAPIServer(st store.Store) *APIServer {
@@ -71,9 +70,9 @@ func NewAPIServer(st store.Store) *APIServer {
 		} {
 			return velab.New(b)
 		},
-		policysets: map[string]map[string]PolicySet{},
-		runsByID:   map[string]WorkflowRun{},
-		runsByApp:  map[string][]WorkflowRun{},
+		policysetCatalog: loadPolicySetCatalog(),
+		runsByID:         map[string]WorkflowRun{},
+		runsByApp:        map[string][]WorkflowRun{},
 	}
 }
 
@@ -89,6 +88,60 @@ func parseBool(v string) bool {
 
 func (s *APIServer) writeError(w http.ResponseWriter, status int, code, msg string) {
 	httperr.Write(w, status, code, msg)
+}
+
+// encodePolicySet converts an HTTP PolicySet DTO into the internal types.PolicySet
+// representation by preserving the entire JSON structure in the Policies map.
+func encodePolicySet(tenantUID string, dto PolicySet) (kn.PolicySet, error) {
+	b, err := json.Marshal(dto)
+	if err != nil {
+		return kn.PolicySet{}, err
+	}
+	spec := map[string]any{}
+	if err := json.Unmarshal(b, &spec); err != nil {
+		return kn.PolicySet{}, err
+	}
+	return kn.PolicySet{
+		Name:     dto.Name,
+		Tenant:   tenantUID,
+		Policies: spec,
+	}, nil
+}
+
+// decodePolicySet converts a stored types.PolicySet back into the HTTP DTO.
+func decodePolicySet(stored kn.PolicySet) (PolicySet, error) {
+	if stored.Policies == nil {
+		return PolicySet{Name: stored.Name}, nil
+	}
+	b, err := json.Marshal(stored.Policies)
+	if err != nil {
+		return PolicySet{}, err
+	}
+	var dto PolicySet
+	if err := json.Unmarshal(b, &dto); err != nil {
+		return PolicySet{}, err
+	}
+	if strings.TrimSpace(dto.Name) == "" {
+		dto.Name = stored.Name
+	}
+	return dto, nil
+}
+
+// loadPolicySetCatalog loads the cluster-wide PolicySet catalog from data.
+// If the file is missing or invalid, it falls back to a minimal built-in baseline.
+func loadPolicySetCatalog() []PolicySet {
+	path := "docs/catalog/policysets.json"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		desc := "Base guardrails"
+		return []PolicySet{{Name: "baseline", Description: &desc}}
+	}
+	var items []PolicySet
+	if err := json.Unmarshal(b, &items); err != nil || len(items) == 0 {
+		desc := "Base guardrails"
+		return []PolicySet{{Name: "baseline", Description: &desc}}
+	}
+	return items
 }
 
 // (GET /api/v1/healthz)
@@ -471,10 +524,8 @@ func (s *APIServer) GetApiV1ClustersCPolicysetsCatalog(w http.ResponseWriter, r 
 	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
 		return
 	}
-	desc := "Base guardrails"
-	items := []PolicySet{{Name: "baseline", Description: &desc}}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(items)
+	_ = json.NewEncoder(w).Encode(s.policysetCatalog)
 }
 
 // (GET /api/v1/clusters/{c}/tenants/{t}/policysets)
@@ -487,13 +538,19 @@ func (s *APIServer) GetApiV1ClustersCTenantsTPolicysets(w http.ResponseWriter, r
 	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
 		return
 	}
-	s.psMu.RLock()
-	defer s.psMu.RUnlock()
-	psMap := s.policysets[ten.UID]
-	out := []PolicySet{}
-	for _, v := range psMap {
-		vv := v
-		out = append(out, vv)
+	items, err := s.st.ListPolicySets(r.Context(), ten.UID)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
+		return
+	}
+	out := make([]PolicySet, 0, len(items))
+	for _, ps := range items {
+		dto, derr := decodePolicySet(ps)
+		if derr != nil {
+			s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset decode error")
+			return
+		}
+		out = append(out, dto)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -518,12 +575,15 @@ func (s *APIServer) PostApiV1ClustersCTenantsTPolicysets(w http.ResponseWriter, 
 		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
 		return
 	}
-	s.psMu.Lock()
-	if s.policysets[ten.UID] == nil {
-		s.policysets[ten.UID] = map[string]PolicySet{}
+	ps, err := encodePolicySet(ten.UID, body)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset encode error")
+		return
 	}
-	s.policysets[ten.UID][body.Name] = body
-	s.psMu.Unlock()
+	if err := s.st.CreatePolicySet(r.Context(), ps); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
 }
@@ -538,16 +598,22 @@ func (s *APIServer) GetApiV1ClustersCTenantsTPolicysetsName(w http.ResponseWrite
 	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
 		return
 	}
-	s.psMu.RLock()
-	defer s.psMu.RUnlock()
-	if m := s.policysets[ten.UID]; m != nil {
-		if v, ok := m[name]; ok {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(v)
-			return
+	ps, err := s.st.GetPolicySet(r.Context(), ten.UID, name)
+	if err != nil {
+		if err == store.ErrNotFound {
+			s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		} else {
+			s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
 		}
+		return
 	}
-	s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+	dto, derr := decodePolicySet(ps)
+	if derr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset decode error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(dto)
 }
 
 // (PUT /api/v1/clusters/{c}/tenants/{t}/policysets/{name})
@@ -565,12 +631,21 @@ func (s *APIServer) PutApiV1ClustersCTenantsTPolicysetsName(w http.ResponseWrite
 		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
 		return
 	}
-	s.psMu.Lock()
-	defer s.psMu.Unlock()
-	if s.policysets[ten.UID] == nil {
-		s.policysets[ten.UID] = map[string]PolicySet{}
+	// Path parameter is canonical for name
+	if strings.TrimSpace(name) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
 	}
-	s.policysets[ten.UID][name] = body
+	body.Name = name
+	ps, err := encodePolicySet(ten.UID, body)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset encode error")
+		return
+	}
+	if err := s.st.UpdatePolicySet(r.Context(), ps); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -584,11 +659,7 @@ func (s *APIServer) DeleteApiV1ClustersCTenantsTPolicysetsName(w http.ResponseWr
 	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
 		return
 	}
-	s.psMu.Lock()
-	if m := s.policysets[ten.UID]; m != nil {
-		delete(m, name)
-	}
-	s.psMu.Unlock()
+	_ = s.st.DeletePolicySet(r.Context(), ten.UID, name)
 	w.WriteHeader(http.StatusNoContent)
 }
 

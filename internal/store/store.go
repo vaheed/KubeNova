@@ -55,6 +55,13 @@ type Store interface {
 	GetTenantByUID(ctx context.Context, uid string) (types.Tenant, error)
 	GetProjectByUID(ctx context.Context, uid string) (types.Project, error)
 	GetAppByUID(ctx context.Context, uid string) (types.App, error)
+
+	// PolicySets
+	CreatePolicySet(ctx context.Context, ps types.PolicySet) error
+	ListPolicySets(ctx context.Context, tenantUID string) ([]types.PolicySet, error)
+	GetPolicySet(ctx context.Context, tenantUID, name string) (types.PolicySet, error)
+	UpdatePolicySet(ctx context.Context, ps types.PolicySet) error
+	DeletePolicySet(ctx context.Context, tenantUID, name string) error
 }
 
 var ErrNotFound = errors.New("not found")

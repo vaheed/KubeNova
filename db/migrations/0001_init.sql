@@ -27,6 +27,14 @@ CREATE TABLE IF NOT EXISTS apps (
   name TEXT NOT NULL,
   UNIQUE(tenant,project,name)
 );
+CREATE TABLE IF NOT EXISTS policysets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_uid TEXT NOT NULL,
+  name TEXT NOT NULL,
+  spec JSONB NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(tenant_uid,name)
+);
 
 -- clusters table for manager-driven registration and status
 CREATE TABLE IF NOT EXISTS clusters (

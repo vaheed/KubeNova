@@ -222,6 +222,8 @@ curl -sS -X DELETE "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/policys
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/policysets/catalog" $AUTH | jq .
 ```
 
+Tenant PolicySets are persisted in the KubeNova store (Postgres in production, in-memory in tests) and keyed by tenant UID and policy set name. The cluster-wide catalog served by `/policysets/catalog` is data-backed: by default it is loaded from `docs/catalog/policysets.json`, and can be extended by editing that file without changing the manager binary.
+
 ## 7) Catalog
 
 ```bash

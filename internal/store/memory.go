@@ -14,6 +14,7 @@ type Memory struct {
 	tenants      map[string]types.Tenant
 	projects     map[string]map[string]types.Project        // tenant -> name
 	apps         map[string]map[string]map[string]types.App // tenant -> project -> name
+	policysets   map[string]map[string]types.PolicySet      // tenantUID -> name -> policyset
 	clusters     map[types.ID]memCluster
 	byName       map[string]types.ID
 	byUID        map[string]types.ID
@@ -28,6 +29,7 @@ func NewMemory() *Memory {
 		tenants:      map[string]types.Tenant{},
 		projects:     map[string]map[string]types.Project{},
 		apps:         map[string]map[string]map[string]types.App{},
+		policysets:   map[string]map[string]types.PolicySet{},
 		clusters:     map[types.ID]memCluster{},
 		byName:       map[string]types.ID{},
 		byUID:        map[string]types.ID{},
@@ -90,10 +92,64 @@ func (m *Memory) DeleteTenant(ctx context.Context, name string) error {
 	defer m.mu.Unlock()
 	if t, ok := m.tenants[name]; ok {
 		delete(m.tenantByUID, t.UID)
+		delete(m.policysets, t.UID)
 	}
 	delete(m.tenants, name)
 	delete(m.projects, name)
 	delete(m.apps, name)
+	return nil
+}
+
+// PolicySets
+
+func (m *Memory) CreatePolicySet(ctx context.Context, ps types.PolicySet) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.policysets[ps.Tenant] == nil {
+		m.policysets[ps.Tenant] = map[string]types.PolicySet{}
+	}
+	if existing, ok := m.policysets[ps.Tenant][ps.Name]; ok {
+		// Merge policies but keep CreatedAt from existing
+		ps.CreatedAt = existing.CreatedAt
+	} else {
+		ps.CreatedAt = stamp(ps.CreatedAt)
+	}
+	m.policysets[ps.Tenant][ps.Name] = ps
+	return nil
+}
+
+func (m *Memory) ListPolicySets(ctx context.Context, tenantUID string) ([]types.PolicySet, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	mp := m.policysets[tenantUID]
+	out := make([]types.PolicySet, 0, len(mp))
+	for _, ps := range mp {
+		out = append(out, ps)
+	}
+	return out, nil
+}
+
+func (m *Memory) GetPolicySet(ctx context.Context, tenantUID, name string) (types.PolicySet, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if mp := m.policysets[tenantUID]; mp != nil {
+		if ps, ok := mp[name]; ok {
+			return ps, nil
+		}
+	}
+	return types.PolicySet{}, ErrNotFound
+}
+
+func (m *Memory) UpdatePolicySet(ctx context.Context, ps types.PolicySet) error {
+	return m.CreatePolicySet(ctx, ps)
+}
+
+func (m *Memory) DeletePolicySet(ctx context.Context, tenantUID, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if mp := m.policysets[tenantUID]; mp != nil {
+		delete(mp, name)
+	}
 	return nil
 }
 

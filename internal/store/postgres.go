@@ -211,6 +211,65 @@ func (p *Postgres) DeleteApp(ctx context.Context, tenant, project, name string) 
 	return err
 }
 
+// PolicySets
+
+func (p *Postgres) CreatePolicySet(ctx context.Context, ps types.PolicySet) error {
+	ps.CreatedAt = stamp(ps.CreatedAt)
+	_, err := p.db.Exec(ctx, `
+INSERT INTO policysets(tenant_uid, name, spec, created_at)
+VALUES ($1,$2,$3,$4)
+ON CONFLICT (tenant_uid,name) DO UPDATE
+SET spec = EXCLUDED.spec
+`, ps.Tenant, ps.Name, ps.Policies, ps.CreatedAt)
+	return err
+}
+
+func (p *Postgres) ListPolicySets(ctx context.Context, tenantUID string) ([]types.PolicySet, error) {
+	rows, err := p.db.Query(ctx, `
+SELECT name, spec, created_at
+FROM policysets
+WHERE tenant_uid=$1
+ORDER BY name
+`, tenantUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []types.PolicySet
+	for rows.Next() {
+		var ps types.PolicySet
+		ps.Tenant = tenantUID
+		if err := rows.Scan(&ps.Name, &ps.Policies, &ps.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ps)
+	}
+	return out, nil
+}
+
+func (p *Postgres) GetPolicySet(ctx context.Context, tenantUID, name string) (types.PolicySet, error) {
+	var ps types.PolicySet
+	ps.Tenant = tenantUID
+	err := p.db.QueryRow(ctx, `
+SELECT name, spec, created_at
+FROM policysets
+WHERE tenant_uid=$1 AND name=$2
+`, tenantUID, name).Scan(&ps.Name, &ps.Policies, &ps.CreatedAt)
+	if err != nil {
+		return types.PolicySet{}, ErrNotFound
+	}
+	return ps, nil
+}
+
+func (p *Postgres) UpdatePolicySet(ctx context.Context, ps types.PolicySet) error {
+	return p.CreatePolicySet(ctx, ps)
+}
+
+func (p *Postgres) DeletePolicySet(ctx context.Context, tenantUID, name string) error {
+	_, err := p.db.Exec(ctx, `DELETE FROM policysets WHERE tenant_uid=$1 AND name=$2`, tenantUID, name)
+	return err
+}
+
 // Ensure interface compliance
 var _ Store = (*Postgres)(nil)
 
@@ -333,6 +392,14 @@ CREATE TABLE IF NOT EXISTS apps (
   project TEXT NOT NULL,
   name TEXT NOT NULL,
   UNIQUE(tenant,project,name)
+);
+CREATE TABLE IF NOT EXISTS policysets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_uid TEXT NOT NULL,
+  name TEXT NOT NULL,
+  spec JSONB NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(tenant_uid,name)
 );
 
 CREATE TABLE IF NOT EXISTS clusters (

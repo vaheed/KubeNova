@@ -47,12 +47,13 @@ This roadmap tracks bringing the current API implementation in line with `docs/i
 
 ## Phase 4 — PolicySets & Catalog
 
-- **PolicySets persistence**
+- **PolicySets persistence** ✅
   - Persist PolicySets in Postgres or a CRD instead of in-memory maps.
   - Wire `GET/POST/PUT/DELETE /tenants/{t}/policysets` to the persistent store.
-- **PolicySet catalog**
-  - Move the hard-coded PolicySet catalog into data (config table or CRDs).
-  - Allow the catalog to be extended without code changes.
+- **PolicySet catalog** ✅
+  - Move the hard-coded PolicySet catalog into data (JSON-backed config).
+  - Serve `/clusters/{c}/policysets/catalog` from `docs/catalog/policysets.json`, with a safe built-in fallback.
+  - Allow the catalog to be extended without code changes to the manager.
 
 ## Phase 5 — Auth, RBAC & Dev/Prod Parity
 
