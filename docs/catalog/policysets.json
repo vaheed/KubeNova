@@ -4,8 +4,42 @@
     "description": "Base guardrails for tenant namespaces",
     "rules": [
       {
-        "kind": "NetworkPolicy",
-        "policy": "default-deny"
+        "kind": "vela.policy",
+        "policyType": "health-check",
+        "spec": {
+          "type": "health",
+          "properties": {
+            "probe": "http",
+            "path": "/healthz",
+            "intervalSeconds": 10
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "gold-tier",
+    "description": "Gold tier rollout and autoscaling defaults",
+    "rules": [
+      {
+        "kind": "vela.trait",
+        "traitType": "scaler",
+        "spec": {
+          "replicas": 3,
+          "min": 3,
+          "max": 10
+        }
+      },
+      {
+        "kind": "vela.policy",
+        "policyType": "rollout",
+        "spec": {
+          "type": "rollout",
+          "properties": {
+            "batchPartition": 1,
+            "maxUnavailable": 1
+          }
+        }
       }
     ]
   }

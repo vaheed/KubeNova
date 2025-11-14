@@ -224,6 +224,13 @@ curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/policysets/catalog" $AUTH | jq .
 
 Tenant PolicySets are persisted in the KubeNova store (Postgres in production, in-memory in tests) and keyed by tenant UID and policy set name. The cluster-wide catalog served by `/policysets/catalog` is data-backed: by default it is loaded from `docs/catalog/policysets.json`, and can be extended by editing that file without changing the manager binary.
 
+When a PolicySet includes `rules` of kind `vela.trait` or `vela.policy` and is attached to a tenant/project via `attachedTo`, KubeNova will materialize those rules into Vela traits and policies on `:deploy`:
+
+- `kind: "vela.trait"` → the `spec` map is appended to the traits passed to Vela `SetTraits`.
+- `kind: "vela.policy"` → the `spec` map is appended to the policies passed to Vela `SetPolicies`.
+
+This lets you define reusable rollout/autoscaling/health PolicySets and attach them to many projects without changing app manifests.
+
 ## 7) Catalog
 
 ```bash

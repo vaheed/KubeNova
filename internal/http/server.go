@@ -127,6 +127,79 @@ func decodePolicySet(stored kn.PolicySet) (PolicySet, error) {
 	return dto, nil
 }
 
+// applyPolicySets inspects tenant-level PolicySets that are attached to the given
+// tenant/project and materializes their Vela traits/policies before a deploy.
+// It is best-effort: failures are surfaced as errors, but absence of policysets is allowed.
+func (s *APIServer) applyPolicySets(ctx context.Context, kubeconfig []byte, tenantUID, namespace, appName string) error {
+	// Resolve tenant by UID to get its name for matching.
+	ten, err := s.st.GetTenantByUID(ctx, tenantUID)
+	if err != nil {
+		return nil
+	}
+	items, err := s.st.ListPolicySets(ctx, tenantUID)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	var traits []map[string]any
+	var policies []map[string]any
+
+	for _, ps := range items {
+		dto, derr := decodePolicySet(ps)
+		if derr != nil {
+			return derr
+		}
+		// Filter by attachedTo: match when attached tenant or project is this app's scope.
+		if dto.AttachedTo != nil && len(*dto.AttachedTo) > 0 {
+			match := false
+			for _, at := range *dto.AttachedTo {
+				if at.Tenant != nil && *at.Tenant == ten.Name {
+					match = true
+				}
+				if at.Project != nil && *at.Project == namespace {
+					match = true
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		if dto.Rules == nil {
+			continue
+		}
+		for _, r := range *dto.Rules {
+			kind, _ := r["kind"].(string)
+			switch kind {
+			case "vela.trait":
+				if spec, ok := r["spec"].(map[string]any); ok {
+					traits = append(traits, spec)
+				}
+			case "vela.policy":
+				if spec, ok := r["spec"].(map[string]any); ok {
+					policies = append(policies, spec)
+				}
+			}
+		}
+	}
+	if len(traits) == 0 && len(policies) == 0 {
+		return nil
+	}
+	backend := s.newVela(kubeconfig)
+	if len(traits) > 0 {
+		if err := backend.SetTraits(ctx, namespace, appName, traits); err != nil {
+			return err
+		}
+	}
+	if len(policies) > 0 {
+		if err := backend.SetPolicies(ctx, namespace, appName, policies); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // loadPolicySetCatalog loads the cluster-wide PolicySet catalog from data.
 // If the file is missing or invalid, it falls back to a minimal built-in baseline.
 func loadPolicySetCatalog() []PolicySet {
@@ -1520,12 +1593,27 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsADeploy(w http.Respon
 	if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") {
 		return
 	}
-	var kb []byte
-	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
-		kb, _ = base64.StdEncoding.DecodeString(enc)
+	_, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
 	}
-	pr, _ := s.st.GetProjectByUID(r.Context(), string(p))
-	ap, _ := s.st.GetAppByUID(r.Context(), string(a))
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "project not found")
+		return
+	}
+	ap, err := s.st.GetAppByUID(r.Context(), string(a))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "app not found")
+		return
+	}
+	// Apply any attached PolicySets as traits/policies before deploy.
+	if err := s.applyPolicySets(r.Context(), kb, string(t), pr.Name, ap.Name); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
 	if err := s.newVela(kb).Deploy(r.Context(), pr.Name, ap.Name); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
