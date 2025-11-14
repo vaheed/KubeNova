@@ -119,7 +119,7 @@ Quotas, limits, and network policies are applied at the Capsule `Tenant` level:
 - `quotas` → `spec.resourceQuotas` (plus a `kubenova.io/quotas` annotation for reporting).
 - `limits` → `spec.limitRanges`.
 - `network-policies` → `spec.networkPolicies`.
-`/summary` reports effective quotas, lists namespaces labeled for the Tenant, and includes a `usages` map derived from namespace `ResourceQuota` usage (cpu, memory, pods) when available.
+`/summary` reports effective quotas, lists namespaces labeled for the Tenant, includes a `usages` map derived from namespace `ResourceQuota` usage (cpu, memory, pods) when available, and (when plans are used) a `plan` field with the current plan name.
 :::
 
 Filter tenants by labels and owner

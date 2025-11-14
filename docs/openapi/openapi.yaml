@@ -139,6 +139,9 @@ components:
         namespaces: { type: array, items: { type: string } }
         quotas: { type: object, additionalProperties: { type: string } }
         usages: { type: object, additionalProperties: { type: string } }
+        plan:
+          type: string
+          description: Optional tenant plan name applied to this tenant
     Project:
       type: object
       required: [name]

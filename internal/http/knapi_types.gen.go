@@ -239,6 +239,7 @@ type TenantSummary struct {
 	Namespaces *[]string          `json:"namespaces,omitempty"`
 	Quotas     *map[string]string `json:"quotas,omitempty"`
 	Usages     *map[string]string `json:"usages,omitempty"`
+	Plan       *string            `json:"plan,omitempty"`
 }
 
 // TokenRequest defines model for TokenRequest.

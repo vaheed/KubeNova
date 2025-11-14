@@ -1481,6 +1481,13 @@ func (s *APIServer) GetApiV1ClustersCTenantsTSummary(w http.ResponseWriter, r *h
 		u := usageMap
 		resp.Usages = &u
 	}
+	// Include plan name if present on tenant annotations.
+	if ten.Annotations != nil {
+		if p, ok := ten.Annotations["kubenova.io/plan"]; ok && strings.TrimSpace(p) != "" {
+			plan := strings.TrimSpace(p)
+			resp.Plan = &plan
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
