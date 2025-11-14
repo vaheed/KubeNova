@@ -231,6 +231,52 @@ When a PolicySet includes `rules` of kind `vela.trait` or `vela.policy` and is a
 
 This lets you define reusable rollout/autoscaling/health PolicySets and attach them to many projects without changing app manifests.
 
+Built-in catalog PolicySets (PaaS/CaaS oriented):
+
+- `baseline` — health-check policy for apps (HTTP probe on `/healthz` every 10s).
+- `gold-tier` — autoscaling + rollout defaults suitable for “gold” apps (min/max replicas and rollout batches).
+- `baseline-security` — default network and image hygiene (default-deny style networking, allowed registries).
+- `gold-observability` — logging + metrics traits turned on by default.
+- `bluegreen-rollout` — blue/green rollout strategy for safer production releases.
+
+Example: attach a `gold-tier` plan to a tenant/project
+
+```bash
+cat << 'EOF' > policyset-gold-tier.json
+{
+  "name": "gold-tier",
+  "attachedTo": [
+    { "tenant": "acme", "project": "web" }
+  ],
+  "rules": [
+    {
+      "kind": "vela.trait",
+      "spec": {
+        "type": "scaler",
+        "properties": { "min": 3, "max": 10 }
+      }
+    },
+    {
+      "kind": "vela.policy",
+      "spec": {
+        "type": "rollout",
+        "properties": { "batchPartition": 1, "maxUnavailable": 1 }
+      }
+    }
+  ]
+}
+EOF
+
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/policysets" \
+  -H 'Content-Type: application/json' $AUTH \
+  --data-binary @policyset-gold-tier.json
+```
+
+On the next deploy of an app in the `web` project under the `acme` tenant:
+
+- The scaler trait and rollout policy from `gold-tier` will be sent to Vela via `SetTraits` / `SetPolicies`.
+- Any additional PolicySets attached to the same tenant or project (e.g., `baseline-security`, `gold-observability`) will be applied in the same way, giving you PaaS/CaaS-style “plans” without changing application manifests.
+
 ## 7) Catalog
 
 ```bash
