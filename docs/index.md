@@ -277,6 +277,72 @@ On the next deploy of an app in the `web` project under the `acme` tenant:
 - The scaler trait and rollout policy from `gold-tier` will be sent to Vela via `SetTraits` / `SetPolicies`.
 - Any additional PolicySets attached to the same tenant or project (e.g., `baseline-security`, `gold-observability`) will be applied in the same way, giving you PaaS/CaaS-style “plans” without changing application manifests.
 
+### End-to-end example: baseline health checks
+
+Assuming you already have `CLUSTER_ID`, `TENANT_ID`, `PROJECT_ID`, and `APP_ID`:
+
+```bash
+# Attach a baseline health-check PolicySet to tenant/project
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/policysets" \
+  -H 'Content-Type: application/json' $AUTH \
+  -d '{
+    "name": "baseline",
+    "attachedTo": [
+      { "tenant": "acme", "project": "web" }
+    ],
+    "rules": [
+      {
+        "kind": "vela.policy",
+        "spec": {
+          "type": "health",
+          "properties": { "probe": "http", "path": "/healthz", "intervalSeconds": 10 }
+        }
+      }
+    ]
+  }'
+
+# Deploy the app (PolicySet traits/policies are applied first)
+curl -sS -X POST \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:deploy" \
+  $AUTH -i
+
+# Inspect Vela-backed app status
+curl -sS \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/status" \
+  $AUTH | jq .
+```
+
+::: details Example response — app status (baseline)
+```json
+{ "phase": "Running" }
+```
+:::
+
+### End-to-end example: gold-tier rollout & autoscaling
+
+```bash
+# Attach gold-tier PolicySet (from catalog) to tenant/project
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/policysets" \
+  -H 'Content-Type: application/json' $AUTH \
+  --data-binary @policyset-gold-tier.json
+
+# Trigger a new deploy for the app
+curl -sS -X POST \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:deploy" \
+  $AUTH -i
+
+# Fetch app status after rollout starts
+curl -sS \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID/status" \
+  $AUTH | jq .
+```
+
+::: details Example response — app status (gold-tier)
+```json
+{ "phase": "Running" }
+```
+:::
+
 ## 7) Catalog
 
 ```bash
