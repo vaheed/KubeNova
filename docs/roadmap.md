@@ -28,7 +28,7 @@ This roadmap tracks bringing the current API implementation in line with `docs/i
 - **Project access & RBAC** ✅
   - Implement `PUT /projects/{p}/access` to create/update Roles and RoleBindings in the project namespace.
   - Map roles (`tenantOwner`, `projectDev`, `readOnly`) to concrete RBAC rules.
-- **Scoped project kubeconfig** ⚙️
+- **Scoped project kubeconfig** ✅
   - Replace the current “raw cluster kubeconfig” stub with a project-scoped kubeconfig from capsule-proxy.
   - Ensure project kubeconfigs cannot list or mutate resources outside their namespace.
 
