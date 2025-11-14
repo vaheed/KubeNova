@@ -24,6 +24,8 @@ type Client interface {
 	SetTenantQuotas(ctx context.Context, name string, quotas map[string]string) error
 	SetTenantLimits(ctx context.Context, name string, limits map[string]string) error
 	SetTenantNetworkPolicies(ctx context.Context, name string, spec map[string]any) error
+
+	TenantSummary(ctx context.Context, name string) (Summary, error)
 }
 
 type Tenant struct {
@@ -33,9 +35,18 @@ type Tenant struct {
 	Annotations map[string]string
 }
 
+// Summary represents an aggregate view of a Capsule Tenant.
+// It is intentionally generic and does not leak CRD structs.
+type Summary struct {
+	Namespaces []string
+	Quotas     map[string]string
+	Usages     map[string]string
+}
+
 // New returns a Client backed by the in-repo adapter logic.
 // For now this returns a no-op stub to keep the API surface stable until full wiring is completed.
 var tenantGVR = schema.GroupVersionResource{Group: "capsule.clastix.io", Version: "v1beta2", Resource: "tenants"}
+var namespaceGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 
 func New(kubeconfig []byte) Client { // kubeconfig (cluster-scoped)
 	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
@@ -87,6 +98,11 @@ func (n *noop) SetTenantNetworkPolicies(ctx context.Context, name string, spec m
 	_ = spec
 	return nil
 }
+func (n *noop) TenantSummary(ctx context.Context, name string) (Summary, error) {
+	_ = ctx
+	_ = name
+	return Summary{}, nil
+}
 
 func (c *client) EnsureTenant(ctx context.Context, name string, owners []string, labels map[string]string) error {
 	u := capadapter.TenantCR(name, owners, labels)
@@ -129,15 +145,86 @@ func (c *client) GetTenant(ctx context.Context, name string) (Tenant, error) {
 }
 
 func (c *client) SetTenantQuotas(ctx context.Context, name string, quotas map[string]string) error {
-	return c.patchSpec(ctx, name, map[string]any{"resourceQuotas": map[string]any{"hard": toAnyMap(quotas)}})
+	// Capsule Tenant.spec.resourceQuotas is an object with:
+	// - scope: "Tenant" | "Namespace"
+	// - items: []ResourceQuotaSpec{ { hard: {...} } }
+	return c.patchSpec(ctx, name, map[string]any{
+		"resourceQuotas": map[string]any{
+			"scope": "Tenant",
+			"items": []any{
+				map[string]any{
+					"hard": toAnyMap(quotas),
+				},
+			},
+		},
+	})
 }
 
 func (c *client) SetTenantLimits(ctx context.Context, name string, limits map[string]string) error {
-	return c.patchSpec(ctx, name, map[string]any{"limitRanges": map[string]any{"limits": toAnyMap(limits)}})
+	// Capsule Tenant.spec.limitRanges is an object with:
+	// - items: []LimitRangeSpec{ { limits: []LimitRangeItem{ { type: "...", max: {...} } } } }
+	return c.patchSpec(ctx, name, map[string]any{
+		"limitRanges": map[string]any{
+			"items": []any{
+				map[string]any{
+					"limits": []any{
+						map[string]any{
+							"type": "Container",
+							"max":  toAnyMap(limits),
+						},
+					},
+				},
+			},
+		},
+	})
 }
 
 func (c *client) SetTenantNetworkPolicies(ctx context.Context, name string, spec map[string]any) error {
-	return c.patchSpec(ctx, name, map[string]any{"networkPolicies": spec})
+	return c.patchSpec(ctx, name, map[string]any{"networkPolicies": buildNetworkPolicies(spec)})
+}
+
+func (c *client) TenantSummary(ctx context.Context, name string) (Summary, error) {
+	out := Summary{
+		Namespaces: []string{},
+		Quotas:     map[string]string{},
+		Usages:     map[string]string{},
+	}
+
+	// 1) Discover namespaces associated with the Capsule tenant via label selector.
+	nsList, err := c.dyn.Resource(namespaceGVR).List(ctx, metav1.ListOptions{
+		LabelSelector: "capsule.clastix.io/tenant=" + name,
+	})
+	if err == nil {
+		for _, ns := range nsList.Items {
+			out.Namespaces = append(out.Namespaces, ns.GetName())
+		}
+	}
+
+	// 2) Read resourceQuotas.hard from the Tenant spec if present.
+	u, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return out, nil
+		}
+		return Summary{}, err
+	}
+	items, found, _ := unstructured.NestedSlice(u.Object, "spec", "resourceQuotas", "items")
+	if found {
+		for _, it := range items {
+			m, ok := it.(map[string]any)
+			if !ok {
+				continue
+			}
+			hard, foundHard, _ := unstructured.NestedMap(m, "hard")
+			if !foundHard {
+				continue
+			}
+			for k, v := range hard {
+				out.Quotas[k] = fmt.Sprint(v)
+			}
+		}
+	}
+	return out, nil
 }
 
 func (c *client) patchSpec(ctx context.Context, name string, fragment map[string]any) error {
@@ -178,4 +265,29 @@ func toAnyMap(in map[string]string) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func buildNetworkPolicies(in map[string]any) map[string]any {
+	if in == nil {
+		return map[string]any{}
+	}
+	// If caller passed a raw "items" slice, assume it's already a NetworkPolicySpec list.
+	if _, ok := in["items"]; ok {
+		return in
+	}
+	// Map a simple defaultDeny flag into a minimal NetworkPolicySpec that denies all traffic.
+	if v, ok := in["defaultDeny"]; ok {
+		if b, ok2 := v.(bool); ok2 && b {
+			return map[string]any{
+				"items": []any{
+					map[string]any{
+						"podSelector": map[string]any{},
+						"policyTypes": []any{"Ingress", "Egress"},
+					},
+				},
+			}
+		}
+	}
+	// Fallback: ignore unknown shape to avoid writing invalid fields.
+	return map[string]any{}
 }

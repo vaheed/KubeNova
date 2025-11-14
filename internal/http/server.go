@@ -991,11 +991,40 @@ func (s *APIServer) PutApiV1ClustersCTenantsTNetworkPolicies(w http.ResponseWrit
 
 // (GET /api/v1/clusters/{c}/tenants/{t}/summary)
 func (s *APIServer) GetApiV1ClustersCTenantsTSummary(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam) {
-	if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	_, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	sum, err := s.newCapsule(kb).TenantSummary(r.Context(), ten.Name)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	resp := TenantSummary{}
+	if len(sum.Namespaces) > 0 {
+		ns := sum.Namespaces
+		resp.Namespaces = &ns
+	}
+	if len(sum.Quotas) > 0 {
+		q := sum.Quotas
+		resp.Quotas = &q
+	}
+	if len(sum.Usages) > 0 {
+		u := sum.Usages
+		resp.Usages = &u
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(TenantSummary{})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // --- Projects ---
