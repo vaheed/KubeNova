@@ -129,11 +129,11 @@ func (c *client) GetTenant(ctx context.Context, name string) (Tenant, error) {
 }
 
 func (c *client) SetTenantQuotas(ctx context.Context, name string, quotas map[string]string) error {
-	return c.patchSpec(ctx, name, map[string]any{"resourceQuotas": map[string]any{"hard": quotas}})
+	return c.patchSpec(ctx, name, map[string]any{"resourceQuotas": map[string]any{"hard": toAnyMap(quotas)}})
 }
 
 func (c *client) SetTenantLimits(ctx context.Context, name string, limits map[string]string) error {
-	return c.patchSpec(ctx, name, map[string]any{"limitRanges": map[string]any{"limits": limits}})
+	return c.patchSpec(ctx, name, map[string]any{"limitRanges": map[string]any{"limits": toAnyMap(limits)}})
 }
 
 func (c *client) SetTenantNetworkPolicies(ctx context.Context, name string, spec map[string]any) error {
@@ -170,4 +170,12 @@ func toTenant(u *unstructured.Unstructured) Tenant {
 	}
 	t.Owners = owners
 	return t
+}
+
+func toAnyMap(in map[string]string) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
