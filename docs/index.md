@@ -111,6 +111,13 @@ curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/network-po
   -H 'Content-Type: application/json' $AUTH -d '{"defaultDeny":true}' -i
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/summary" $AUTH | jq .
 ```
+::: tip Tenant limits
+Quotas, limits, and network policies are applied at the Capsule `Tenant` level:
+- `quotas` → `spec.resourceQuotas` (plus a `kubenova.io/quotas` annotation for reporting).
+- `limits` → `spec.limitRanges`.
+- `network-policies` → `spec.networkPolicies`.
+`/summary` reports effective quotas and, when namespaces exist, lists namespaces labeled for the Tenant.
+:::
 
 Filter tenants by labels and owner
 ```bash
@@ -141,6 +148,12 @@ curl -sS -X PUT "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$
   -H 'Content-Type: application/json' $AUTH -d '{"members":[{"subject":"dev@example.com","role":"projectDev"}]}' -i
 curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/kubeconfig" $AUTH | jq .
 ```
+::: tip Projects → Namespaces & access
+Creating a project ensures a Kubernetes Namespace exists with labels:
+- `kubenova.project=<project>`, `kubenova.tenant=<tenant>`, `capsule.clastix.io/tenant=<tenant>`.
+`access` updates create per-project `Role` and `RoleBinding` objects in that namespace for each member, using the role to determine allowed verbs.
+Project kubeconfigs are proxy-based: they point at `CAPSULE_PROXY_URL` and are intended to be used together with short-lived tokens issued by capsule-proxy.
+:::
 
 ## 5) Apps
 

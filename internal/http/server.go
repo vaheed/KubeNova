@@ -182,6 +182,19 @@ func (s *APIServer) requireRoles(w http.ResponseWriter, r *http.Request, allowed
 	return false
 }
 
+func generateProxyKubeconfig(server, namespace string) []byte {
+	if strings.TrimSpace(server) == "" {
+		server = "https://proxy.kubenova.svc"
+	}
+	token := "placeholder"
+	nsLine := ""
+	if strings.TrimSpace(namespace) != "" {
+		nsLine = "    namespace: " + namespace + "\n"
+	}
+	cfg := "apiVersion: v1\nkind: Config\nclusters:\n- name: kn-proxy\n  cluster:\n    insecure-skip-tls-verify: true\n    server: " + server + "\ncontexts:\n- name: tenant\n  context:\n    cluster: kn-proxy\n    user: tenant-user\n" + nsLine + "current-context: tenant\nusers:\n- name: tenant-user\n  user:\n    token: " + token + "\n"
+	return []byte(cfg)
+}
+
 func (s *APIServer) rolesFromReq(r *http.Request) []string {
 	hdr := r.Header.Get("Authorization")
 	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
@@ -602,38 +615,40 @@ func (s *APIServer) PostApiV1ClustersCBootstrapComponent(w http.ResponseWriter, 
 
 // (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig)
 func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
-	// resolve cluster
-	_, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
-	if err != nil {
+	// ensure cluster, tenant, and project exist (uid-based lookups)
+	if _, _, err := s.st.GetClusterByUID(r.Context(), string(c)); err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
 		return
 	}
-	// ensure tenant/project exist (uid-based lookups)
-	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	if _, err := s.st.GetProjectByUID(r.Context(), string(p)); err != nil {
+	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	kb, _ := base64.StdEncoding.DecodeString(enc)
+	// For now, issue a kubeconfig targeting the configured proxy URL.
+	_ = ten // tenant reserved for future role-based token issuance
+	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), pr.Name)
 	exp := time.Now().UTC().Add(time.Hour)
-	resp := KubeconfigResponse{Kubeconfig: &kb, ExpiresAt: &exp}
+	resp := KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // (POST /api/v1/tenants/{t}/kubeconfig)
 func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.Request, t TenantParam) {
-	// best-effort: return short-lived minimal kubeconfig
+	// best-effort: return short-lived kubeconfig binding to the proxy URL
 	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	raw := []byte("apiVersion: v1\nclusters: []\ncontexts: []\nusers: []\n")
+	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), "")
 	exp := time.Now().UTC().Add(time.Hour)
-	resp := KubeconfigResponse{Kubeconfig: &raw, ExpiresAt: &exp}
+	resp := KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -1086,6 +1101,12 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjects(w http.ResponseWriter, r 
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
+	// Best-effort: ensure a project namespace exists and is labeled for Capsule.
+	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
+		if kb, decErr := base64.StdEncoding.DecodeString(enc); decErr == nil {
+			_ = clusterpkg.EnsureProjectNamespace(r.Context(), kb, ten.Name, in.Name)
+		}
+	}
 	if pr2, e := s.st.GetProject(r.Context(), pr.Tenant, pr.Name); e == nil && pr2.UID != "" {
 		u := pr2.UID
 		in.Uid = &u
@@ -1159,7 +1180,44 @@ func (s *APIServer) DeleteApiV1ClustersCTenantsTProjectsP(w http.ResponseWriter,
 
 // (PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access)
 func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAccess(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
-	if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner") {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
+		return
+	}
+	var body ProjectAccess
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	members := []clusterpkg.ProjectAccessMember{}
+	if body.Members != nil {
+		for _, m := range *body.Members {
+			if strings.TrimSpace(m.Subject) == "" {
+				continue
+			}
+			members = append(members, clusterpkg.ProjectAccessMember{
+				Subject: m.Subject,
+				Role:    string(m.Role),
+			})
+		}
+	}
+	_, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	if err := clusterpkg.EnsureProjectAccess(r.Context(), kb, ten.Name, pr.Name, members); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusOK)

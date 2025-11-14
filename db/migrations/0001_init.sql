@@ -6,8 +6,12 @@ CREATE TABLE IF NOT EXISTS tenants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   uid TEXT UNIQUE NOT NULL,
   name TEXT UNIQUE NOT NULL,
+  owners TEXT[] DEFAULT '{}'::text[],
+  labels JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMP DEFAULT NOW()
 );
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS owners TEXT[] DEFAULT '{}'::text[];
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS labels JSONB DEFAULT '{}'::jsonb;
 CREATE TABLE IF NOT EXISTS projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   uid TEXT UNIQUE NOT NULL,

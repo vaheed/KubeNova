@@ -48,27 +48,51 @@ func (p *Postgres) CreateTenant(ctx context.Context, t types.Tenant) error {
 	if t.UID == "" {
 		t.UID = types.NewID().String()
 	}
-	_, err := p.db.Exec(ctx, `INSERT INTO tenants(uid, name, created_at) VALUES ($1,$2,$3) ON CONFLICT (name) DO NOTHING`, t.UID, t.Name, t.CreatedAt)
+	labels := mapToJSONB(t.Labels)
+	owners := t.Owners
+	_, err := p.db.Exec(ctx, `
+INSERT INTO tenants(uid, name, owners, labels, created_at)
+VALUES ($1,$2,$3,$4,$5)
+ON CONFLICT (name) DO UPDATE
+SET owners = EXCLUDED.owners,
+    labels = EXCLUDED.labels
+`, t.UID, t.Name, owners, labels, t.CreatedAt)
 	return err
 }
 func (p *Postgres) GetTenant(ctx context.Context, name string) (types.Tenant, error) {
 	var t types.Tenant
-	err := p.db.QueryRow(ctx, `SELECT uid, name, created_at FROM tenants WHERE name=$1`, name).Scan(&t.UID, &t.Name, &t.CreatedAt)
+	var labels map[string]string
+	err := p.db.QueryRow(ctx, `
+SELECT uid, name, owners, labels, created_at
+FROM tenants
+WHERE name=$1
+`, name).Scan(&t.UID, &t.Name, &t.Owners, &labels, &t.CreatedAt)
 	if err != nil {
 		return types.Tenant{}, ErrNotFound
 	}
+	t.Labels = labels
 	return t, nil
 }
 func (p *Postgres) GetTenantByUID(ctx context.Context, uid string) (types.Tenant, error) {
 	var t types.Tenant
-	err := p.db.QueryRow(ctx, `SELECT uid, name, created_at FROM tenants WHERE uid=$1`, uid).Scan(&t.UID, &t.Name, &t.CreatedAt)
+	var labels map[string]string
+	err := p.db.QueryRow(ctx, `
+SELECT uid, name, owners, labels, created_at
+FROM tenants
+WHERE uid=$1
+`, uid).Scan(&t.UID, &t.Name, &t.Owners, &labels, &t.CreatedAt)
 	if err != nil {
 		return types.Tenant{}, ErrNotFound
 	}
+	t.Labels = labels
 	return t, nil
 }
 func (p *Postgres) ListTenants(ctx context.Context) ([]types.Tenant, error) {
-	rows, err := p.db.Query(ctx, `SELECT uid, name, created_at FROM tenants ORDER BY name`)
+	rows, err := p.db.Query(ctx, `
+SELECT uid, name, owners, labels, created_at
+FROM tenants
+ORDER BY name
+`)
 	if err != nil {
 		return nil, err
 	}
@@ -76,9 +100,11 @@ func (p *Postgres) ListTenants(ctx context.Context) ([]types.Tenant, error) {
 	var out []types.Tenant
 	for rows.Next() {
 		var t types.Tenant
-		if err := rows.Scan(&t.UID, &t.Name, &t.CreatedAt); err != nil {
+		var labels map[string]string
+		if err := rows.Scan(&t.UID, &t.Name, &t.Owners, &labels, &t.CreatedAt); err != nil {
 			return nil, err
 		}
+		t.Labels = labels
 		out = append(out, t)
 	}
 	return out, nil
@@ -287,8 +313,12 @@ CREATE TABLE IF NOT EXISTS tenants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   uid TEXT UNIQUE NOT NULL,
   name TEXT UNIQUE NOT NULL,
+  owners TEXT[] DEFAULT '{}'::text[],
+  labels JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMP DEFAULT NOW()
 );
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS owners TEXT[] DEFAULT '{}'::text[];
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS labels JSONB DEFAULT '{}'::jsonb;
 CREATE TABLE IF NOT EXISTS projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   uid TEXT UNIQUE NOT NULL,

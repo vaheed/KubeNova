@@ -1,0 +1,63 @@
+---
+title: KubeNova Roadmap (API v1)
+---
+
+# KubeNova Roadmap
+
+This roadmap tracks bringing the current API implementation in line with `docs/index.md` and `docs/openapi/openapi.yaml`, and getting the Manager/Agent ready for production use.
+
+## Phase 1 — Tenants & Capsule Integration
+
+- **Persist tenant metadata** ✅
+  - Store `owners` and `labels` for tenants in Postgres (not just in-memory).
+  - Ensure `ListTenants` returns full metadata in both memory and Postgres stores.
+  - Make `/api/v1/clusters/{c}/tenants?labelSelector=...` and `?owner=...` filters work against persisted fields.
+- **Stabilize Capsule quotas/limits/netpolicies** ✅
+  - Preserve `spec.resourceQuotas` when updating `limitRanges` and `networkPolicies`.
+  - Store quotas in a KubeNova-owned annotation for compatibility across Capsule versions.
+  - Make `/summary` stable even after multiple quota/limits/netpol updates.
+- **Tenant summary** ⚙️
+  - List namespaces belonging to a tenant (via Capsule labels).
+  - Return effective quotas and (later) usage in `/summary`.
+
+## Phase 2 — Projects → Namespaces & Access
+
+- **Project to Namespace mapping** ✅
+  - Introduce a controller that mirrors Projects from the store into real Namespaces on the target cluster.
+  - Label namespaces with `kubenova.project` and `capsule.clastix.io/tenant` for Capsule and reporting.
+- **Project access & RBAC** ✅
+  - Implement `PUT /projects/{p}/access` to create/update Roles and RoleBindings in the project namespace.
+  - Map roles (`tenantOwner`, `projectDev`, `readOnly`) to concrete RBAC rules.
+- **Scoped project kubeconfig** ⚙️
+  - Replace the current “raw cluster kubeconfig” stub with a project-scoped kubeconfig from capsule-proxy.
+  - Ensure project kubeconfigs cannot list or mutate resources outside their namespace.
+
+## Phase 3 — Usage & Metrics
+
+- **Metrics ingestion**
+  - Decide on a metrics backend (e.g., Prometheus, agent-reported metrics).
+  - Extend `/sync/metrics` ingestion to store per-tenant and per-project usage.
+- **Usage endpoints**
+  - Implement real `GET /api/v1/tenants/{t}/usage` using metrics data.
+  - Implement real `GET /api/v1/projects/{p}/usage` using metrics data.
+  - Optionally surface usage aggregates in tenant `/summary`.
+
+## Phase 4 — PolicySets & Catalog
+
+- **PolicySets persistence**
+  - Persist PolicySets in Postgres or a CRD instead of in-memory maps.
+  - Wire `GET/POST/PUT/DELETE /tenants/{t}/policysets` to the persistent store.
+- **PolicySet catalog**
+  - Move the hard-coded PolicySet catalog into data (config table or CRDs).
+  - Allow the catalog to be extended without code changes.
+
+## Phase 5 — Auth, RBAC & Dev/Prod Parity
+
+- **Auth & “me” endpoint**
+  - Make `GET /api/v1/me` return the real subject from JWT (`sub`) and effective roles.
+  - Align token issuance (`/tokens`) with production RBAC expectations.
+- **Readiness & health**
+  - Extend `/readyz` to check DB, critical external services, and migration status.
+- **Dev vs production behavior**
+  - Reduce stubs where behavior differs significantly (kubeconfigs, usage, quotas/limits synchronization).
+  - Document remaining dev-only shortcuts (if any) clearly in `docs/index.md`.

@@ -185,7 +185,18 @@ func (c *client) SetTenantQuotas(ctx context.Context, name string, quotas map[st
 func (c *client) SetTenantLimits(ctx context.Context, name string, limits map[string]string) error {
 	// Capsule Tenant.spec.limitRanges is an object with:
 	// - items: []LimitRangeSpec{ { limits: []LimitRangeItem{ { type: "...", max: {...} } } } }
-	return c.patchSpec(ctx, name, map[string]any{
+	// Preserve any existing KubeNova quotas annotation while updating limits.
+	u, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	var quotasAnn string
+	if ann := u.GetAnnotations(); ann != nil {
+		if raw, ok := ann["kubenova.io/quotas"]; ok {
+			quotasAnn = raw
+		}
+	}
+	if err := c.patchSpec(ctx, name, map[string]any{
 		"limitRanges": map[string]any{
 			"items": []any{
 				map[string]any{
@@ -198,11 +209,61 @@ func (c *client) SetTenantLimits(ctx context.Context, name string, limits map[st
 				},
 			},
 		},
-	})
+	}); err != nil {
+		return err
+	}
+	if quotasAnn != "" {
+		// Re-apply quotas annotation if Capsule or previous updates dropped it.
+		u2, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		ann := u2.GetAnnotations()
+		if ann == nil {
+			ann = map[string]string{}
+		}
+		ann["kubenova.io/quotas"] = quotasAnn
+		u2.SetAnnotations(ann)
+		_, err = c.dyn.Resource(tenantGVR).Update(ctx, u2, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *client) SetTenantNetworkPolicies(ctx context.Context, name string, spec map[string]any) error {
-	return c.patchSpec(ctx, name, map[string]any{"networkPolicies": buildNetworkPolicies(spec)})
+	// Preserve KubeNova quotas annotation while updating network policies.
+	u, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	var quotasAnn string
+	if ann := u.GetAnnotations(); ann != nil {
+		if raw, ok := ann["kubenova.io/quotas"]; ok {
+			quotasAnn = raw
+		}
+	}
+	if err := c.patchSpec(ctx, name, map[string]any{"networkPolicies": buildNetworkPolicies(spec)}); err != nil {
+		return err
+	}
+	if quotasAnn != "" {
+		u2, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		ann := u2.GetAnnotations()
+		if ann == nil {
+			ann = map[string]string{}
+		}
+		ann["kubenova.io/quotas"] = quotasAnn
+		u2.SetAnnotations(ann)
+		_, err = c.dyn.Resource(tenantGVR).Update(ctx, u2, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *client) TenantSummary(ctx context.Context, name string) (Summary, error) {
