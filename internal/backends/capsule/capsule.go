@@ -2,6 +2,7 @@ package capsule
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	capadapter "github.com/vaheed/kubenova/internal/adapters/capsule"
@@ -148,7 +149,7 @@ func (c *client) SetTenantQuotas(ctx context.Context, name string, quotas map[st
 	// Capsule Tenant.spec.resourceQuotas is an object with:
 	// - scope: "Tenant" | "Namespace"
 	// - items: []ResourceQuotaSpec{ { hard: {...} } }
-	return c.patchSpec(ctx, name, map[string]any{
+	if err := c.patchSpec(ctx, name, map[string]any{
 		"resourceQuotas": map[string]any{
 			"scope": "Tenant",
 			"items": []any{
@@ -157,7 +158,28 @@ func (c *client) SetTenantQuotas(ctx context.Context, name string, quotas map[st
 				},
 			},
 		},
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Also persist quotas in a KubeNova-owned annotation so summary can remain
+	// stable across Capsule versions and CRD evolutions.
+	u, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(quotas)
+	if err != nil {
+		return fmt.Errorf("marshal quotas: %w", err)
+	}
+	ann := u.GetAnnotations()
+	if ann == nil {
+		ann = map[string]string{}
+	}
+	ann["kubenova.io/quotas"] = string(data)
+	u.SetAnnotations(ann)
+	_, err = c.dyn.Resource(tenantGVR).Update(ctx, u, metav1.UpdateOptions{})
+	return err
 }
 
 func (c *client) SetTenantLimits(ctx context.Context, name string, limits map[string]string) error {
@@ -224,6 +246,19 @@ func (c *client) TenantSummary(ctx context.Context, name string) (Summary, error
 			}
 		}
 	}
+
+	// 3) Fallback to KubeNova-specific annotation if spec does not expose quotas.
+	if len(out.Quotas) == 0 {
+		if ann := u.GetAnnotations(); ann != nil {
+			if raw, ok := ann["kubenova.io/quotas"]; ok && raw != "" {
+				q := map[string]string{}
+				if err := json.Unmarshal([]byte(raw), &q); err == nil {
+					out.Quotas = q
+				}
+			}
+		}
+	}
+
 	return out, nil
 }
 
