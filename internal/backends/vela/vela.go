@@ -3,6 +3,7 @@ package vela
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	vadapter "github.com/vaheed/kubenova/internal/adapters/vela"
@@ -13,8 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"strconv"
 )
 
 // Client abstracts app delivery concepts without leaking vendor constructs.
@@ -53,6 +54,20 @@ func New(kubeconfig []byte) Client {
 	if err != nil {
 		return &noop{}
 	}
+	return newFromRESTConfig(cfg)
+}
+
+// NewFromRESTConfig returns a client using an in-cluster or external REST config.
+// This is used by the in-cluster Agent reconcilers so they project Apps without
+// needing raw kubeconfig bytes.
+func NewFromRESTConfig(cfg *rest.Config) Client {
+	if cfg == nil {
+		return &noop{}
+	}
+	return newFromRESTConfig(cfg)
+}
+
+func newFromRESTConfig(cfg *rest.Config) Client {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return &noop{}
@@ -172,6 +187,16 @@ func (n *noop) ImageUpdate(ctx context.Context, ns, name, component, image, tag 
 // real impl methods
 func (c *client) EnsureApp(ctx context.Context, ns, name string, spec map[string]any) error {
 	u := vadapter.ApplicationCR(ns, name, "")
+	if len(spec) > 0 {
+		// If a spec map is provided (for example from AppReconciler via ConfigMap),
+		// use it as the Application spec so higher-level controllers can shape
+		// components/traits/policies (including Helm-based apps like WordPress).
+		copied := map[string]any{}
+		for k, v := range spec {
+			copied[k] = v
+		}
+		u.Object["spec"] = copied
+	}
 	cur, err := c.dyn.Resource(appGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {

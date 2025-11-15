@@ -140,6 +140,9 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 	op := func(method, path string, body []byte) {
 		req, _ := http.NewRequest(method, ts.URL+path, bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer test")
+		req.Header.Set("X-KN-Roles", "projectDev")
+		req.Header.Set("X-KN-Tenant", "t")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)

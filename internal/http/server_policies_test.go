@@ -42,6 +42,9 @@ func (f *fakeCaps) SetTenantNetworkPolicies(_ context.Context, _ string, _ map[s
 	f.netpolCalled = true
 	return nil
 }
+func (f *fakeCaps) TenantSummary(_ context.Context, _ string) (capib.Summary, error) {
+	return capib.Summary{}, nil
+}
 
 func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	st := store.NewMemory()

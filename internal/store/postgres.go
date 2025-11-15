@@ -43,32 +43,65 @@ func (p *Postgres) applyMigration(ctx context.Context) error {
 
 func (p *Postgres) Close(ctx context.Context) error { p.db.Close(); return nil }
 
+// Health reports whether the underlying database connection pool is usable.
+// It is safe to call frequently from readiness checks.
+func (p *Postgres) Health(ctx context.Context) error {
+	if p.db == nil {
+		return nil
+	}
+	return p.db.Ping(ctx)
+}
+
 func (p *Postgres) CreateTenant(ctx context.Context, t types.Tenant) error {
 	t.CreatedAt = stamp(t.CreatedAt)
 	if t.UID == "" {
 		t.UID = types.NewID().String()
 	}
-	_, err := p.db.Exec(ctx, `INSERT INTO tenants(uid, name, created_at) VALUES ($1,$2,$3) ON CONFLICT (name) DO NOTHING`, t.UID, t.Name, t.CreatedAt)
+	labels := mapToJSONB(t.Labels)
+	owners := t.Owners
+	_, err := p.db.Exec(ctx, `
+INSERT INTO tenants(uid, name, owners, labels, created_at)
+VALUES ($1,$2,$3,$4,$5)
+ON CONFLICT (name) DO UPDATE
+SET owners = EXCLUDED.owners,
+    labels = EXCLUDED.labels
+`, t.UID, t.Name, owners, labels, t.CreatedAt)
 	return err
 }
 func (p *Postgres) GetTenant(ctx context.Context, name string) (types.Tenant, error) {
 	var t types.Tenant
-	err := p.db.QueryRow(ctx, `SELECT uid, name, created_at FROM tenants WHERE name=$1`, name).Scan(&t.UID, &t.Name, &t.CreatedAt)
+	var labels map[string]string
+	err := p.db.QueryRow(ctx, `
+SELECT uid, name, owners, labels, created_at
+FROM tenants
+WHERE name=$1
+`, name).Scan(&t.UID, &t.Name, &t.Owners, &labels, &t.CreatedAt)
 	if err != nil {
 		return types.Tenant{}, ErrNotFound
 	}
+	t.Labels = labels
 	return t, nil
 }
 func (p *Postgres) GetTenantByUID(ctx context.Context, uid string) (types.Tenant, error) {
 	var t types.Tenant
-	err := p.db.QueryRow(ctx, `SELECT uid, name, created_at FROM tenants WHERE uid=$1`, uid).Scan(&t.UID, &t.Name, &t.CreatedAt)
+	var labels map[string]string
+	err := p.db.QueryRow(ctx, `
+SELECT uid, name, owners, labels, created_at
+FROM tenants
+WHERE uid=$1
+`, uid).Scan(&t.UID, &t.Name, &t.Owners, &labels, &t.CreatedAt)
 	if err != nil {
 		return types.Tenant{}, ErrNotFound
 	}
+	t.Labels = labels
 	return t, nil
 }
 func (p *Postgres) ListTenants(ctx context.Context) ([]types.Tenant, error) {
-	rows, err := p.db.Query(ctx, `SELECT uid, name, created_at FROM tenants ORDER BY name`)
+	rows, err := p.db.Query(ctx, `
+SELECT uid, name, owners, labels, created_at
+FROM tenants
+ORDER BY name
+`)
 	if err != nil {
 		return nil, err
 	}
@@ -76,9 +109,11 @@ func (p *Postgres) ListTenants(ctx context.Context) ([]types.Tenant, error) {
 	var out []types.Tenant
 	for rows.Next() {
 		var t types.Tenant
-		if err := rows.Scan(&t.UID, &t.Name, &t.CreatedAt); err != nil {
+		var labels map[string]string
+		if err := rows.Scan(&t.UID, &t.Name, &t.Owners, &labels, &t.CreatedAt); err != nil {
 			return nil, err
 		}
+		t.Labels = labels
 		out = append(out, t)
 	}
 	return out, nil
@@ -185,6 +220,65 @@ func (p *Postgres) DeleteApp(ctx context.Context, tenant, project, name string) 
 	return err
 }
 
+// PolicySets
+
+func (p *Postgres) CreatePolicySet(ctx context.Context, ps types.PolicySet) error {
+	ps.CreatedAt = stamp(ps.CreatedAt)
+	_, err := p.db.Exec(ctx, `
+INSERT INTO policysets(tenant_uid, name, spec, created_at)
+VALUES ($1,$2,$3,$4)
+ON CONFLICT (tenant_uid,name) DO UPDATE
+SET spec = EXCLUDED.spec
+`, ps.Tenant, ps.Name, ps.Policies, ps.CreatedAt)
+	return err
+}
+
+func (p *Postgres) ListPolicySets(ctx context.Context, tenantUID string) ([]types.PolicySet, error) {
+	rows, err := p.db.Query(ctx, `
+SELECT name, spec, created_at
+FROM policysets
+WHERE tenant_uid=$1
+ORDER BY name
+`, tenantUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []types.PolicySet
+	for rows.Next() {
+		var ps types.PolicySet
+		ps.Tenant = tenantUID
+		if err := rows.Scan(&ps.Name, &ps.Policies, &ps.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ps)
+	}
+	return out, nil
+}
+
+func (p *Postgres) GetPolicySet(ctx context.Context, tenantUID, name string) (types.PolicySet, error) {
+	var ps types.PolicySet
+	ps.Tenant = tenantUID
+	err := p.db.QueryRow(ctx, `
+SELECT name, spec, created_at
+FROM policysets
+WHERE tenant_uid=$1 AND name=$2
+`, tenantUID, name).Scan(&ps.Name, &ps.Policies, &ps.CreatedAt)
+	if err != nil {
+		return types.PolicySet{}, ErrNotFound
+	}
+	return ps, nil
+}
+
+func (p *Postgres) UpdatePolicySet(ctx context.Context, ps types.PolicySet) error {
+	return p.CreatePolicySet(ctx, ps)
+}
+
+func (p *Postgres) DeletePolicySet(ctx context.Context, tenantUID, name string) error {
+	_, err := p.db.Exec(ctx, `DELETE FROM policysets WHERE tenant_uid=$1 AND name=$2`, tenantUID, name)
+	return err
+}
+
 // Ensure interface compliance
 var _ Store = (*Postgres)(nil)
 
@@ -287,8 +381,12 @@ CREATE TABLE IF NOT EXISTS tenants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   uid TEXT UNIQUE NOT NULL,
   name TEXT UNIQUE NOT NULL,
+  owners TEXT[] DEFAULT '{}'::text[],
+  labels JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMP DEFAULT NOW()
 );
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS owners TEXT[] DEFAULT '{}'::text[];
+ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS labels JSONB DEFAULT '{}'::jsonb;
 CREATE TABLE IF NOT EXISTS projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   uid TEXT UNIQUE NOT NULL,
@@ -303,6 +401,14 @@ CREATE TABLE IF NOT EXISTS apps (
   project TEXT NOT NULL,
   name TEXT NOT NULL,
   UNIQUE(tenant,project,name)
+);
+CREATE TABLE IF NOT EXISTS policysets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_uid TEXT NOT NULL,
+  name TEXT NOT NULL,
+  spec JSONB NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(tenant_uid,name)
 );
 
 CREATE TABLE IF NOT EXISTS clusters (

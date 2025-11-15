@@ -2,9 +2,12 @@ package reconcile
 
 import (
 	"context"
+
 	"github.com/vaheed/kubenova/internal/logging"
+	"github.com/vaheed/kubenova/internal/telemetry"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	metav1api "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -59,10 +62,22 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		}
 		// ensure Capsule Tenant exists using unstructured
 		if err := ensureCapsuleTenant(ctx, r.Client, tenant); err != nil {
+			// If Capsule CRDs are not installed yet, requeue quietly while bootstrap completes.
+			if metav1api.IsNoMatchError(err) {
+				logging.FromContext(ctx).With(zap.String("adapter", "capsule"), zap.String("tenant", tenant)).Info("waiting for Capsule CRDs; will retry")
+				return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
+			}
 			logging.FromContext(ctx).With(zap.String("adapter", "capsule"), zap.String("tenant", tenant)).Error("ensure tenant", zap.Error(err))
 			return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
 		}
 		logging.FromContext(ctx).With(zap.String("adapter", "capsule"), zap.String("tenant", tenant)).Info("tenant ensured")
+		telemetry.PublishEvent(map[string]any{
+			"type":      "namespace",
+			"tenant":    tenant,
+			"project":   ns.Labels["kubenova.project"],
+			"name":      ns.Name,
+			"operation": "reconciled",
+		})
 		return reconcile.Result{}, nil
 	}
 	// Create namespace if missing

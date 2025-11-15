@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -12,11 +13,17 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	capib "github.com/vaheed/kubenova/internal/backends/capsule"
+	"github.com/vaheed/kubenova/internal/logging"
+	"go.uber.org/zap"
 	velab "github.com/vaheed/kubenova/internal/backends/vela"
 	clusterpkg "github.com/vaheed/kubenova/internal/cluster"
 	"github.com/vaheed/kubenova/internal/lib/httperr"
 	"github.com/vaheed/kubenova/internal/store"
 	kn "github.com/vaheed/kubenova/pkg/types"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // APIServer implements a subset of the contract (Clusters + Tenants) and embeds
@@ -41,11 +48,11 @@ type APIServer struct {
 		ImageUpdate(context.Context, string, string, string, string, string) error
 		DeleteApp(context.Context, string, string) error
 	}
-	psMu       sync.RWMutex
-	policysets map[string]map[string]PolicySet // tenantUID -> name -> item
-	runsMu     sync.RWMutex
-	runsByID   map[string]WorkflowRun
-	runsByApp  map[string][]WorkflowRun // key: tenantUID|projectUID|appUID
+	policysetCatalog []PolicySet
+	planCatalog      []Plan
+	runsMu           sync.RWMutex
+	runsByID         map[string]WorkflowRun
+	runsByApp        map[string][]WorkflowRun // key: tenantUID|projectUID|appUID
 }
 
 func NewAPIServer(st store.Store) *APIServer {
@@ -70,10 +77,94 @@ func NewAPIServer(st store.Store) *APIServer {
 		} {
 			return velab.New(b)
 		},
-		policysets: map[string]map[string]PolicySet{},
-		runsByID:   map[string]WorkflowRun{},
-		runsByApp:  map[string][]WorkflowRun{},
+		policysetCatalog: loadPolicySetCatalog(),
+		planCatalog:      loadPlanCatalog(),
+		runsByID:         map[string]WorkflowRun{},
+		runsByApp:        map[string][]WorkflowRun{},
 	}
+}
+
+// ensureAppConfigMap creates or updates a ConfigMap in the project namespace
+// that encodes the App model for the in-cluster AppReconciler. Best-effort:
+// failures are logged and do not affect the HTTP response.
+func (s *APIServer) ensureAppConfigMap(ctx context.Context, clusterUID, projectNS, tenantName string, in App) error {
+	_, enc, err := s.st.GetClusterByUID(ctx, clusterUID)
+	if err != nil || enc == "" {
+		return nil
+	}
+	kb, err := base64.StdEncoding.DecodeString(enc)
+	if err != nil {
+		return nil
+	}
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(kb)
+	if err != nil {
+		return nil
+	}
+	cset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil
+	}
+	name := in.Name
+	if strings.TrimSpace(name) == "" {
+		return nil
+	}
+	cmClient := cset.CoreV1().ConfigMaps(projectNS)
+	spec := map[string]any{}
+	if in.Components != nil {
+		spec["components"] = *in.Components
+	}
+	if in.Description != nil {
+		spec["description"] = *in.Description
+	}
+	rawSpec, _ := json.Marshal(spec)
+	rawTraits, _ := json.Marshal(zeroOrSlice(in.Traits))
+	rawPolicies, _ := json.Marshal(zeroOrSlice(in.Policies))
+	data := map[string]string{
+		"spec":     string(rawSpec),
+		"traits":   string(rawTraits),
+		"policies": string(rawPolicies),
+	}
+	if cm, err := cmClient.Get(ctx, name, metav1.GetOptions{}); err == nil {
+		if cm.Labels == nil {
+			cm.Labels = map[string]string{}
+		}
+		cm.Labels["kubenova.app"] = name
+		cm.Labels["kubenova.tenant"] = tenantName
+		cm.Labels["kubenova.project"] = projectNS
+		if cm.Data == nil {
+			cm.Data = map[string]string{}
+		}
+		for k, v := range data {
+			cm.Data[k] = v
+		}
+		if _, err := cmClient.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+			logging.FromContext(ctx).Error("update app configmap", zap.Error(err))
+		}
+		return nil
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: projectNS,
+			Labels: map[string]string{
+				"kubenova.app":     name,
+				"kubenova.tenant":  tenantName,
+				"kubenova.project": projectNS,
+			},
+		},
+		Data: data,
+	}
+	if _, err := cmClient.Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		logging.FromContext(ctx).Error("create app configmap", zap.Error(err))
+	}
+	return nil
+}
+
+func zeroOrSlice(ptr *[]map[string]any) []map[string]any {
+	if ptr == nil {
+		return []map[string]any{}
+	}
+	return *ptr
 }
 
 // --- helpers ---
@@ -90,6 +181,301 @@ func (s *APIServer) writeError(w http.ResponseWriter, status int, code, msg stri
 	httperr.Write(w, status, code, msg)
 }
 
+// encodePolicySet converts an HTTP PolicySet DTO into the internal types.PolicySet
+// representation by preserving the entire JSON structure in the Policies map.
+func encodePolicySet(tenantUID string, dto PolicySet) (kn.PolicySet, error) {
+	b, err := json.Marshal(dto)
+	if err != nil {
+		return kn.PolicySet{}, err
+	}
+	spec := map[string]any{}
+	if err := json.Unmarshal(b, &spec); err != nil {
+		return kn.PolicySet{}, err
+	}
+	return kn.PolicySet{
+		Name:     dto.Name,
+		Tenant:   tenantUID,
+		Policies: spec,
+	}, nil
+}
+
+// decodePolicySet converts a stored types.PolicySet back into the HTTP DTO.
+func decodePolicySet(stored kn.PolicySet) (PolicySet, error) {
+	if stored.Policies == nil {
+		return PolicySet{Name: stored.Name}, nil
+	}
+	b, err := json.Marshal(stored.Policies)
+	if err != nil {
+		return PolicySet{}, err
+	}
+	var dto PolicySet
+	if err := json.Unmarshal(b, &dto); err != nil {
+		return PolicySet{}, err
+	}
+	if strings.TrimSpace(dto.Name) == "" {
+		dto.Name = stored.Name
+	}
+	return dto, nil
+}
+
+// applyPlanToTenant attaches quotas/limits and PolicySets for the given plan name to the tenant UID.
+func (s *APIServer) applyPlanToTenant(ctx context.Context, tenantUID, planName string) (Plan, error) {
+	var plan *Plan
+	for i := range s.planCatalog {
+		if s.planCatalog[i].Name == planName {
+			plan = &s.planCatalog[i]
+			break
+		}
+	}
+	if plan == nil {
+		return Plan{}, fmt.Errorf("plan not found")
+	}
+	ten, err := s.st.GetTenantByUID(ctx, tenantUID)
+	if err != nil {
+		return Plan{}, err
+	}
+	if ten.Labels == nil {
+		ten.Labels = map[string]string{}
+	}
+	clusterUID := ten.Labels["kubenova.cluster"]
+	if strings.TrimSpace(clusterUID) == "" {
+		return Plan{}, fmt.Errorf("tenant has no primary cluster")
+	}
+	_, enc, err := s.st.GetClusterByUID(ctx, clusterUID)
+	if err != nil {
+		return Plan{}, err
+	}
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	caps := s.newCapsule(kb)
+	if err := caps.EnsureTenant(ctx, ten.Name, ten.Owners, ten.Labels); err != nil {
+		return Plan{}, err
+	}
+	// Apply quotas from plan (cpu/memory) and optional pods limits.
+	if len(plan.TenantQuotas) > 0 {
+		quotas := map[string]string{}
+		for k, v := range plan.TenantQuotas {
+			if k == "pods" {
+				continue
+			}
+			quotas[k] = v
+		}
+		if len(quotas) > 0 {
+			if err := caps.SetTenantQuotas(ctx, ten.Name, quotas); err != nil {
+				return Plan{}, err
+			}
+		}
+		if pods, ok := plan.TenantQuotas["pods"]; ok {
+			if err := caps.SetTenantLimits(ctx, ten.Name, map[string]string{"pods": pods}); err != nil {
+				return Plan{}, err
+			}
+		}
+	}
+	// Ensure referenced PolicySets exist and are attached to this tenant.
+	for _, psName := range plan.Policysets {
+		var cat *PolicySet
+		for i := range s.policysetCatalog {
+			if s.policysetCatalog[i].Name == psName {
+				cat = &s.policysetCatalog[i]
+				break
+			}
+		}
+		if cat == nil {
+			return Plan{}, fmt.Errorf("plan references unknown policyset")
+		}
+		dto := *cat
+		// Attach to tenant by name so policies/traits apply across all projects.
+		tenantName := ten.Name
+		attached := []struct {
+			Project *string `json:"project,omitempty"`
+			Tenant  *string `json:"tenant,omitempty"`
+		}{}
+		if dto.AttachedTo != nil {
+			attached = *dto.AttachedTo
+		}
+		found := false
+		for _, at := range attached {
+			if at.Tenant != nil && *at.Tenant == tenantName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			attached = append(attached, struct {
+				Project *string `json:"project,omitempty"`
+				Tenant  *string `json:"tenant,omitempty"`
+			}{Tenant: &tenantName})
+		}
+		dto.AttachedTo = &attached
+		ps, err := encodePolicySet(ten.UID, dto)
+		if err != nil {
+			return Plan{}, err
+		}
+		if err := s.st.CreatePolicySet(ctx, ps); err != nil {
+			return Plan{}, err
+		}
+	}
+	// Persist selected plan on tenant annotations.
+	if ten.Annotations == nil {
+		ten.Annotations = map[string]string{}
+	}
+	ten.Annotations["kubenova.io/plan"] = plan.Name
+	if err := s.st.UpdateTenant(ctx, ten); err != nil {
+		return Plan{}, err
+	}
+	return *plan, nil
+}
+
+// (PUT /api/v1/tenants/{t}/plan)
+func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request, t TenantParam) {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	plan, err := s.applyPlanToTenant(r.Context(), ten.UID, strings.TrimSpace(body.Name))
+	if err != nil {
+		// Map known error cases to KN-4xx where possible.
+		if strings.Contains(err.Error(), "plan not found") {
+			s.writeError(w, http.StatusNotFound, "KN-404", "plan not found")
+			return
+		}
+		if strings.Contains(err.Error(), "primary cluster") {
+			s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "tenant has no primary cluster")
+			return
+		}
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(plan)
+}
+
+// applyPolicySets inspects tenant-level PolicySets that are attached to the given
+// tenant/project and materializes their Vela traits/policies before a deploy.
+// It is best-effort: failures are surfaced as errors, but absence of policysets is allowed.
+func (s *APIServer) applyPolicySets(ctx context.Context, kubeconfig []byte, tenantUID, namespace, appName string) error {
+	// Resolve tenant by UID to get its name for matching.
+	ten, err := s.st.GetTenantByUID(ctx, tenantUID)
+	if err != nil {
+		return nil
+	}
+	items, err := s.st.ListPolicySets(ctx, tenantUID)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	var traits []map[string]any
+	var policies []map[string]any
+
+	for _, ps := range items {
+		dto, derr := decodePolicySet(ps)
+		if derr != nil {
+			return derr
+		}
+		// Filter by attachedTo: match when attached tenant or project is this app's scope.
+		if dto.AttachedTo != nil && len(*dto.AttachedTo) > 0 {
+			match := false
+			for _, at := range *dto.AttachedTo {
+				if at.Tenant != nil && *at.Tenant == ten.Name {
+					match = true
+				}
+				if at.Project != nil && *at.Project == namespace {
+					match = true
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		if dto.Rules == nil {
+			continue
+		}
+		for _, r := range *dto.Rules {
+			kind, _ := r["kind"].(string)
+			switch kind {
+			case "vela.trait":
+				if spec, ok := r["spec"].(map[string]any); ok {
+					traits = append(traits, spec)
+				}
+			case "vela.policy":
+				if spec, ok := r["spec"].(map[string]any); ok {
+					policies = append(policies, spec)
+				}
+			}
+		}
+	}
+	if len(traits) == 0 && len(policies) == 0 {
+		return nil
+	}
+	backend := s.newVela(kubeconfig)
+	if len(traits) > 0 {
+		if err := backend.SetTraits(ctx, namespace, appName, traits); err != nil {
+			return err
+		}
+	}
+	if len(policies) > 0 {
+		if err := backend.SetPolicies(ctx, namespace, appName, policies); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// loadPolicySetCatalog loads the cluster-wide PolicySet catalog from data.
+// If the file is missing or invalid, it falls back to a minimal built-in baseline.
+func loadPolicySetCatalog() []PolicySet {
+	path := "docs/catalog/policysets.json"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		desc := "Base guardrails"
+		return []PolicySet{{Name: "baseline", Description: &desc}}
+	}
+	var items []PolicySet
+	if err := json.Unmarshal(b, &items); err != nil || len(items) == 0 {
+		desc := "Base guardrails"
+		return []PolicySet{{Name: "baseline", Description: &desc}}
+	}
+	return items
+}
+
+// Plan describes a tenant plan (quotas + PolicySets) loaded from docs/catalog/plans.json.
+type Plan struct {
+	Name         string            `json:"name"`
+	Description  *string           `json:"description,omitempty"`
+	TenantQuotas map[string]string `json:"tenantQuotas,omitempty"`
+	Policysets   []string          `json:"policysets,omitempty"`
+}
+
+// loadPlanCatalog loads the tenant plans catalog from data.
+func loadPlanCatalog() []Plan {
+	path := "docs/catalog/plans.json"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var items []Plan
+	if err := json.Unmarshal(b, &items); err != nil {
+		return nil
+	}
+	return items
+}
+
 // (GET /api/v1/healthz)
 func (s *APIServer) GetApiV1Healthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
@@ -97,10 +483,36 @@ func (s *APIServer) GetApiV1Healthz(w http.ResponseWriter, r *http.Request) {
 
 // (GET /api/v1/readyz)
 func (s *APIServer) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
-	// For now, return 200 when the store is usable
-	if _, err := s.st.ListTenants(r.Context()); err != nil {
-		s.writeError(w, http.StatusServiceUnavailable, "KN-500", "store not ready")
-		return
+	ctx := r.Context()
+	// Prefer an explicit health check when the store exposes one.
+	if h, ok := s.st.(interface{ Health(context.Context) error }); ok {
+		if err := h.Health(ctx); err != nil {
+			s.writeError(w, http.StatusServiceUnavailable, "KN-500", "store not ready")
+			return
+		}
+	} else {
+		// Fallback: simple list call to verify basic store usability.
+		if _, err := s.st.ListTenants(ctx); err != nil {
+			s.writeError(w, http.StatusServiceUnavailable, "KN-500", "store not ready")
+			return
+		}
+	}
+	// Optional telemetry/external check: when OTEL exporter endpoint is configured,
+	// ensure it is reachable and not returning 5xx responses.
+	if endpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")); endpoint != "" {
+		tctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(tctx, http.MethodGet, endpoint, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			s.writeError(w, http.StatusServiceUnavailable, "KN-500", "telemetry not ready")
+			return
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode >= 500 {
+			s.writeError(w, http.StatusServiceUnavailable, "KN-500", "telemetry not ready")
+			return
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -182,6 +594,18 @@ func (s *APIServer) requireRoles(w http.ResponseWriter, r *http.Request, allowed
 	return false
 }
 
+func generateProxyKubeconfig(server, namespace, token string) []byte {
+	if strings.TrimSpace(server) == "" {
+		server = "https://proxy.kubenova.svc"
+	}
+	nsLine := ""
+	if strings.TrimSpace(namespace) != "" {
+		nsLine = "    namespace: " + namespace + "\n"
+	}
+	cfg := "apiVersion: v1\nkind: Config\nclusters:\n- name: kn-proxy\n  cluster:\n    insecure-skip-tls-verify: true\n    server: " + server + "\ncontexts:\n- name: tenant\n  context:\n    cluster: kn-proxy\n    user: tenant-user\n" + nsLine + "current-context: tenant\nusers:\n- name: tenant-user\n  user:\n    token: " + token + "\n"
+	return []byte(cfg)
+}
+
 func (s *APIServer) rolesFromReq(r *http.Request) []string {
 	hdr := r.Header.Get("Authorization")
 	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
@@ -194,6 +618,23 @@ func (s *APIServer) rolesFromReq(r *http.Request) []string {
 		return strings.Split(v, ",")
 	}
 	return nil
+}
+
+func (s *APIServer) subjectFromReq(r *http.Request) string {
+	hdr := r.Header.Get("Authorization")
+	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
+		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
+		var claims jwt.MapClaims
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+			if ssub, ok := claims["sub"].(string); ok {
+				return ssub
+			}
+		}
+	}
+	if v := r.Header.Get("X-KN-Subject"); v != "" {
+		return v
+	}
+	return ""
 }
 
 func (s *APIServer) tenantFromReq(r *http.Request) string {
@@ -457,10 +898,32 @@ func (s *APIServer) GetApiV1ClustersCPolicysetsCatalog(w http.ResponseWriter, r 
 	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
 		return
 	}
-	desc := "Base guardrails"
-	items := []PolicySet{{Name: "baseline", Description: &desc}}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(items)
+	_ = json.NewEncoder(w).Encode(s.policysetCatalog)
+}
+
+// (GET /api/v1/plans)
+func (s *APIServer) GetApiV1Plans(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(s.planCatalog)
+}
+
+// (GET /api/v1/plans/{name})
+func (s *APIServer) GetApiV1PlansName(w http.ResponseWriter, r *http.Request, name string) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	for _, p := range s.planCatalog {
+		if p.Name == name {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(p)
+			return
+		}
+	}
+	s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 }
 
 // (GET /api/v1/clusters/{c}/tenants/{t}/policysets)
@@ -473,13 +936,19 @@ func (s *APIServer) GetApiV1ClustersCTenantsTPolicysets(w http.ResponseWriter, r
 	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
 		return
 	}
-	s.psMu.RLock()
-	defer s.psMu.RUnlock()
-	psMap := s.policysets[ten.UID]
-	out := []PolicySet{}
-	for _, v := range psMap {
-		vv := v
-		out = append(out, vv)
+	items, err := s.st.ListPolicySets(r.Context(), ten.UID)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
+		return
+	}
+	out := make([]PolicySet, 0, len(items))
+	for _, ps := range items {
+		dto, derr := decodePolicySet(ps)
+		if derr != nil {
+			s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset decode error")
+			return
+		}
+		out = append(out, dto)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -504,12 +973,15 @@ func (s *APIServer) PostApiV1ClustersCTenantsTPolicysets(w http.ResponseWriter, 
 		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
 		return
 	}
-	s.psMu.Lock()
-	if s.policysets[ten.UID] == nil {
-		s.policysets[ten.UID] = map[string]PolicySet{}
+	ps, err := encodePolicySet(ten.UID, body)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset encode error")
+		return
 	}
-	s.policysets[ten.UID][body.Name] = body
-	s.psMu.Unlock()
+	if err := s.st.CreatePolicySet(r.Context(), ps); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
 }
@@ -524,16 +996,22 @@ func (s *APIServer) GetApiV1ClustersCTenantsTPolicysetsName(w http.ResponseWrite
 	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
 		return
 	}
-	s.psMu.RLock()
-	defer s.psMu.RUnlock()
-	if m := s.policysets[ten.UID]; m != nil {
-		if v, ok := m[name]; ok {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(v)
-			return
+	ps, err := s.st.GetPolicySet(r.Context(), ten.UID, name)
+	if err != nil {
+		if err == store.ErrNotFound {
+			s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		} else {
+			s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
 		}
+		return
 	}
-	s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+	dto, derr := decodePolicySet(ps)
+	if derr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset decode error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(dto)
 }
 
 // (PUT /api/v1/clusters/{c}/tenants/{t}/policysets/{name})
@@ -551,12 +1029,21 @@ func (s *APIServer) PutApiV1ClustersCTenantsTPolicysetsName(w http.ResponseWrite
 		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
 		return
 	}
-	s.psMu.Lock()
-	defer s.psMu.Unlock()
-	if s.policysets[ten.UID] == nil {
-		s.policysets[ten.UID] = map[string]PolicySet{}
+	// Path parameter is canonical for name
+	if strings.TrimSpace(name) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
 	}
-	s.policysets[ten.UID][name] = body
+	body.Name = name
+	ps, err := encodePolicySet(ten.UID, body)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "policyset encode error")
+		return
+	}
+	if err := s.st.UpdatePolicySet(r.Context(), ps); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -570,11 +1057,7 @@ func (s *APIServer) DeleteApiV1ClustersCTenantsTPolicysetsName(w http.ResponseWr
 	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
 		return
 	}
-	s.psMu.Lock()
-	if m := s.policysets[ten.UID]; m != nil {
-		delete(m, name)
-	}
-	s.psMu.Unlock()
+	_ = s.st.DeletePolicySet(r.Context(), ten.UID, name)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -602,38 +1085,146 @@ func (s *APIServer) PostApiV1ClustersCBootstrapComponent(w http.ResponseWriter, 
 
 // (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig)
 func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
-	// resolve cluster
-	_, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
-	if err != nil {
+	// ensure cluster, tenant, and project exist (uid-based lookups)
+	if _, _, err := s.st.GetClusterByUID(r.Context(), string(c)); err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
 		return
 	}
-	// ensure tenant/project exist (uid-based lookups)
-	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	if _, err := s.st.GetProjectByUID(r.Context(), string(p)); err != nil {
+	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	kb, _ := base64.StdEncoding.DecodeString(enc)
-	exp := time.Now().UTC().Add(time.Hour)
-	resp := KubeconfigResponse{Kubeconfig: &kb, ExpiresAt: &exp}
+	// Issue a kubeconfig targeting the configured proxy URL with a short-lived token.
+	role := "projectDev"
+	subject := s.subjectFromReq(r)
+	claims := jwt.MapClaims{
+		"tenant":  ten.Name,
+		"roles":   []string{role},
+		"project": pr.Name,
+	}
+	if subject != "" {
+		claims["sub"] = subject
+	}
+	expTS := time.Now().Add(time.Hour)
+	claims["exp"] = expTS.Unix()
+	key := s.jwtKey
+	if len(key) == 0 {
+		key = []byte("dev")
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenStr, err := tok.SignedString(key)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+		return
+	}
+	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), pr.Name, tokenStr)
+	exp := expTS.UTC()
+	resp := KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // (POST /api/v1/tenants/{t}/kubeconfig)
 func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.Request, t TenantParam) {
-	// best-effort: return short-lived minimal kubeconfig
-	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	raw := []byte("apiVersion: v1\nclusters: []\ncontexts: []\nusers: []\n")
-	exp := time.Now().UTC().Add(time.Hour)
-	resp := KubeconfigResponse{Kubeconfig: &raw, ExpiresAt: &exp}
+	// Optional grant parameters: project (by name), role, ttlSeconds
+	var body struct {
+		Project    *string `json:"project,omitempty"`
+		Role       *string `json:"role,omitempty"`
+		TtlSeconds *int    `json:"ttlSeconds,omitempty"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+			return
+		}
+	}
+	// Validate role when provided; actual RBAC enforcement happens in capsule-proxy.
+	if body.Role != nil {
+		role := strings.TrimSpace(*body.Role)
+		switch role {
+		case "tenantOwner", "projectDev", "readOnly":
+			// ok
+		case "":
+			// treat empty as omitted
+		default:
+			s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+			return
+		}
+	}
+	ttl := 0
+	if body.TtlSeconds != nil {
+		if *body.TtlSeconds < 0 || *body.TtlSeconds > 315360000 {
+			s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+			return
+		}
+		ttl = *body.TtlSeconds
+	}
+	// If a project name is provided, scope the kubeconfig to that project's namespace.
+	ns := ""
+	if body.Project != nil && strings.TrimSpace(*body.Project) != "" {
+		prName := strings.TrimSpace(*body.Project)
+		pr, perr := s.st.GetProject(r.Context(), ten.Name, prName)
+		if perr != nil {
+			s.writeError(w, http.StatusNotFound, "KN-404", "project not found")
+			return
+		}
+		ns = pr.Name
+	}
+	// Enforce that projectDev kubeconfigs are always scoped to a project namespace.
+	if body.Role != nil && strings.TrimSpace(*body.Role) == "projectDev" && ns == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "project required for projectDev role")
+		return
+	}
+	// Determine effective role for the proxy token.
+	role := "readOnly"
+	if body.Role != nil && strings.TrimSpace(*body.Role) != "" {
+		role = strings.TrimSpace(*body.Role)
+	}
+	claims := jwt.MapClaims{
+		"tenant": ten.Name,
+		"roles":  []string{role},
+	}
+	if ns != "" {
+		claims["project"] = ns
+	}
+	if sub := s.subjectFromReq(r); sub != "" {
+		claims["sub"] = sub
+	}
+	var expPtr *time.Time
+	if ttl > 0 {
+		expTS := time.Now().Add(time.Duration(ttl) * time.Second)
+		claims["exp"] = expTS.Unix()
+		et := expTS.UTC()
+		expPtr = &et
+	}
+	key := s.jwtKey
+	if len(key) == 0 {
+		key = []byte("dev")
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenStr, err := tok.SignedString(key)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+		return
+	}
+	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), ns, tokenStr)
+	var resp KubeconfigResponse
+	if expPtr != nil {
+		resp = KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: expPtr}
+	} else {
+		resp = KubeconfigResponse{Kubeconfig: &cfg}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -642,7 +1233,8 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 
 // (GET /api/v1/tenants/{t}/usage)
 func (s *APIServer) GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Request, t TenantParam, params GetApiV1TenantsTUsageParams) {
-	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
@@ -651,18 +1243,57 @@ func (s *APIServer) GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Request
 		window = string(*params.Range)
 	}
 	resp := UsageReport{Window: &window}
-	cpu, mem := "2", "4Gi"
-	pods := 12
-	resp.Cpu = &cpu
-	resp.Memory = &mem
-	resp.Pods = &pods
+	// Prefer the tenant's primary cluster (kubenova.cluster label), fall back to first registered cluster.
+	clusterUID := ten.Labels["kubenova.cluster"]
+	if clusterUID != "" {
+		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusterUID); err2 == nil {
+			kb, _ := base64.StdEncoding.DecodeString(enc)
+			if u, err3 := clusterpkg.TenantUsage(r.Context(), kb, ten.Name); err3 == nil {
+				if u.CPU != "" {
+					resp.Cpu = &u.CPU
+				}
+				if u.Memory != "" {
+					resp.Memory = &u.Memory
+				}
+				if u.Pods > 0 {
+					p := int(u.Pods)
+					resp.Pods = &p
+				}
+			}
+		}
+	} else if clusters, _, err := s.st.ListClusters(r.Context(), 100, "", ""); err == nil && len(clusters) > 0 {
+		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusters[0].UID); err2 == nil {
+			kb, _ := base64.StdEncoding.DecodeString(enc)
+			if u, err3 := clusterpkg.TenantUsage(r.Context(), kb, ten.Name); err3 == nil {
+				if u.CPU != "" {
+					resp.Cpu = &u.CPU
+				}
+				if u.Memory != "" {
+					resp.Memory = &u.Memory
+				}
+				if u.Pods > 0 {
+					p := int(u.Pods)
+					resp.Pods = &p
+				}
+			}
+		}
+	}
+	// Fallback stub values if no real usage data was populated.
+	if resp.Cpu == nil && resp.Memory == nil && resp.Pods == nil {
+		cpu, mem := "2", "4Gi"
+		pods := 12
+		resp.Cpu = &cpu
+		resp.Memory = &mem
+		resp.Pods = &pods
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // (GET /api/v1/projects/{p}/usage)
 func (s *APIServer) GetApiV1ProjectsPUsage(w http.ResponseWriter, r *http.Request, p ProjectParam, params GetApiV1ProjectsPUsageParams) {
-	if _, err := s.st.GetProjectByUID(r.Context(), string(p)); err != nil {
+	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
@@ -671,11 +1302,51 @@ func (s *APIServer) GetApiV1ProjectsPUsage(w http.ResponseWriter, r *http.Reques
 		window = string(*params.Range)
 	}
 	resp := UsageReport{Window: &window}
-	cpu, mem := "1", "1Gi"
-	pods := 5
-	resp.Cpu = &cpu
-	resp.Memory = &mem
-	resp.Pods = &pods
+	// Resolve primary cluster via tenant label when available; fallback to first cluster.
+	clusterUID := ""
+	if ten, err := s.st.GetTenant(r.Context(), pr.Tenant); err == nil {
+		clusterUID = ten.Labels["kubenova.cluster"]
+	}
+	if clusterUID != "" {
+		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusterUID); err2 == nil {
+			kb, _ := base64.StdEncoding.DecodeString(enc)
+			if u, err3 := clusterpkg.ProjectUsage(r.Context(), kb, pr.Name); err3 == nil {
+				if u.CPU != "" {
+					resp.Cpu = &u.CPU
+				}
+				if u.Memory != "" {
+					resp.Memory = &u.Memory
+				}
+				if u.Pods > 0 {
+					pp := int(u.Pods)
+					resp.Pods = &pp
+				}
+			}
+		}
+	} else if clusters, _, err := s.st.ListClusters(r.Context(), 100, "", ""); err == nil && len(clusters) > 0 {
+		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusters[0].UID); err2 == nil {
+			kb, _ := base64.StdEncoding.DecodeString(enc)
+			if u, err3 := clusterpkg.ProjectUsage(r.Context(), kb, pr.Name); err3 == nil {
+				if u.CPU != "" {
+					resp.Cpu = &u.CPU
+				}
+				if u.Memory != "" {
+					resp.Memory = &u.Memory
+				}
+				if u.Pods > 0 {
+					pp := int(u.Pods)
+					resp.Pods = &pp
+				}
+			}
+		}
+	}
+	if resp.Cpu == nil && resp.Memory == nil && resp.Pods == nil {
+		cpu, mem := "1", "1Gi"
+		pods := 5
+		resp.Cpu = &cpu
+		resp.Memory = &mem
+		resp.Pods = &pods
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -824,6 +1495,11 @@ func (s *APIServer) PostApiV1ClustersCTenants(w http.ResponseWriter, r *http.Req
 		return
 	}
 	t := toTypesTenant(in)
+	if t.Labels == nil {
+		t.Labels = map[string]string{}
+	}
+	// Record the primary cluster UID for this tenant for usage/kubeconfig lookups.
+	t.Labels["kubenova.cluster"] = string(c)
 	if err := s.st.CreateTenant(r.Context(), t); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
@@ -833,6 +1509,13 @@ func (s *APIServer) PostApiV1ClustersCTenants(w http.ResponseWriter, r *http.Req
 		if tt, e := s.st.GetTenant(r.Context(), t.Name); e == nil && tt.UID != "" {
 			u := tt.UID
 			in.Uid = &u
+			// If a plan was requested at creation time, apply it now.
+			if in.Plan != nil && strings.TrimSpace(*in.Plan) != "" {
+				if _, err := s.applyPlanToTenant(r.Context(), tt.UID, strings.TrimSpace(*in.Plan)); err != nil {
+					s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+					return
+				}
+			}
 		}
 	}
 	now := time.Now().UTC()
@@ -915,7 +1598,12 @@ func (s *APIServer) PutApiV1ClustersCTenantsTQuotas(w http.ResponseWriter, r *ht
 	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
 		kb, _ = base64.StdEncoding.DecodeString(enc)
 	}
-	if err := s.newCapsule(kb).SetTenantQuotas(r.Context(), ten.Name, body); err != nil {
+	caps := s.newCapsule(kb)
+	if err := caps.EnsureTenant(r.Context(), ten.Name, ten.Owners, ten.Labels); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	if err := caps.SetTenantQuotas(r.Context(), ten.Name, body); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -941,7 +1629,12 @@ func (s *APIServer) PutApiV1ClustersCTenantsTLimits(w http.ResponseWriter, r *ht
 	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
 		kb, _ = base64.StdEncoding.DecodeString(enc)
 	}
-	if err := s.newCapsule(kb).SetTenantLimits(r.Context(), ten.Name, body); err != nil {
+	caps := s.newCapsule(kb)
+	if err := caps.EnsureTenant(r.Context(), ten.Name, ten.Owners, ten.Labels); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	if err := caps.SetTenantLimits(r.Context(), ten.Name, body); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -967,7 +1660,12 @@ func (s *APIServer) PutApiV1ClustersCTenantsTNetworkPolicies(w http.ResponseWrit
 	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
 		kb, _ = base64.StdEncoding.DecodeString(enc)
 	}
-	if err := s.newCapsule(kb).SetTenantNetworkPolicies(r.Context(), ten.Name, body); err != nil {
+	caps := s.newCapsule(kb)
+	if err := caps.EnsureTenant(r.Context(), ten.Name, ten.Owners, ten.Labels); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	if err := caps.SetTenantNetworkPolicies(r.Context(), ten.Name, body); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -976,11 +1674,60 @@ func (s *APIServer) PutApiV1ClustersCTenantsTNetworkPolicies(w http.ResponseWrit
 
 // (GET /api/v1/clusters/{c}/tenants/{t}/summary)
 func (s *APIServer) GetApiV1ClustersCTenantsTSummary(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam) {
-	if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	_, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	sum, err := s.newCapsule(kb).TenantSummary(r.Context(), ten.Name)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	// Best-effort usage aggregation: reuse the same cluster kubeconfig and compute usage across tenant namespaces.
+	usageMap := map[string]string{}
+	if u, err := clusterpkg.TenantUsage(r.Context(), kb, ten.Name); err == nil {
+		if u.CPU != "" {
+			usageMap["cpu"] = u.CPU
+		}
+		if u.Memory != "" {
+			usageMap["memory"] = u.Memory
+		}
+		if u.Pods > 0 {
+			usageMap["pods"] = fmt.Sprintf("%d", u.Pods)
+		}
+	}
+	resp := TenantSummary{}
+	if len(sum.Namespaces) > 0 {
+		ns := sum.Namespaces
+		resp.Namespaces = &ns
+	}
+	if len(sum.Quotas) > 0 {
+		q := sum.Quotas
+		resp.Quotas = &q
+	}
+	if len(usageMap) > 0 {
+		u := usageMap
+		resp.Usages = &u
+	}
+	// Include plan name if present on tenant annotations.
+	if ten.Annotations != nil {
+		if p, ok := ten.Annotations["kubenova.io/plan"]; ok && strings.TrimSpace(p) != "" {
+			plan := strings.TrimSpace(p)
+			resp.Plan = &plan
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(TenantSummary{})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // --- Projects ---
@@ -1041,6 +1788,12 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjects(w http.ResponseWriter, r 
 	if err := s.st.CreateProject(r.Context(), pr); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
+	}
+	// Best-effort: ensure a project namespace exists and is labeled for Capsule.
+	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
+		if kb, decErr := base64.StdEncoding.DecodeString(enc); decErr == nil {
+			_ = clusterpkg.EnsureProjectNamespace(r.Context(), kb, ten.Name, in.Name)
+		}
 	}
 	if pr2, e := s.st.GetProject(r.Context(), pr.Tenant, pr.Name); e == nil && pr2.UID != "" {
 		u := pr2.UID
@@ -1115,7 +1868,44 @@ func (s *APIServer) DeleteApiV1ClustersCTenantsTProjectsP(w http.ResponseWriter,
 
 // (PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access)
 func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAccess(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
-	if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner") {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
+		return
+	}
+	var body ProjectAccess
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	members := []clusterpkg.ProjectAccessMember{}
+	if body.Members != nil {
+		for _, m := range *body.Members {
+			if strings.TrimSpace(m.Subject) == "" {
+				continue
+			}
+			members = append(members, clusterpkg.ProjectAccessMember{
+				Subject: m.Subject,
+				Role:    string(m.Role),
+			})
+		}
+	}
+	_, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	if err := clusterpkg.EnsureProjectAccess(r.Context(), kb, ten.Name, pr.Name, members); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -1181,6 +1971,9 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPApps(w http.ResponseWrite
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
+	// Best-effort: materialize an App ConfigMap in the project namespace so the
+	// in-cluster AppReconciler can project it into a Vela Application.
+	_ = s.ensureAppConfigMap(r.Context(), string(c), pr.Name, pr.Tenant, in)
 	if aa, e := s.st.GetApp(r.Context(), a.Tenant, a.Project, a.Name); e == nil && aa.UID != "" {
 		u := aa.UID
 		in.Uid = &u
@@ -1226,6 +2019,9 @@ func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAppsA(w http.ResponseWrite
 	}
 	item := kn.App{Tenant: ap.Tenant, Project: ap.Project, Name: ap.Name, CreatedAt: time.Now().UTC()}
 	_ = s.st.UpdateApp(r.Context(), item)
+	// Best-effort update of the App ConfigMap so AppReconciler sees the latest
+	// components/traits/policies.
+	_ = s.ensureAppConfigMap(r.Context(), string(c), ap.Project, ap.Tenant, in)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -1248,12 +2044,27 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsADeploy(w http.Respon
 	if !s.requireRolesTenant(w, r, string(t), "admin", "ops", "tenantOwner", "projectDev") {
 		return
 	}
-	var kb []byte
-	if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
-		kb, _ = base64.StdEncoding.DecodeString(enc)
+	_, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
 	}
-	pr, _ := s.st.GetProjectByUID(r.Context(), string(p))
-	ap, _ := s.st.GetAppByUID(r.Context(), string(a))
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "project not found")
+		return
+	}
+	ap, err := s.st.GetAppByUID(r.Context(), string(a))
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "app not found")
+		return
+	}
+	// Apply any attached PolicySets as traits/policies before deploy.
+	if err := s.applyPolicySets(r.Context(), kb, string(t), pr.Name, ap.Name); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
 	if err := s.newVela(kb).Deploy(r.Context(), pr.Name, ap.Name); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
@@ -1422,7 +2233,7 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsALogsComponent(w http.
 // System endpoints under /api/v1
 func (s *APIServer) GetApiV1Version(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"version": "0.9.3"})
+	_ = json.NewEncoder(w).Encode(map[string]any{"version": "0.9.5"})
 }
 
 func (s *APIServer) GetApiV1Features(w http.ResponseWriter, r *http.Request) {
@@ -1452,7 +2263,26 @@ func (s *APIServer) PostApiV1Tokens(w http.ResponseWriter, r *http.Request) {
 			roles = append(roles, string(r))
 		}
 	}
+	// Map KubeNova roles to Kubernetes group names expected by capsule-proxy and tenant discovery RBAC.
+	groupsSet := map[string]struct{}{}
+	for _, ro := range roles {
+		switch ro {
+		case "admin", "ops", "tenantOwner":
+			groupsSet["tenant-admins"] = struct{}{}
+		case "projectDev":
+			groupsSet["tenant-maintainers"] = struct{}{}
+		case "readOnly":
+			groupsSet["tenant-viewers"] = struct{}{}
+		}
+	}
+	var groups []string
+	for g := range groupsSet {
+		groups = append(groups, g)
+	}
 	c := jwt.MapClaims{"sub": req.Subject, "roles": roles, "exp": time.Now().Add(time.Duration(ttl) * time.Second).Unix()}
+	if len(groups) > 0 {
+		c["groups"] = groups
+	}
 	key := s.jwtKey
 	if len(key) == 0 {
 		key = []byte("dev")
@@ -1469,8 +2299,25 @@ func (s *APIServer) PostApiV1Tokens(w http.ResponseWriter, r *http.Request) {
 
 func (s *APIServer) GetApiV1Me(w http.ResponseWriter, r *http.Request) {
 	roles := s.rolesFromReq(r)
+	subject := ""
+	hdr := r.Header.Get("Authorization")
+	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
+		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
+		var claims jwt.MapClaims
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+			if ssub, ok := claims["sub"].(string); ok {
+				subject = ssub
+			}
+		}
+	}
+	// Allow overriding subject in tests/dev without a real JWT.
+	if subject == "" {
+		if v := r.Header.Get("X-KN-Subject"); v != "" {
+			subject = v
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"subject": "", "roles": roles})
+	_ = json.NewEncoder(w).Encode(map[string]any{"subject": subject, "roles": roles})
 }
 
 // (PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits)
@@ -1571,6 +2418,12 @@ func toTypesTenant(in Tenant) kn.Tenant {
 	}
 	if in.Owners != nil {
 		out.Owners = *in.Owners
+	}
+	if in.Plan != nil && strings.TrimSpace(*in.Plan) != "" {
+		if out.Annotations == nil {
+			out.Annotations = map[string]string{}
+		}
+		out.Annotations["kubenova.io/plan"] = strings.TrimSpace(*in.Plan)
 	}
 	return out
 }

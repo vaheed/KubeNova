@@ -23,6 +23,31 @@ type RedisBuffer struct {
 	noop bool
 }
 
+// global buffer instance for convenience publishing from subpackages
+var global *RedisBuffer
+
+// SetGlobal sets the global buffer used by helpers below.
+func SetGlobal(b *RedisBuffer) { global = b }
+
+// PublishEvent enqueues an event payload to the manager if a global buffer exists.
+func PublishEvent(fields map[string]any) {
+	if global == nil {
+		return
+	}
+	global.Enqueue("events", fields)
+}
+
+// PublishStage is a convenience to publish bootstrap stages with status and message.
+func PublishStage(component, stage, status, message string) {
+	PublishEvent(map[string]any{
+		"ts":        time.Now().UTC().Format(time.RFC3339Nano),
+		"component": component,
+		"stage":     stage,
+		"status":    status,
+		"message":   message,
+	})
+}
+
 func NewRedisBuffer() *RedisBuffer {
 	// If REDIS_ADDR is not set, operate in no-op mode to avoid DNS errors
 	// on clusters where Redis is not deployed with the Agent.
@@ -119,8 +144,17 @@ func (b *RedisBuffer) flush(kind string) {
 		req, _ := http.NewRequest(http.MethodPost, b.base+"/sync/"+kind, bytes.NewReader(raw))
 		resp, err := b.http.Do(req)
 		if err != nil {
+			// Manager not reachable: requeue and stop this flush cycle
 			log.Printf("push %s error: %v", kind, err)
-			continue
+			_ = b.rdb.LPush(ctx, key, raw).Err()
+			return
+		}
+		if resp.StatusCode >= 500 {
+			// Server error: requeue and stop this flush cycle
+			log.Printf("push %s status: %s", kind, resp.Status)
+			_ = resp.Body.Close()
+			_ = b.rdb.LPush(ctx, key, raw).Err()
+			return
 		}
 		_ = resp.Body.Close()
 	}

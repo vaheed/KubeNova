@@ -58,6 +58,7 @@ func main() {
 	buf := telemetry.NewRedisBuffer()
 	buf.Run()
 	defer buf.Stop()
+	telemetry.SetGlobal(buf)
 	buf.Enqueue("events", map[string]string{"event": "agent_started"})
 
 	// Single shared context for shutdown

@@ -1,0 +1,34 @@
+[
+  {
+    "name": "baseline",
+    "description": "Baseline plan: light quotas and health checks for small teams or dev environments.",
+    "tenantQuotas": {
+      "cpu": "2",
+      "memory": "4Gi",
+      "pods": "50",
+      "storage": "20Gi",
+      "services.loadbalancers": "1"
+    },
+    "policysets": [
+      "baseline"
+    ]
+  },
+  {
+    "name": "gold",
+    "description": "Gold plan: higher quotas with autoscaling, rollout safety, security, and observability for production workloads.",
+    "tenantQuotas": {
+      "cpu": "6",
+      "memory": "10Gi",
+      "pods": "200",
+      "storage": "200Gi",
+      "services.loadbalancers": "5"
+    },
+    "policysets": [
+      "baseline",
+      "baseline-security",
+      "gold-tier",
+      "gold-observability",
+      "bluegreen-rollout"
+    ]
+  }
+]

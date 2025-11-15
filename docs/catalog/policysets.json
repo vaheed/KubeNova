@@ -1,0 +1,124 @@
+[
+  {
+    "name": "baseline",
+    "description": "Base guardrails for tenant namespaces",
+    "rules": [
+      {
+        "kind": "vela.policy",
+        "policyType": "health-check",
+        "spec": {
+          "type": "health",
+          "properties": {
+            "probe": "http",
+            "path": "/healthz",
+            "intervalSeconds": 10
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "gold-tier",
+    "description": "Gold tier rollout and autoscaling defaults",
+    "rules": [
+      {
+        "kind": "vela.trait",
+        "traitType": "scaler",
+        "spec": {
+          "replicas": 3,
+          "min": 3,
+          "max": 10
+        }
+      },
+      {
+        "kind": "vela.policy",
+        "policyType": "rollout",
+        "spec": {
+          "type": "rollout",
+          "properties": {
+            "batchPartition": 1,
+            "maxUnavailable": 1
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "baseline-security",
+    "description": "Default network and image security for all apps",
+    "rules": [
+      {
+        "kind": "vela.policy",
+        "policyType": "network-baseline",
+        "spec": {
+          "type": "network",
+          "properties": {
+            "defaultDeny": true,
+            "allowDNS": true,
+            "allowMetrics": true
+          }
+        }
+      },
+      {
+        "kind": "vela.policy",
+        "policyType": "image",
+        "spec": {
+          "type": "image",
+          "properties": {
+            "allowedRegistries": [
+              "ghcr.io/vaheed",
+              "ghcr.io/your-org"
+            ],
+            "requireSigned": false
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "gold-observability",
+    "description": "Logs and metrics traits enabled by default",
+    "rules": [
+      {
+        "kind": "vela.trait",
+        "traitType": "logging",
+        "spec": {
+          "type": "logging",
+          "properties": {
+            "provider": "stdout",
+            "level": "info"
+          }
+        }
+      },
+      {
+        "kind": "vela.trait",
+        "traitType": "metrics",
+        "spec": {
+          "type": "metrics",
+          "properties": {
+            "enabled": true,
+            "scrapeInterval": "30s"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "bluegreen-rollout",
+    "description": "Blue/green rollout strategy for safer releases",
+    "rules": [
+      {
+        "kind": "vela.policy",
+        "policyType": "rollout",
+        "spec": {
+          "type": "rollout",
+          "properties": {
+            "strategy": "bluegreen",
+            "maxUnavailable": 0,
+            "maxSurge": 1
+          }
+        }
+      }
+    ]
+  }
+]

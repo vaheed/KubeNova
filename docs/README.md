@@ -106,15 +106,20 @@ GET    /api/v1/catalog/workflows
 
 ## Adapters
 - **TenancyAdapter:** Tenant, quotas, namespace options, RBAC, NetworkPolicy.
-- **AppsAdapter:** Application, Workflow, WorkflowRun, Definitions. Deploy per project namespace. Support rollback via revisions.
+- **AppsAdapter:** Application, Workflow, WorkflowRun, Definitions. Deploy per project namespace. Support rollback via revisions. In-cluster, the Agent runs an `AppReconciler` (`internal/reconcile/app.go`) that watches ConfigMaps labeled with the KubeNova app identity and uses `internal/backends/vela` to project them into KubeVela `Application` resources and keep traits/policies in sync.
 
 ## Reconcile Loop
 Intent → Plan → Apply → Observe → Converge. Emit events with correlation-id.
 Status phases: `Pending|Applying|Deployed|Drifted|Error`.
 
 ## Security
-- JWT (HS256/RS256); roles: tenant-admin, tenant-dev, read-only.
-- Kubeconfigs via **KubeconfigGrant**: TTL, verbs, namespaces; endpoint = access proxy.
+- JWT (HS256); KubeNova roles: `tenantOwner`, `projectDev`, `readOnly`.
+  - Roles are used for Manager API RBAC and are also mapped to Kubernetes groups for capsule-proxy:
+    - `tenantOwner` (and `admin`/`ops`) → group `tenant-admins`.
+    - `projectDev` → group `tenant-maintainers`.
+    - `readOnly` → group `tenant-viewers` (operators may bind this group for read-only access).
+  - Issued tokens include both `roles` and `groups` claims so capsule-proxy and Kubernetes RBAC can enforce the same semantics.
+- Kubeconfigs via **KubeconfigGrant**: TTL, verbs, namespaces; endpoint = access proxy. Tenant and project kubeconfig endpoints embed these JWTs.
 - Envelope encryption for secrets; periodic key rotation.
 
 New features

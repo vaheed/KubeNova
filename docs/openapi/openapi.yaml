@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: KubeNova API
-  version: 0.9.3
+  version: 0.9.5
   description: |
     Single KubeNova REST API surface for multi-cluster tenancy and app delivery.
     Notes:
@@ -126,6 +126,9 @@ components:
           format: uuid
           pattern: '^[0-9a-f-]{36}$'
         name: { type: string }
+        plan:
+          type: string
+          description: Optional tenant plan name (e.g. baseline, gold)
         owners: { type: array, items: { type: string } }
         labels: { type: object, additionalProperties: { type: string } }
         annotations: { type: object, additionalProperties: { type: string } }
@@ -136,6 +139,9 @@ components:
         namespaces: { type: array, items: { type: string } }
         quotas: { type: object, additionalProperties: { type: string } }
         usages: { type: object, additionalProperties: { type: string } }
+        plan:
+          type: string
+          description: Optional tenant plan name applied to this tenant
     Project:
       type: object
       required: [name]
@@ -173,6 +179,18 @@ components:
             properties:
               tenant: { type: string }
               project: { type: string }
+    Plan:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tenantQuotas:
+          type: object
+          additionalProperties: { type: string }
+        policysets:
+          type: array
+          items: { type: string }
     App:
       type: object
       required: [name]
@@ -253,8 +271,14 @@ components:
     KubeconfigResponse:
       type: object
       properties:
-        kubeconfig: { type: string, format: byte }
-        expiresAt: { type: string, format: date-time }
+        kubeconfig:
+          type: string
+          format: byte
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Omitted or null when TTL is unlimited.
 
 paths:
   # System
@@ -278,8 +302,8 @@ paths:
             application/json:
               schema: { type: object }
               examples:
-                version:
-                  value: { version: "0.9.3", commit: "abcdef", buildDate: "2025-01-01T00:00:00Z" }
+                  version:
+                    value: { version: "0.9.5", commit: "abcdef", buildDate: "2025-01-01T00:00:00Z" }
   /api/v1/features:
     get:
       summary: Feature flags
@@ -427,6 +451,40 @@ paths:
               examples:
                 missing:
                   value: { code: "KN-404", message: "cluster not found" }
+
+  /api/v1/clusters/{c}/cleanup:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    post:
+      summary: Cleanup platform resources to prepare for bootstrap
+      description: |
+        Removes broken webhooks, Vela cluster-gateway APIService, platform CRDs, and component namespaces (cert-manager, capsule-system, vela-system).
+        Returns 202 and performs work asynchronously.
+      responses:
+        '202':
+          description: accepted
+          content:
+            application/json:
+              examples:
+                accepted:
+                  value: { accepted: true }
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples: { missing: { value: { code: "KN-401", message: "missing bearer token" } } }
+        '403':
+          description: forbidden
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples: { deny: { value: { code: "KN-403", message: "forbidden" } } }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples: { missing: { value: { code: "KN-404", message: "cluster not found" } } }
   /api/v1/clusters/{c}/capabilities:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
     get:
@@ -821,17 +879,17 @@ paths:
               examples:
                 list:
                   value: [ { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" } ]
-    post:
-      summary: Create app
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/App' }
-            examples:
-              create:
-                value: { name: "hello" }
-      responses:
+      post:
+        summary: Create app
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+              examples:
+                create:
+                  value: { name: "hello" }
+        responses:
         '200':
           description: created
           content:
@@ -1293,10 +1351,32 @@ paths:
         required: false
         content:
           application/json:
-            schema: { type: object, properties: { project: { type: string }, role: { type: string, enum: [tenantOwner, projectDev, readOnly], default: readOnly }, ttlSeconds: { type: integer, minimum: 60, maximum: 86400, default: 3600 } } }
+            schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Optional project name for a namespace-scoped kubeconfig. Required when role is projectDev.
+                role:
+                  type: string
+                  description: Logical role; actual RBAC is enforced by the access proxy.
+                  enum: [tenantOwner, projectDev, readOnly]
+                ttlSeconds:
+                  type: integer
+                  minimum: 0
+                  maximum: 315360000
+                  default: 0
+                  description: 0 or omitted means unlimited TTL; otherwise seconds until expiry.
             examples:
-              grant:
+              tenantUnlimited:
+                summary: Tenant-scoped, read-only, unlimited TTL
+                value: {}
+              tenantReadOnly1h:
+                summary: Tenant-scoped, read-only, 1 hour TTL
                 value: { role: "readOnly", ttlSeconds: 3600 }
+              projectDev1h:
+                summary: Project-scoped, projectDev, 1 hour TTL
+                value: { project: "web", role: "projectDev", ttlSeconds: 3600 }
       responses:
         '200':
           description: ok
@@ -1306,3 +1386,64 @@ paths:
               examples:
                 kubeconfig:
                   value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
+  # Plans
+  /api/v1/plans:
+    get:
+      summary: List available tenant plans
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Plan' }
+  /api/v1/plans/{name}:
+    get:
+      summary: Get a specific tenant plan by name
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+        '404':
+          description: not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/v1/tenants/{t}/plan:
+    put:
+      summary: Apply a plan to a tenant (quotas + PolicySets)
+      parameters:
+        - { $ref: '#/components/parameters/TenantParam' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+        '404':
+          description: plan or tenant not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: invalid payload or tenant has no primary cluster
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }

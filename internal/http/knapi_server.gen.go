@@ -44,6 +44,12 @@ type ServerInterface interface {
 	// Get curated PolicySet catalog
 	// (GET /api/v1/clusters/{c}/policysets/catalog)
 	GetApiV1ClustersCPolicysetsCatalog(w http.ResponseWriter, r *http.Request, c ClusterParam)
+	// List available tenant plans
+	// (GET /api/v1/plans)
+	GetApiV1Plans(w http.ResponseWriter, r *http.Request)
+	// Get a specific tenant plan by name
+	// (GET /api/v1/plans/{name})
+	GetApiV1PlansName(w http.ResponseWriter, r *http.Request, name string)
 	// List tenants
 	// (GET /api/v1/clusters/{c}/tenants)
 	GetApiV1ClustersCTenants(w http.ResponseWriter, r *http.Request, c ClusterParam, params GetApiV1ClustersCTenantsParams)
@@ -188,6 +194,9 @@ type ServerInterface interface {
 	// Usage report for a tenant
 	// (GET /api/v1/tenants/{t}/usage)
 	GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Request, t TenantParam, params GetApiV1TenantsTUsageParams)
+	// Apply a plan to a tenant
+	// (PUT /api/v1/tenants/{t}/plan)
+	PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request, t TenantParam)
 	// Issue a JWT for API access
 	// (POST /api/v1/tokens)
 	PostApiV1Tokens(w http.ResponseWriter, r *http.Request)
@@ -257,6 +266,18 @@ func (_ Unimplemented) GetApiV1ClustersCCapabilities(w http.ResponseWriter, r *h
 // Get curated PolicySet catalog
 // (GET /api/v1/clusters/{c}/policysets/catalog)
 func (_ Unimplemented) GetApiV1ClustersCPolicysetsCatalog(w http.ResponseWriter, r *http.Request, c ClusterParam) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List available tenant plans
+// (GET /api/v1/plans)
+func (_ Unimplemented) GetApiV1Plans(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a specific tenant plan by name
+// (GET /api/v1/plans/{name})
+func (_ Unimplemented) GetApiV1PlansName(w http.ResponseWriter, r *http.Request, name string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -548,6 +569,12 @@ func (_ Unimplemented) GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Apply a plan to a tenant
+// (PUT /api/v1/tenants/{t}/plan)
+func (_ Unimplemented) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request, t TenantParam) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Issue a JWT for API access
 // (POST /api/v1/tokens)
 func (_ Unimplemented) PostApiV1Tokens(w http.ResponseWriter, r *http.Request) {
@@ -620,6 +647,57 @@ func (siw *ServerInterfaceWrapper) GetApiV1CatalogWorkflows(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetApiV1CatalogWorkflows(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiV1Plans operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1Plans(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV1Plans(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiV1PlansName operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1PlansName(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV1PlansName(w, r, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3271,6 +3349,37 @@ func (siw *ServerInterfaceWrapper) GetApiV1TenantsTUsage(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// PutApiV1TenantsTPlan operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "t" -------------
+	var t TenantParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "t", chi.URLParam(r, "t"), &t, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "t", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV1TenantsTPlan(w, r, t)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PostApiV1Tokens operation middleware
 func (siw *ServerInterfaceWrapper) PostApiV1Tokens(w http.ResponseWriter, r *http.Request) {
 
@@ -3432,6 +3541,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/catalog/workflows", wrapper.GetApiV1CatalogWorkflows)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/plans", wrapper.GetApiV1Plans)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/plans/{name}", wrapper.GetApiV1PlansName)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/clusters", wrapper.GetApiV1Clusters)
@@ -3597,6 +3712,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tenants/{t}/usage", wrapper.GetApiV1TenantsTUsage)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/tenants/{t}/plan", wrapper.PutApiV1TenantsTPlan)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/tokens", wrapper.PostApiV1Tokens)

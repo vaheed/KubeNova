@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -11,9 +12,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/vaheed/kubenova/internal/cluster"
 	httpapi "github.com/vaheed/kubenova/internal/http"
+	"github.com/vaheed/kubenova/internal/lib/httperr"
 	"github.com/vaheed/kubenova/internal/logging"
 	"github.com/vaheed/kubenova/internal/metrics"
 	"github.com/vaheed/kubenova/internal/store"
@@ -67,6 +70,9 @@ func NewServer(s store.Store) *Server {
 		r.Post("/logs", srv.accept204)
 	})
 
+	// Custom endpoints that are operational (not yet in generated router)
+	mux.Post("/api/v1/clusters/{c}/cleanup", srv.cleanupCluster)
+
 	// Single OpenAPI-first HTTP server mounted at /api/v1
 	opts := httpapi.ChiServerOptions{BaseRouter: mux, BaseURL: ""}
 	_ = httpapi.HandlerWithOptions(httpapi.NewAPIServer(s), opts)
@@ -78,6 +84,85 @@ func (s *Server) Router() http.Handler { return s.r }
 
 func (s *Server) accept204(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// cleanupCluster triggers a best-effort cleanup on the target cluster to prepare for bootstrap.
+// Requires roles: admin or ops. Returns 202 Accepted and runs asynchronously.
+func (s *Server) cleanupCluster(w http.ResponseWriter, r *http.Request) {
+	if s.requireAuth {
+		roles := rolesFromReq(r, s.jwtKey)
+		if !hasAnyRole(roles, "admin", "ops") {
+			httperr.Write(w, http.StatusForbidden, "KN-403", "forbidden")
+			return
+		}
+	}
+	cid := chi.URLParam(r, "c")
+	if cid == "" {
+		httperr.Write(w, http.StatusUnprocessableEntity, "KN-422", "cluster id required")
+		return
+	}
+	// Obtain kubeconfig
+	_, enc, err := s.store.GetClusterByUID(r.Context(), cid)
+	if err != nil || enc == "" {
+		httperr.Write(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+	// Async execution
+	go func() {
+		_ = cluster.CleanPlatform(context.Background(), kb)
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write([]byte(`{"accepted":true}`))
+}
+
+// rolesFromReq parses roles from Authorization JWT or X-KN-Roles.
+func rolesFromReq(r *http.Request, jwtKey []byte) []string {
+	hdr := r.Header.Get("Authorization")
+	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
+		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
+		var claims jwt.MapClaims
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return jwtKey, nil }); err == nil {
+			if arr, ok := claims["roles"].([]any); ok {
+				out := make([]string, 0, len(arr))
+				for _, v := range arr {
+					if s, ok := v.(string); ok {
+						out = append(out, s)
+					}
+				}
+				if len(out) > 0 {
+					return out
+				}
+			}
+			if v, ok := claims["role"].(string); ok && v != "" {
+				return []string{v}
+			}
+		}
+	}
+	if v := r.Header.Get("X-KN-Roles"); v != "" {
+		return strings.Split(v, ",")
+	}
+	return nil
+}
+
+func hasAnyRole(roles []string, allowed ...string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	if len(roles) == 0 {
+		roles = []string{"readOnly"}
+	}
+	have := map[string]struct{}{}
+	for _, r := range roles {
+		have[strings.TrimSpace(r)] = struct{}{}
+	}
+	for _, want := range allowed {
+		if _, ok := have[want]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // waitReady blocks until the underlying store is usable (e.g., DB connected).
