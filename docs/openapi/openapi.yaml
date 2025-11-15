@@ -879,17 +879,17 @@ paths:
               examples:
                 list:
                   value: [ { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" } ]
-    post:
-      summary: Create app
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/App' }
-            examples:
-              create:
-                value: { name: "hello" }
-      responses:
+      post:
+        summary: Create app
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+              examples:
+                create:
+                  value: { name: "hello" }
+        responses:
         '200':
           description: created
           content:

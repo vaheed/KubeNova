@@ -399,6 +399,19 @@ curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
   | jq .
 ```
 
+**Using tenant kubeconfigs with kubectl**
+
+```bash
+# Save a tenant-scoped kubeconfig to a file
+TENANT_KCFG_B64=$(curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
+  -H "$AUTH_HEADER" | jq -r '.kubeconfig')
+printf "%s" "$TENANT_KCFG_B64" | base64 -d > kn-tenant-kubeconfig.yaml
+
+# Use it against the access proxy (capsule-proxy)
+KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get ns
+KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -A
+```
+
 **What this does**
 
 - `GET /api/v1/plans` returns the configured plan catalog loaded from `docs/catalog/plans.json`.

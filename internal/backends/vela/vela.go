@@ -187,6 +187,16 @@ func (n *noop) ImageUpdate(ctx context.Context, ns, name, component, image, tag 
 // real impl methods
 func (c *client) EnsureApp(ctx context.Context, ns, name string, spec map[string]any) error {
 	u := vadapter.ApplicationCR(ns, name, "")
+	if len(spec) > 0 {
+		// If a spec map is provided (for example from AppReconciler via ConfigMap),
+		// use it as the Application spec so higher-level controllers can shape
+		// components/traits/policies (including Helm-based apps like WordPress).
+		copied := map[string]any{}
+		for k, v := range spec {
+			copied[k] = v
+		}
+		u.Object["spec"] = copied
+	}
 	cur, err := c.dyn.Resource(appGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
