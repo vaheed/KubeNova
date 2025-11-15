@@ -488,11 +488,10 @@ func (s *APIServer) requireRoles(w http.ResponseWriter, r *http.Request, allowed
 	return false
 }
 
-func generateProxyKubeconfig(server, namespace string) []byte {
+func generateProxyKubeconfig(server, namespace, token string) []byte {
 	if strings.TrimSpace(server) == "" {
 		server = "https://proxy.kubenova.svc"
 	}
-	token := "placeholder"
 	nsLine := ""
 	if strings.TrimSpace(namespace) != "" {
 		nsLine = "    namespace: " + namespace + "\n"
@@ -513,6 +512,23 @@ func (s *APIServer) rolesFromReq(r *http.Request) []string {
 		return strings.Split(v, ",")
 	}
 	return nil
+}
+
+func (s *APIServer) subjectFromReq(r *http.Request) string {
+	hdr := r.Header.Get("Authorization")
+	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
+		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
+		var claims jwt.MapClaims
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+			if ssub, ok := claims["sub"].(string); ok {
+				return ssub
+			}
+		}
+	}
+	if v := r.Header.Get("X-KN-Subject"); v != "" {
+		return v
+	}
+	return ""
 }
 
 func (s *APIServer) tenantFromReq(r *http.Request) string {
@@ -978,10 +994,31 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.Response
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	// For now, issue a kubeconfig targeting the configured proxy URL.
-	_ = ten // tenant reserved for future role-based token issuance
-	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), pr.Name)
-	exp := time.Now().UTC().Add(time.Hour)
+	// Issue a kubeconfig targeting the configured proxy URL with a short-lived token.
+	role := "projectDev"
+	subject := s.subjectFromReq(r)
+	claims := jwt.MapClaims{
+		"tenant":  ten.Name,
+		"roles":   []string{role},
+		"project": pr.Name,
+	}
+	if subject != "" {
+		claims["sub"] = subject
+	}
+	expTS := time.Now().Add(time.Hour)
+	claims["exp"] = expTS.Unix()
+	key := s.jwtKey
+	if len(key) == 0 {
+		key = []byte("dev")
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenStr, err := tok.SignedString(key)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+		return
+	}
+	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), pr.Name, tokenStr)
+	exp := expTS.UTC()
 	resp := KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -1031,18 +1068,49 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 	ns := ""
 	if body.Project != nil && strings.TrimSpace(*body.Project) != "" {
 		prName := strings.TrimSpace(*body.Project)
-		pr, err := s.st.GetProject(r.Context(), ten.Name, prName)
-		if err != nil {
+		pr, perr := s.st.GetProject(r.Context(), ten.Name, prName)
+		if perr != nil {
 			s.writeError(w, http.StatusNotFound, "KN-404", "project not found")
 			return
 		}
 		ns = pr.Name
 	}
-	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), ns)
-	var resp KubeconfigResponse
+	// Determine effective role for the proxy token.
+	role := "readOnly"
+	if body.Role != nil && strings.TrimSpace(*body.Role) != "" {
+		role = strings.TrimSpace(*body.Role)
+	}
+	claims := jwt.MapClaims{
+		"tenant": ten.Name,
+		"roles":  []string{role},
+	}
+	if ns != "" {
+		claims["project"] = ns
+	}
+	if sub := s.subjectFromReq(r); sub != "" {
+		claims["sub"] = sub
+	}
+	var expPtr *time.Time
 	if ttl > 0 {
-		exp := time.Now().UTC().Add(time.Duration(ttl) * time.Second)
-		resp = KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
+		expTS := time.Now().Add(time.Duration(ttl) * time.Second)
+		claims["exp"] = expTS.Unix()
+		et := expTS.UTC()
+		expPtr = &et
+	}
+	key := s.jwtKey
+	if len(key) == 0 {
+		key = []byte("dev")
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenStr, err := tok.SignedString(key)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+		return
+	}
+	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), ns, tokenStr)
+	var resp KubeconfigResponse
+	if expPtr != nil {
+		resp = KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: expPtr}
 	} else {
 		resp = KubeconfigResponse{Kubeconfig: &cfg}
 	}
