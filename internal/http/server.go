@@ -2146,7 +2146,26 @@ func (s *APIServer) PostApiV1Tokens(w http.ResponseWriter, r *http.Request) {
 			roles = append(roles, string(r))
 		}
 	}
+	// Map KubeNova roles to Kubernetes group names expected by capsule-proxy and tenant discovery RBAC.
+	groupsSet := map[string]struct{}{}
+	for _, ro := range roles {
+		switch ro {
+		case "admin", "ops", "tenantOwner":
+			groupsSet["tenant-admins"] = struct{}{}
+		case "projectDev":
+			groupsSet["tenant-maintainers"] = struct{}{}
+		case "readOnly":
+			groupsSet["tenant-viewers"] = struct{}{}
+		}
+	}
+	var groups []string
+	for g := range groupsSet {
+		groups = append(groups, g)
+	}
 	c := jwt.MapClaims{"sub": req.Subject, "roles": roles, "exp": time.Now().Add(time.Duration(ttl) * time.Second).Unix()}
+	if len(groups) > 0 {
+		c["groups"] = groups
+	}
 	key := s.jwtKey
 	if len(key) == 0 {
 		key = []byte("dev")
