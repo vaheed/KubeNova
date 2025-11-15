@@ -41,6 +41,9 @@ func NewMemory() *Memory {
 
 func (m *Memory) Close(ctx context.Context) error { return nil }
 
+// Health implements a no-op readiness check for the in-memory store.
+func (m *Memory) Health(ctx context.Context) error { return nil }
+
 func (m *Memory) CreateTenant(ctx context.Context, t types.Tenant) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

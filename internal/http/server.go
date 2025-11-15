@@ -394,10 +394,19 @@ func (s *APIServer) GetApiV1Healthz(w http.ResponseWriter, r *http.Request) {
 
 // (GET /api/v1/readyz)
 func (s *APIServer) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
-	// For now, return 200 when the store is usable
-	if _, err := s.st.ListTenants(r.Context()); err != nil {
-		s.writeError(w, http.StatusServiceUnavailable, "KN-500", "store not ready")
-		return
+	ctx := r.Context()
+	// Prefer an explicit health check when the store exposes one.
+	if h, ok := s.st.(interface{ Health(context.Context) error }); ok {
+		if err := h.Health(ctx); err != nil {
+			s.writeError(w, http.StatusServiceUnavailable, "KN-500", "store not ready")
+			return
+		}
+	} else {
+		// Fallback: simple list call to verify basic store usability.
+		if _, err := s.st.ListTenants(ctx); err != nil {
+			s.writeError(w, http.StatusServiceUnavailable, "KN-500", "store not ready")
+			return
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }

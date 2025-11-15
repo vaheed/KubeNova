@@ -43,6 +43,15 @@ func (p *Postgres) applyMigration(ctx context.Context) error {
 
 func (p *Postgres) Close(ctx context.Context) error { p.db.Close(); return nil }
 
+// Health reports whether the underlying database connection pool is usable.
+// It is safe to call frequently from readiness checks.
+func (p *Postgres) Health(ctx context.Context) error {
+	if p.db == nil {
+		return nil
+	}
+	return p.db.Ping(ctx)
+}
+
 func (p *Postgres) CreateTenant(ctx context.Context, t types.Tenant) error {
 	t.CreatedAt = stamp(t.CreatedAt)
 	if t.UID == "" {
