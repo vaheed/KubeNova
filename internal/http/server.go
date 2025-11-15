@@ -2037,8 +2037,25 @@ func (s *APIServer) PostApiV1Tokens(w http.ResponseWriter, r *http.Request) {
 
 func (s *APIServer) GetApiV1Me(w http.ResponseWriter, r *http.Request) {
 	roles := s.rolesFromReq(r)
+	subject := ""
+	hdr := r.Header.Get("Authorization")
+	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
+		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
+		var claims jwt.MapClaims
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+			if ssub, ok := claims["sub"].(string); ok {
+				subject = ssub
+			}
+		}
+	}
+	// Allow overriding subject in tests/dev without a real JWT.
+	if subject == "" {
+		if v := r.Header.Get("X-KN-Subject"); v != "" {
+			subject = v
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"subject": "", "roles": roles})
+	_ = json.NewEncoder(w).Encode(map[string]any{"subject": subject, "roles": roles})
 }
 
 // (PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits)
