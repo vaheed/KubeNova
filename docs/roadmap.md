@@ -65,3 +65,14 @@ This roadmap tracks bringing the current API implementation in line with `docs/i
 - **Dev vs production behavior**
   - Reduce stubs where behavior differs significantly (kubeconfigs, usage, quotas/limits synchronization).
   - Document remaining dev-only shortcuts (if any) clearly in `docs/index.md`.
+
+## Phase 6 �?" Provider Integrations (CaaS / PaaS)
+
+- **Apps reconciliation (AppReconciler placeholder)**
+  - Promote `internal/reconcile/AppReconciler` from a ConfigMap-driven placeholder to a production-grade controller that projects the KubeNova App model onto real Vela `Application` and `Workflow` resources.
+  - Define clear contracts for how app specs, traits, and policies flow from the Manager into the CaaS app-delivery layer.
+- **Proxy backend (kubeconfig issuance via capsule-proxy)**
+  - Replace the noop `internal/backends/proxy` client (which currently issues placeholder kubeconfigs) with a real integration against capsule-proxy or the configured access proxy for scoped kubeconfig/token issuance.
+  - Align this backend with the JWT/group semantics already used by the Manager so that different CaaS/PaaS providers can plug in their own proxy endpoints.
+- **Placeholder cleanup**
+  - Track and remove remaining non-test placeholders as platform features are implemented, keeping this roadmap and the docs in sync with actual behavior.
