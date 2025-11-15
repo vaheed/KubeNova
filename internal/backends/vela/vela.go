@@ -3,6 +3,7 @@ package vela
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	vadapter "github.com/vaheed/kubenova/internal/adapters/vela"
@@ -13,8 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"strconv"
 )
 
 // Client abstracts app delivery concepts without leaking vendor constructs.
@@ -53,6 +54,20 @@ func New(kubeconfig []byte) Client {
 	if err != nil {
 		return &noop{}
 	}
+	return newFromRESTConfig(cfg)
+}
+
+// NewFromRESTConfig returns a client using an in-cluster or external REST config.
+// This is used by the in-cluster Agent reconcilers so they project Apps without
+// needing raw kubeconfig bytes.
+func NewFromRESTConfig(cfg *rest.Config) Client {
+	if cfg == nil {
+		return &noop{}
+	}
+	return newFromRESTConfig(cfg)
+}
+
+func newFromRESTConfig(cfg *rest.Config) Client {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return &noop{}

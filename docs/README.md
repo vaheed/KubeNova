@@ -106,7 +106,7 @@ GET    /api/v1/catalog/workflows
 
 ## Adapters
 - **TenancyAdapter:** Tenant, quotas, namespace options, RBAC, NetworkPolicy.
-- **AppsAdapter:** Application, Workflow, WorkflowRun, Definitions. Deploy per project namespace. Support rollback via revisions.
+- **AppsAdapter:** Application, Workflow, WorkflowRun, Definitions. Deploy per project namespace. Support rollback via revisions. In-cluster, the Agent runs an `AppReconciler` (`internal/reconcile/app.go`) that watches ConfigMaps labeled with the KubeNova app identity and uses `internal/backends/vela` to project them into KubeVela `Application` resources and keep traits/policies in sync.
 
 ## Reconcile Loop
 Intent → Plan → Apply → Observe → Converge. Emit events with correlation-id.

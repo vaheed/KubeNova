@@ -13,11 +13,17 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	capib "github.com/vaheed/kubenova/internal/backends/capsule"
+	"github.com/vaheed/kubenova/internal/logging"
+	"go.uber.org/zap"
 	velab "github.com/vaheed/kubenova/internal/backends/vela"
 	clusterpkg "github.com/vaheed/kubenova/internal/cluster"
 	"github.com/vaheed/kubenova/internal/lib/httperr"
 	"github.com/vaheed/kubenova/internal/store"
 	kn "github.com/vaheed/kubenova/pkg/types"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // APIServer implements a subset of the contract (Clusters + Tenants) and embeds
@@ -76,6 +82,89 @@ func NewAPIServer(st store.Store) *APIServer {
 		runsByID:         map[string]WorkflowRun{},
 		runsByApp:        map[string][]WorkflowRun{},
 	}
+}
+
+// ensureAppConfigMap creates or updates a ConfigMap in the project namespace
+// that encodes the App model for the in-cluster AppReconciler. Best-effort:
+// failures are logged and do not affect the HTTP response.
+func (s *APIServer) ensureAppConfigMap(ctx context.Context, clusterUID, projectNS, tenantName string, in App) error {
+	_, enc, err := s.st.GetClusterByUID(ctx, clusterUID)
+	if err != nil || enc == "" {
+		return nil
+	}
+	kb, err := base64.StdEncoding.DecodeString(enc)
+	if err != nil {
+		return nil
+	}
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(kb)
+	if err != nil {
+		return nil
+	}
+	cset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil
+	}
+	name := in.Name
+	if strings.TrimSpace(name) == "" {
+		return nil
+	}
+	cmClient := cset.CoreV1().ConfigMaps(projectNS)
+	spec := map[string]any{}
+	if in.Components != nil {
+		spec["components"] = *in.Components
+	}
+	if in.Description != nil {
+		spec["description"] = *in.Description
+	}
+	rawSpec, _ := json.Marshal(spec)
+	rawTraits, _ := json.Marshal(zeroOrSlice(in.Traits))
+	rawPolicies, _ := json.Marshal(zeroOrSlice(in.Policies))
+	data := map[string]string{
+		"spec":     string(rawSpec),
+		"traits":   string(rawTraits),
+		"policies": string(rawPolicies),
+	}
+	if cm, err := cmClient.Get(ctx, name, metav1.GetOptions{}); err == nil {
+		if cm.Labels == nil {
+			cm.Labels = map[string]string{}
+		}
+		cm.Labels["kubenova.app"] = name
+		cm.Labels["kubenova.tenant"] = tenantName
+		cm.Labels["kubenova.project"] = projectNS
+		if cm.Data == nil {
+			cm.Data = map[string]string{}
+		}
+		for k, v := range data {
+			cm.Data[k] = v
+		}
+		if _, err := cmClient.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+			logging.FromContext(ctx).Error("update app configmap", zap.Error(err))
+		}
+		return nil
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: projectNS,
+			Labels: map[string]string{
+				"kubenova.app":     name,
+				"kubenova.tenant":  tenantName,
+				"kubenova.project": projectNS,
+			},
+		},
+		Data: data,
+	}
+	if _, err := cmClient.Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		logging.FromContext(ctx).Error("create app configmap", zap.Error(err))
+	}
+	return nil
+}
+
+func zeroOrSlice(ptr *[]map[string]any) []map[string]any {
+	if ptr == nil {
+		return []map[string]any{}
+	}
+	return *ptr
 }
 
 // --- helpers ---
@@ -1882,6 +1971,9 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPApps(w http.ResponseWrite
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
+	// Best-effort: materialize an App ConfigMap in the project namespace so the
+	// in-cluster AppReconciler can project it into a Vela Application.
+	_ = s.ensureAppConfigMap(r.Context(), string(c), pr.Name, pr.Tenant, in)
 	if aa, e := s.st.GetApp(r.Context(), a.Tenant, a.Project, a.Name); e == nil && aa.UID != "" {
 		u := aa.UID
 		in.Uid = &u
@@ -1927,6 +2019,9 @@ func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAppsA(w http.ResponseWrite
 	}
 	item := kn.App{Tenant: ap.Tenant, Project: ap.Project, Name: ap.Name, CreatedAt: time.Now().UTC()}
 	_ = s.st.UpdateApp(r.Context(), item)
+	// Best-effort update of the App ConfigMap so AppReconciler sees the latest
+	// components/traits/policies.
+	_ = s.ensureAppConfigMap(r.Context(), string(c), ap.Project, ap.Tenant, in)
 	w.WriteHeader(http.StatusOK)
 }
 
