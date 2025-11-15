@@ -989,14 +989,63 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.Response
 
 // (POST /api/v1/tenants/{t}/kubeconfig)
 func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.Request, t TenantParam) {
-	// best-effort: return short-lived kubeconfig binding to the proxy URL
-	if _, err := s.st.GetTenantByUID(r.Context(), string(t)); err != nil {
+	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
+	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), "")
-	exp := time.Now().UTC().Add(time.Hour)
-	resp := KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
+	// Optional grant parameters: project (by name), role, ttlSeconds
+	var body struct {
+		Project    *string `json:"project,omitempty"`
+		Role       *string `json:"role,omitempty"`
+		TtlSeconds *int    `json:"ttlSeconds,omitempty"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+			return
+		}
+	}
+	// Validate role when provided; actual RBAC enforcement happens in capsule-proxy.
+	if body.Role != nil {
+		role := strings.TrimSpace(*body.Role)
+		switch role {
+		case "tenantOwner", "projectDev", "readOnly":
+			// ok
+		case "":
+			// treat empty as omitted
+		default:
+			s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+			return
+		}
+	}
+	ttl := 0
+	if body.TtlSeconds != nil {
+		if *body.TtlSeconds < 0 || *body.TtlSeconds > 315360000 {
+			s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+			return
+		}
+		ttl = *body.TtlSeconds
+	}
+	// If a project name is provided, scope the kubeconfig to that project's namespace.
+	ns := ""
+	if body.Project != nil && strings.TrimSpace(*body.Project) != "" {
+		prName := strings.TrimSpace(*body.Project)
+		pr, err := s.st.GetProject(r.Context(), ten.Name, prName)
+		if err != nil {
+			s.writeError(w, http.StatusNotFound, "KN-404", "project not found")
+			return
+		}
+		ns = pr.Name
+	}
+	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), ns)
+	var resp KubeconfigResponse
+	if ttl > 0 {
+		exp := time.Now().UTC().Add(time.Duration(ttl) * time.Second)
+		resp = KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
+	} else {
+		resp = KubeconfigResponse{Kubeconfig: &cfg}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }

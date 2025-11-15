@@ -271,8 +271,14 @@ components:
     KubeconfigResponse:
       type: object
       properties:
-        kubeconfig: { type: string, format: byte }
-        expiresAt: { type: string, format: date-time }
+        kubeconfig:
+          type: string
+          format: byte
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Omitted or null when TTL is unlimited.
 
 paths:
   # System
@@ -1345,10 +1351,32 @@ paths:
         required: false
         content:
           application/json:
-            schema: { type: object, properties: { project: { type: string }, role: { type: string, enum: [tenantOwner, projectDev, readOnly], default: readOnly }, ttlSeconds: { type: integer, minimum: 60, maximum: 86400, default: 3600 } } }
+            schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Optional project name for a namespace-scoped kubeconfig.
+                role:
+                  type: string
+                  description: Logical role; actual RBAC is enforced by the access proxy.
+                  enum: [tenantOwner, projectDev, readOnly]
+                ttlSeconds:
+                  type: integer
+                  minimum: 0
+                  maximum: 315360000
+                  default: 0
+                  description: 0 or omitted means unlimited TTL; otherwise seconds until expiry.
             examples:
-              grant:
+              tenantUnlimited:
+                summary: Tenant-scoped, read-only, unlimited TTL
+                value: {}
+              tenantReadOnly1h:
+                summary: Tenant-scoped, read-only, 1 hour TTL
                 value: { role: "readOnly", ttlSeconds: 3600 }
+              projectDev1h:
+                summary: Project-scoped, projectDev, 1 hour TTL
+                value: { project: "web", role: "projectDev", ttlSeconds: 3600 }
       responses:
         '200':
           description: ok
@@ -1357,7 +1385,7 @@ paths:
               schema: { $ref: '#/components/schemas/KubeconfigResponse' }
               examples:
                 kubeconfig:
-              value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
+                  value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
   # Plans
   /api/v1/plans:
     get:

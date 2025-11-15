@@ -383,6 +383,20 @@ curl -sS "$BASE/api/v1/tenants/$TENANT_ID/usage?range=24h" \
 curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
   -H "$AUTH_HEADER" \
   | jq .
+
+# 6.4b) Tenant-scoped tenantOwner kubeconfig (1 hour TTL)
+curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
+  -H "$AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"role":"tenantOwner","ttlSeconds":3600}' \
+  | jq .
+
+# 6.4c) Project-scoped projectDev kubeconfig (1 hour TTL)
+curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
+  -H "$AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"project":"web","role":"projectDev","ttlSeconds":3600}' \
+  | jq .
 ```
 
 **What this does**
