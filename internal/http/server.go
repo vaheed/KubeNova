@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	capib "github.com/vaheed/kubenova/internal/backends/capsule"
+	proxypkg "github.com/vaheed/kubenova/internal/backends/proxy"
 	"github.com/vaheed/kubenova/internal/logging"
 	"go.uber.org/zap"
 	velab "github.com/vaheed/kubenova/internal/backends/vela"
@@ -594,18 +595,6 @@ func (s *APIServer) requireRoles(w http.ResponseWriter, r *http.Request, allowed
 	return false
 }
 
-func generateProxyKubeconfig(server, namespace, token string) []byte {
-	if strings.TrimSpace(server) == "" {
-		server = "https://proxy.kubenova.svc"
-	}
-	nsLine := ""
-	if strings.TrimSpace(namespace) != "" {
-		nsLine = "    namespace: " + namespace + "\n"
-	}
-	cfg := "apiVersion: v1\nkind: Config\nclusters:\n- name: kn-proxy\n  cluster:\n    insecure-skip-tls-verify: true\n    server: " + server + "\ncontexts:\n- name: tenant\n  context:\n    cluster: kn-proxy\n    user: tenant-user\n" + nsLine + "current-context: tenant\nusers:\n- name: tenant-user\n  user:\n    token: " + token + "\n"
-	return []byte(cfg)
-}
-
 func (s *APIServer) rolesFromReq(r *http.Request) []string {
 	hdr := r.Header.Get("Authorization")
 	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
@@ -1086,7 +1075,8 @@ func (s *APIServer) PostApiV1ClustersCBootstrapComponent(w http.ResponseWriter, 
 // (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig)
 func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
 	// ensure cluster, tenant, and project exist (uid-based lookups)
-	if _, _, err := s.st.GetClusterByUID(r.Context(), string(c)); err != nil {
+	cl, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil || cl.UID == "" {
 		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
 		return
 	}
@@ -1100,32 +1090,25 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.Response
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	// Issue a kubeconfig targeting the configured proxy URL with a short-lived token.
-	role := "projectDev"
-	subject := s.subjectFromReq(r)
-	claims := jwt.MapClaims{
-		"tenant":  ten.Name,
-		"roles":   []string{role},
-		"project": pr.Name,
+	// Issue a kubeconfig via the proxy backend with a short-lived projectDev token.
+	var kb []byte
+	if enc != "" {
+		kb, _ = base64.StdEncoding.DecodeString(enc)
 	}
-	if subject != "" {
-		claims["sub"] = subject
-	}
-	expTS := time.Now().Add(time.Hour)
-	claims["exp"] = expTS.Unix()
-	key := s.jwtKey
-	if len(key) == 0 {
-		key = []byte("dev")
-	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := tok.SignedString(key)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+	proxy := proxypkg.New(kb, os.Getenv("CAPSULE_PROXY_URL"))
+	projectName := pr.Name
+	kc, expUnix, ierr := proxy.Issue(r.Context(), ten.Name, &projectName, "projectDev", 3600)
+	if ierr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", ierr.Error())
 		return
 	}
-	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), pr.Name, tokenStr)
-	exp := expTS.UTC()
-	resp := KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
+	var resp KubeconfigResponse
+	if expUnix > 0 {
+		exp := time.Unix(expUnix, 0).UTC()
+		resp = KubeconfigResponse{Kubeconfig: &kc, ExpiresAt: &exp}
+	} else {
+		resp = KubeconfigResponse{Kubeconfig: &kc}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -1191,39 +1174,24 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 	if body.Role != nil && strings.TrimSpace(*body.Role) != "" {
 		role = strings.TrimSpace(*body.Role)
 	}
-	claims := jwt.MapClaims{
-		"tenant": ten.Name,
-		"roles":  []string{role},
-	}
+	// Issue kubeconfig via proxy backend; tenant is resolved by name, project is optional.
+	var projectName *string
 	if ns != "" {
-		claims["project"] = ns
+		pn := ns
+		projectName = &pn
 	}
-	if sub := s.subjectFromReq(r); sub != "" {
-		claims["sub"] = sub
-	}
-	var expPtr *time.Time
-	if ttl > 0 {
-		expTS := time.Now().Add(time.Duration(ttl) * time.Second)
-		claims["exp"] = expTS.Unix()
-		et := expTS.UTC()
-		expPtr = &et
-	}
-	key := s.jwtKey
-	if len(key) == 0 {
-		key = []byte("dev")
-	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := tok.SignedString(key)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+	proxy := proxypkg.New(nil, os.Getenv("CAPSULE_PROXY_URL"))
+	kc, expUnix, ierr := proxy.Issue(r.Context(), ten.Name, projectName, role, ttl)
+	if ierr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", ierr.Error())
 		return
 	}
-	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), ns, tokenStr)
 	var resp KubeconfigResponse
-	if expPtr != nil {
-		resp = KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: expPtr}
+	if expUnix > 0 {
+		exp := time.Unix(expUnix, 0).UTC()
+		resp = KubeconfigResponse{Kubeconfig: &kc, ExpiresAt: &exp}
 	} else {
-		resp = KubeconfigResponse{Kubeconfig: &cfg}
+		resp = KubeconfigResponse{Kubeconfig: &kc}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
