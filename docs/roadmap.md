@@ -1,78 +1,87 @@
 ---
-title: KubeNova Roadmap (API v1)
+title: KubeNova Roadmap
 ---
 
 # KubeNova Roadmap
 
-This roadmap tracks bringing the current API implementation in line with `docs/index.md` and `docs/openapi/openapi.yaml`, and getting the Manager/Agent ready for production use.
+This roadmap summarizes what is already implemented in the current KubeNova codebase (API, Manager, Agent, adapters) and outlines the next logical areas of work. It is derived from the OpenAPI contract (`docs/openapi/openapi.yaml`), the HTTP implementation (`internal/http`), reconcilers (`internal/reconcile`), and the adapters/backends.
 
-## Phase 1 — Tenants & Capsule Integration
+## Delivered Capabilities (v1)
 
-- **Persist tenant metadata** ✅
-  - Store `owners` and `labels` for tenants in Postgres (not just in-memory).
-  - Ensure `ListTenants` returns full metadata in both memory and Postgres stores.
-  - Make `/api/v1/clusters/{c}/tenants?labelSelector=...` and `?owner=...` filters work against persisted fields.
-- **Stabilize Capsule quotas/limits/netpolicies** ✅
-  - Preserve `spec.resourceQuotas` when updating `limitRanges` and `networkPolicies`.
-  - Store quotas in a KubeNova-owned annotation for compatibility across Capsule versions.
-  - Make `/summary` stable even after multiple quota/limits/netpol updates.
-- **Tenant summary** ✅
-  - List namespaces belonging to a tenant (via Capsule labels).
-  - Return effective quotas and (later) usage in `/summary`.
+- **Core API & Storage**
+  - OpenAPI-first HTTP surface at `/api/v1` with generated types and handlers wired in `internal/http`.
+  - Pluggable `Store` with in-memory and Postgres implementations (`internal/store`), including:
+    - Clusters, Tenants, Projects, Apps, PolicySets, and event history.
+  - Manager/Agent deployment via Helm charts with configuration in `env.example` and `deploy/helm`.
 
-## Phase 2 — Projects → Namespaces & Access
+- **Tenancy (Capsule Integration)**
+  - Tenants modeled in the API (`Tenant`, `/clusters/{c}/tenants`) and persisted in Postgres.
+  - Capsule Tenant CRs ensured from the Agent via `ProjectReconciler` and `ensureCapsuleTenant` (`internal/reconcile/project.go`).
+  - Tenant filters (`labelSelector`, `owner`) implemented in the HTTP layer.
 
-- **Project to Namespace mapping** ✅
-  - Introduce a controller that mirrors Projects from the store into real Namespaces on the target cluster.
-  - Label namespaces with `kubenova.project` and `capsule.clastix.io/tenant` for Capsule and reporting.
-- **Project access & RBAC** ✅
-  - Implement `PUT /projects/{p}/access` to create/update Roles and RoleBindings in the project namespace.
-  - Map roles (`tenantOwner`, `projectDev`, `readOnly`) to concrete RBAC rules.
-- **Scoped project kubeconfig** ✅
-  - Replace the current “raw cluster kubeconfig” stub with a project-scoped kubeconfig from capsule-proxy.
-  - Ensure project kubeconfigs cannot list or mutate resources outside their namespace.
-- **Tenant/Project → Cluster mapping** ✅
-  - Record the primary cluster UID on tenants created via `/clusters/{c}/tenants` for usage and kubeconfig resolution.
-  - Use this mapping when computing `usage` and kubeconfigs, falling back to the first cluster only for legacy tenants.
+- **Projects, Namespaces & Access**
+  - Projects persisted per tenant and exposed over `/clusters/{c}/tenants/{t}/projects`.
+  - `ProjectReconciler` keeps Kubernetes `Namespace` state in sync with projects and labels namespaces with `kubenova.project`, `kubenova.tenant`, and Capsule tenant labels.
+  - Project-level access management via `PUT /projects/{p}/access`, translating roles (`tenantOwner`, `projectDev`, `readOnly`) into concrete `Role` and `RoleBinding` objects (`internal/cluster/projects.go`).
 
-## Phase 3 — Usage & Metrics
+- **Kubeconfigs & Access Proxy**
+  - Cluster registration stores kubeconfigs centrally (`POST /api/v1/clusters`), then installs the Agent into the target cluster.
+  - Tenant- and project-scoped kubeconfig endpoints:
+    - `POST /api/v1/tenants/{t}/kubeconfig`
+    - `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig`
+  - Kubeconfigs always target the configured access proxy (`CAPSULE_PROXY_URL`), never the raw kube-apiserver, and embed JWTs with:
+    - `tenant`, optional `project`, `roles`, and `exp`.
+    - Role→group mapping aligned with capsule-proxy expectations (`tenantOwner`→`tenant-admins`, `projectDev`→`tenant-maintainers`, `readOnly`→`tenant-viewers`).
+  - Manager helper `internal/manager/kubeconfig.go` provides a consistent JWT + kubeconfig generator for internal consumers.
 
-- **Metrics ingestion** ✅
-  - Use Kubernetes `ResourceQuota` status (or hard limits) as the source of CPU/memory/pods usage per namespace.
-  - Compute tenant and project usage on demand from the target cluster using the stored kubeconfig.
-- **Usage endpoints** ✅
-  - Implement `GET /api/v1/tenants/{t}/usage` using live cluster data when available, falling back to stub values for tests/dev.
-  - Implement `GET /api/v1/projects/{p}/usage` using live cluster data when available, falling back to stub values for tests/dev.
-  - Optionally surface usage aggregates in tenant `/summary` in a future iteration.
+- **Apps & KubeVela Integration**
+  - App model and operations implemented in `internal/http`:
+    - CRUD under `/clusters/{c}/tenants/{t}/projects/{p}/apps`.
+    - Operations wired to KubeVela backend (`internal/backends/vela`): deploy, suspend, resume, rollback, status, revisions, diff, logs, traits, policies, image-update, and delete.
+  - Agent-level `AppReconciler` (`internal/reconcile/app.go`) projects ConfigMaps labeled with `kubenova.app`/`kubenova.tenant`/`kubenova.project` and JSON `spec`/`traits`/`policies` into KubeVela `Application` resources via the Vela backend.
 
-## Phase 4 — PolicySets & Catalog
+- **PolicySets & Plans**
+  - PolicySets persisted in Postgres and exposed via `/tenants/{t}/policysets` (`internal/store`, `internal/http`).
+  - Catalog-backed PolicySets and Plans loaded from `docs/catalog`, then applied to tenants:
+    - Plan application attaches quotas, limit ranges, and tenant/project-scoped PolicySets.
+    - PolicySets are translated into Vela traits/policies before app deployment (`applyPolicySets` in `internal/http/server.go`).
 
-- **PolicySets persistence** ✅
-  - Persist PolicySets in Postgres or a CRD instead of in-memory maps.
-  - Wire `GET/POST/PUT/DELETE /tenants/{t}/policysets` to the persistent store.
-- **PolicySet catalog** ✅
-  - Move the hard-coded PolicySet catalog into data (JSON-backed config).
-  - Serve `/clusters/{c}/policysets/catalog` from `docs/catalog/policysets.json`, with a safe built-in fallback.
-  - Allow the catalog to be extended without code changes to the manager.
+- **Usage & Metrics**
+  - Usage endpoints implemented:
+    - `GET /api/v1/tenants/{t}/usage`
+    - `GET /api/v1/projects/{p}/usage`
+  - Usage derived from Kubernetes `ResourceQuota` status via Agent helpers (`internal/cluster/usage.go`), with safe fallbacks for tests/dev.
+  - Manager exports Prometheus metrics and uses a lightweight Redis-backed telemetry buffer for events/metrics/logs from Agents.
 
-## Phase 5 — Auth, RBAC & Dev/Prod Parity
+- **Auth, Roles & Readiness**
+  - JWT-based auth with roles parsed from `Authorization` or `X-KN-Roles`, enforced per-tenant in the HTTP handlers.
+  - `/api/v1/me` and `/api/v1/tokens` provide self-introspection and token issuance for callers, using the same role semantics as kubeconfig grants.
+  - Manager and Agent expose `/healthz` and `/readyz`; Manager’s `/wait` endpoint blocks until the store is ready.
+  - OpenTelemetry tracing and structured logging wired through `internal/logging` and `internal/telemetry`.
 
-- **Auth & “me” endpoint**
-  - Make `GET /api/v1/me` return the real subject from JWT (`sub`) and effective roles.
-  - Align token issuance (`/tokens`) with production RBAC expectations.
-- **Readiness & health**
-  - Extend `/readyz` to check DB, critical external services, and migration status.
-- **Dev vs production behavior**
-  - Reduce stubs where behavior differs significantly (kubeconfigs, usage, quotas/limits synchronization).
-  - Document remaining dev-only shortcuts (if any) clearly in `docs/index.md`.
+## Next Focus Areas
 
-## Phase 6 �?" Provider Integrations (CaaS / PaaS)
+- **Tenant Reconciliation & External Tenancy**
+  - Promote `TenantReconciler` (`internal/reconcile/tenant.go`) from a no-op placeholder to a first-class integration with the underlying tenancy controller(s) beyond Capsule, while keeping Capsule as the default.
+  - Define a clear adapter interface for plugging in other multi-tenant controllers.
 
-- **Apps reconciliation (implemented)**
-  - `internal/reconcile/AppReconciler` now watches ConfigMaps that encode the KubeNova App model (`kubenova.app`/`kubenova.tenant`/`kubenova.project` labels and JSON `spec`/`traits`/`policies` in `data`) and projects them onto real KubeVela `Application` resources via `internal/backends/vela`.
-  - Traits and policies are applied using the shared Vela backend (`SetTraits`/`SetPolicies`), providing a concrete contract for how app specs flow from the manager or other producers into the CaaS app-delivery layer.
-- **Proxy backend (kubeconfig issuance via capsule-proxy)**
-  - Replace the noop `internal/backends/proxy` client (which currently issues placeholder kubeconfigs) with a real integration against capsule-proxy or the configured access proxy for scoped kubeconfig/token issuance.
-  - Align this backend with the JWT/group semantics already used by the Manager so that different CaaS/PaaS providers can plug in their own proxy endpoints.
-- **Placeholder cleanup**
-  - Track and remove remaining non-test placeholders as platform features are implemented, keeping this roadmap and the docs in sync with actual behavior.
+- **Richer App Workflows & Insights**
+  - Extend workflow run tracking beyond the in-memory `/apps/{a}/workflow/run` tracer (currently stored in-memory on the Manager).
+  - Surface more detailed app health, rollout status, and historical diffs in dedicated status endpoints and docs.
+
+- **Provider Integrations & Pluggable Proxies**
+  - Generalize the access proxy integration to support multiple proxy backends (not just Capsule proxy) with a consistent contract for kubeconfig and token issuance.
+  - Document and validate provider-specific expectations around groups/claims and RBAC.
+
+- **Operational Tooling & Drift Detection**
+  - Add higher-level summaries and “drift” indicators for Tenants, Projects, and Apps based on observed cluster state vs. desired state in the store.
+  - Provide safer clean-up and migration helpers for clusters and tenants (beyond the existing `/clusters/{c}/cleanup` endpoint).
+
+- **Multi-Cluster & HA Enhancements**
+  - Improve multi-cluster awareness (beyond the primary `kubenova.cluster` label on Tenants) for usage and app placement.
+  - Document and, where needed, adjust components for HA deployments of Manager and Agent in production environments.
+
+- **Docs & DX**
+  - Keep `docs/index.md` and `docs/README.md` as the single source for end-to-end flows (curl + kubectl) and update them alongside any behavioral changes.
+  - Introduce more task-oriented guides (for operators and platform teams) that explain how KubeNova, Capsule, capsule-proxy, and KubeVela fit together in real clusters.
+
