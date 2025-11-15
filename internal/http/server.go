@@ -408,6 +408,23 @@ func (s *APIServer) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Optional telemetry/external check: when OTEL exporter endpoint is configured,
+	// ensure it is reachable and not returning 5xx responses.
+	if endpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")); endpoint != "" {
+		tctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(tctx, http.MethodGet, endpoint, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			s.writeError(w, http.StatusServiceUnavailable, "KN-500", "telemetry not ready")
+			return
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode >= 500 {
+			s.writeError(w, http.StatusServiceUnavailable, "KN-500", "telemetry not ready")
+			return
+		}
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
