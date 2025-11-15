@@ -71,8 +71,8 @@ This roadmap tracks bringing the current API implementation in line with `docs/i
 - **Apps reconciliation (implemented)**
   - `internal/reconcile/AppReconciler` now watches ConfigMaps that encode the KubeNova App model (`kubenova.app`/`kubenova.tenant`/`kubenova.project` labels and JSON `spec`/`traits`/`policies` in `data`) and projects them onto real KubeVela `Application` resources via `internal/backends/vela`.
   - Traits and policies are applied using the shared Vela backend (`SetTraits`/`SetPolicies`), providing a concrete contract for how app specs flow from the manager or other producers into the CaaS app-delivery layer.
-- **Proxy backend (kubeconfig issuance via capsule-proxy, implemented)**
-  - `internal/backends/proxy` now issues real proxy kubeconfigs that always point at `CAPSULE_PROXY_URL` and embed short-lived JWT tokens with `tenant`, optional `project`, `roles`, and `groups` claims, matching the Manager's role→group semantics (`tenantOwner`→`tenant-admins`, `projectDev`→`tenant-maintainers`, `readOnly`→`tenant-viewers`).
-  - The kubeconfig issuance endpoints (`POST /api/v1/tenants/{t}/kubeconfig` and `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig`) delegate to this backend so different CaaS/PaaS providers can plug in their own proxy endpoints by configuring `CAPSULE_PROXY_URL`.
+- **Proxy backend (kubeconfig issuance via capsule-proxy)**
+  - Replace the noop `internal/backends/proxy` client (which currently issues placeholder kubeconfigs) with a real integration against capsule-proxy or the configured access proxy for scoped kubeconfig/token issuance.
+  - Align this backend with the JWT/group semantics already used by the Manager so that different CaaS/PaaS providers can plug in their own proxy endpoints.
 - **Placeholder cleanup**
   - Track and remove remaining non-test placeholders as platform features are implemented, keeping this roadmap and the docs in sync with actual behavior.
