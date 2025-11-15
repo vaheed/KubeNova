@@ -1356,7 +1356,7 @@ paths:
               properties:
                 project:
                   type: string
-                  description: Optional project name for a namespace-scoped kubeconfig.
+                  description: Optional project name for a namespace-scoped kubeconfig. Required when role is projectDev.
                 role:
                   type: string
                   description: Logical role; actual RBAC is enforced by the access proxy.

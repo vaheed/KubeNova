@@ -1092,6 +1092,11 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 		}
 		ns = pr.Name
 	}
+	// Enforce that projectDev kubeconfigs are always scoped to a project namespace.
+	if body.Role != nil && strings.TrimSpace(*body.Role) == "projectDev" && ns == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "project required for projectDev role")
+		return
+	}
 	// Determine effective role for the proxy token.
 	role := "readOnly"
 	if body.Role != nil && strings.TrimSpace(*body.Role) != "" {

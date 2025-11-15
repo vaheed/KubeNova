@@ -407,7 +407,11 @@ curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
   - applies quotas and PolicySets associated with that plan,
   - records the chosen plan on the tenant.
 - `GET /api/v1/tenants/{t}/usage` aggregates `cpu`, `memory`, and `pods` for the tenant, using live ResourceQuota data when available, falling back to example values in dev/test.
-- `POST /api/v1/tenants/{t}/kubeconfig` returns a short‑lived kubeconfig targeting the configured access proxy (`CAPSULE_PROXY_URL`).
+- `POST /api/v1/tenants/{t}/kubeconfig` returns kubeconfigs targeting the configured access proxy (`CAPSULE_PROXY_URL`):
+  - without a body, it issues a tenant-scoped read-only kubeconfig with unlimited TTL,
+  - with `role` and `ttlSeconds`, it records a requested role and expiry metadata,
+  - with `project`, it scopes the kubeconfig to that project’s namespace while still validating the tenant,
+  - when `role` is `projectDev`, a `project` must be provided (otherwise the request is rejected with KN-422).
 
 **kubectl checks – quotas and limits**
 
