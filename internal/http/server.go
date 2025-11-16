@@ -458,13 +458,18 @@ func loadPolicySetCatalog() []PolicySet {
 	return items
 }
 
-// Plan describes a tenant plan (quotas + PolicySets) loaded from docs/catalog/plans.json.
+// Plan describes a tenant plan (quotas + PolicySets) loaded from the catalog.
 type Plan struct {
 	Name         string            `json:"name"`
 	Description  *string           `json:"description,omitempty"`
 	TenantQuotas map[string]string `json:"tenantQuotas,omitempty"`
 	Policysets   []string          `json:"policysets,omitempty"`
 }
+
+// defaultTenantPlanName is the plan that is applied automatically on tenant
+// creation when the caller does not specify an explicit plan and the catalog
+// contains a matching entry.
+const defaultTenantPlanName = "baseline"
 
 // loadPlanCatalog loads the tenant plans catalog from data.
 func loadPlanCatalog() []Plan {
@@ -1511,17 +1516,51 @@ func (s *APIServer) PostApiV1ClustersCTenants(w http.ResponseWriter, r *http.Req
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
-	// read back to capture UID
+	// read back to capture UID and optionally apply a tenant plan / bootstrap Capsule
 	if t.Name != "" {
 		if tt, e := s.st.GetTenant(r.Context(), t.Name); e == nil && tt.UID != "" {
 			u := tt.UID
 			in.Uid = &u
-			// If a plan was requested at creation time, apply it now.
+
+			// Track which plan (if any) we actually applied, so we can surface it in the response.
+			appliedPlan := ""
+
+			// If a plan was requested at creation time, apply it now and surface errors to the caller.
 			if in.Plan != nil && strings.TrimSpace(*in.Plan) != "" {
-				if _, err := s.applyPlanToTenant(r.Context(), tt.UID, strings.TrimSpace(*in.Plan)); err != nil {
+				planName := strings.TrimSpace(*in.Plan)
+				if _, err := s.applyPlanToTenant(r.Context(), tt.UID, planName); err != nil {
 					s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 					return
 				}
+				appliedPlan = planName
+			} else if defaultTenantPlanName != "" {
+				// No explicit plan provided: best-effort apply the default plan when present in the catalog.
+				if _, err := s.applyPlanToTenant(r.Context(), tt.UID, defaultTenantPlanName); err != nil {
+					// Default plan application should not break tenant creation; log and continue.
+					logging.FromContext(r.Context()).Error("tenant.default_plan.apply_failed", zap.Error(err))
+				} else {
+					appliedPlan = defaultTenantPlanName
+				}
+			}
+
+			// If no plan was applied (explicit or default), best-effort ensure a Capsule Tenant exists.
+			if appliedPlan == "" {
+				var kb []byte
+				if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
+					kb, _ = base64.StdEncoding.DecodeString(enc)
+				}
+				if len(kb) > 0 {
+					caps := s.newCapsule(kb)
+					if err := caps.EnsureTenant(r.Context(), tt.Name, tt.Owners, tt.Labels); err != nil {
+						logging.FromContext(r.Context()).Error("tenant.ensure_capsule_failed", zap.Error(err))
+					}
+				}
+			}
+
+			// Reflect the effective plan (if any) on the response DTO.
+			if appliedPlan != "" {
+				planName := appliedPlan
+				in.Plan = &planName
 			}
 		}
 	}

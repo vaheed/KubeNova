@@ -128,7 +128,7 @@ components:
         name: { type: string }
         plan:
           type: string
-          description: Optional tenant plan name (e.g. baseline, gold)
+          description: Optional tenant plan name (e.g. baseline, gold). When omitted on creation the server may apply a default baseline plan when available.
         owners: { type: array, items: { type: string } }
         labels: { type: object, additionalProperties: { type: string } }
         annotations: { type: object, additionalProperties: { type: string } }
