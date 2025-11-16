@@ -325,7 +325,7 @@ curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID" \
   - `name` is the logical name, unique per cluster.
   - `owners` is an array of e‑mail addresses or subjects that identify tenant owners.
   - `labels` lets you tag tenants for filtering (for example, `team=platform`).
-  - `plan` is optional; when provided (for example `baseline` or `gold`), that plan is applied immediately. When omitted, the manager best‑effort applies the default `baseline` plan when available.
+  - `plan` is optional; when provided (for example `baseline` or `gold`), that plan is applied immediately. When omitted, the manager best‑effort applies the default plan configured via `KUBENOVA_DEFAULT_TENANT_PLAN` (default `baseline`) when available.
 - The response includes a stable `uid` used in many subsequent calls; you store it in `TENANT_ID`.
 - `GET /api/v1/clusters/{c}/tenants` lists tenants; you can later add `labelSelector` or `owner` query parameters.
 - `GET /api/v1/clusters/{c}/tenants/{t}` returns a single tenant by UID.
@@ -432,6 +432,11 @@ KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -A
   - with `role` and `ttlSeconds`, it records a requested role and expiry metadata,
   - with `project`, it scopes the kubeconfig to that project’s namespace while still validating the tenant,
   - when `role` is `projectDev`, a `project` must be provided (otherwise the request is rejected with KN-422).
+
+**Customizing plans**
+
+- Plans and PolicySets are defined in the embedded catalog under `pkg/catalog/plans.json` and `pkg/catalog/policysets.json`.
+- To customize them for your environment, edit those JSON files in your fork and rebuild/redeploy the Manager image; the `/api/v1/plans` and plan application behavior will then reflect your changes.
 
 **kubectl checks – quotas and limits**
 
@@ -741,4 +746,4 @@ If you need to perform low‑level cleanup inside the Kubernetes cluster itself 
 
 - For the full OpenAPI contract and example payloads, see `docs/openapi/openapi.yaml`.
 - For a high‑level overview and endpoint matrix, see `docs/README.md`.
-- For future and not‑yet‑implemented endpoints, track the roadmap in `docs/roadmap.md` and the OpenAPI file; they are intentionally omitted from this quickstart until fully implemented in `internal/http`.
+- For future and not‑yet‑implemented endpoints, track the roadmap via GitHub issues and milestones and the OpenAPI file; they are intentionally omitted from this quickstart until fully implemented in `internal/http`.

@@ -168,6 +168,15 @@ func zeroOrSlice(ptr *[]map[string]any) []map[string]any {
 	return *ptr
 }
 
+// envOrDefault returns the trimmed value of the given environment variable or
+// the provided default when unset/empty.
+func envOrDefault(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
 // --- helpers ---
 func parseBool(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
@@ -469,7 +478,7 @@ type Plan struct {
 // defaultTenantPlanName is the plan that is applied automatically on tenant
 // creation when the caller does not specify an explicit plan and the catalog
 // contains a matching entry.
-const defaultTenantPlanName = "baseline"
+var defaultTenantPlanName = strings.TrimSpace(envOrDefault("KUBENOVA_DEFAULT_TENANT_PLAN", "baseline"))
 
 // loadPlanCatalog loads the tenant plans catalog from data.
 func loadPlanCatalog() []Plan {
@@ -2284,7 +2293,26 @@ func (s *APIServer) GetApiV1Version(w http.ResponseWriter, r *http.Request) {
 
 func (s *APIServer) GetApiV1Features(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]bool{"tenancy": true, "vela": true, "proxy": true})
+	resp := map[string]any{
+		"tenancy": true,
+		"vela":    true,
+		"proxy":   true,
+	}
+	if strings.TrimSpace(defaultTenantPlanName) != "" {
+		resp["defaultTenantPlan"] = defaultTenantPlanName
+	}
+	if len(s.planCatalog) > 0 {
+		names := make([]string, 0, len(s.planCatalog))
+		for _, p := range s.planCatalog {
+			if strings.TrimSpace(p.Name) != "" {
+				names = append(names, p.Name)
+			}
+		}
+		if len(names) > 0 {
+			resp["availablePlans"] = names
+		}
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Access & Tokens

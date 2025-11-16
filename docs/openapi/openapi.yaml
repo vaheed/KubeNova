@@ -315,7 +315,12 @@ paths:
               schema: { type: object }
               examples:
                 features:
-                  value: { tenancy: true, proxy: true, appDelivery: true }
+                  value:
+                    tenancy: true
+                    proxy: true
+                    appDelivery: true
+                    defaultTenantPlan: baseline
+                    availablePlans: [baseline, gold]
 
   # Access & Tokens
   /api/v1/tokens:
