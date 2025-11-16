@@ -104,55 +104,7 @@ If `healthz` or `readyz` returns a non‑200 status, check the manager logs befo
 
 ---
 
-## 2.1) Basic Kubernetes checks with kubectl
 
-Once your cluster is reachable by your own `kubectl` (outside of KubeNova), these checks help you understand cluster health and what KubeNova is acting on. Run them against the same kubeconfig you will use in step 3.
-
-**Commands**
-
-```bash
-# Cluster and node health
-kubectl cluster-info
-kubectl get nodes -o wide
-
-# Namespaces and workloads
-kubectl get ns
-kubectl get pods -A
-kubectl get pods -A -o wide
-
-# Events (recent cluster issues)
-kubectl get events -A --sort-by=.lastTimestamp
-
-# API resources and CRDs (make sure platform components are installed)
-kubectl api-resources
-kubectl get crds | head
-
-# Storage and networking
-kubectl get storageclass
-kubectl get svc -A
-kubectl get ingress -A
-
-# Tenancy/app-delivery components (if you use them)
-kubectl get pods -n capsule-system
-kubectl get pods -n vela-system
-kubectl get pods -n cert-manager
-
-# Quick pod-level debug
-kubectl describe pod -n <namespace> <pod-name>
-kubectl logs -n <namespace> <pod-name> --tail=100
-```
-
-**What this does**
-
-- `cluster-info` and `get nodes` confirm the Kubernetes API and worker nodes are healthy.
-- `get ns` and `get pods -A` show what is actually running and where.
-- `get events` surfaces recent failures (image pull errors, scheduling issues, etc.).
-- `api-resources` and `get crds` confirm that tenancy/app-delivery CRDs are installed.
-- The namespace-specific commands (`capsule-system`, `vela-system`, `cert-manager`) help you verify supporting controllers are up before you rely on KubeNova to interact with them.
-
-These `kubectl` checks are optional from KubeNova’s perspective, but they are useful to confirm that the underlying cluster is ready for the API flows described in the next sections.
-
----
 
 ## 3) Register a cluster
 
@@ -212,8 +164,60 @@ kubectl get deploy -n kubenova-system
 kubectl get hpa -n kubenova-system
 
 # Agent logs (helpful if registration or heartbeats fail)
-kubectl logs deploy/agent -n kubenova-system --tail=50
+kubectl logs deploy/agent -n kubenova-system --tail=10
+
+# bootstrap logs (helpful if registration or heartbeats fail)
+kubectl logs job/kubenova-bootstrap -n kubenova-system
+
 ```
+
+## 3.1) Basic Kubernetes checks with kubectl
+
+Once your cluster is reachable by your own `kubectl` (outside of KubeNova), these checks help you understand cluster health and what KubeNova is acting on. Run them against the same kubeconfig you will use in step 3.
+
+**Commands**
+
+```bash
+# Cluster and node health
+kubectl cluster-info
+kubectl get nodes -o wide
+
+# Namespaces and workloads
+kubectl get ns
+kubectl get pods -A
+kubectl get pods -A -o wide
+
+# Events (recent cluster issues)
+kubectl get events -A --sort-by=.lastTimestamp
+
+# API resources and CRDs (make sure platform components are installed)
+kubectl api-resources
+kubectl get crds | head
+
+# Storage and networking
+kubectl get storageclass
+kubectl get svc -A
+kubectl get ingress -A
+
+# Tenancy/app-delivery components (if you use them)
+kubectl get pods -n capsule-system
+kubectl get pods -n vela-system
+kubectl get pods -n cert-manager
+
+# Quick pod-level debug
+kubectl describe pod -n <namespace> <pod-name>
+kubectl logs -n <namespace> <pod-name> --tail=100
+```
+
+**What this does**
+
+- `cluster-info` and `get nodes` confirm the Kubernetes API and worker nodes are healthy.
+- `get ns` and `get pods -A` show what is actually running and where.
+- `get events` surfaces recent failures (image pull errors, scheduling issues, etc.).
+- `api-resources` and `get crds` confirm that tenancy/app-delivery CRDs are installed.
+- The namespace-specific commands (`capsule-system`, `vela-system`, `cert-manager`) help you verify supporting controllers are up before you rely on KubeNova to interact with them.
+
+These `kubectl` checks are optional from KubeNova’s perspective, but they are useful to confirm that the underlying cluster is ready for the API flows described in the next sections.
 
 ---
 
@@ -293,7 +297,8 @@ TENANT_JSON=$(
     -d '{
       "name": "'"$TENANT_NAME"'",
       "owners": ["owner@example.com"],
-      "labels": { "team": "platform" }
+      "labels": { "team": "platform" },
+      "plan": "baseline"
     }'
 )
 
@@ -320,9 +325,11 @@ curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID" \
   - `name` is the logical name, unique per cluster.
   - `owners` is an array of e‑mail addresses or subjects that identify tenant owners.
   - `labels` lets you tag tenants for filtering (for example, `team=platform`).
+  - `plan` is optional; when provided (for example `baseline` or `gold`), that plan is applied immediately. When omitted, the manager best‑effort applies the default `baseline` plan when available.
 - The response includes a stable `uid` used in many subsequent calls; you store it in `TENANT_ID`.
 - `GET /api/v1/clusters/{c}/tenants` lists tenants; you can later add `labelSelector` or `owner` query parameters.
 - `GET /api/v1/clusters/{c}/tenants/{t}` returns a single tenant by UID.
+- Namespaces are still created lazily when you create projects (step 7); prior to that, quotas/limits are attached to the Capsule `Tenant` itself.
 
 You can also update ownership and limits:
 
@@ -345,11 +352,11 @@ The `summary` endpoint aggregates namespaces, effective quotas, usage and (when 
 **kubectl checks – tenant and namespaces**
 
 ```bash
-# Capsule Tenant object
+# Capsule Tenant object (visible after quotas/plan or a project has been created)
 kubectl get tenants.capsule.clastix.io
 kubectl get tenants.capsule.clastix.io "$TENANT_NAME" -o yaml
 
-# Namespaces that belong to this tenant
+# Namespaces that belong to this tenant (after you create a project)
 kubectl get ns -l "capsule.clastix.io/tenant=$TENANT_NAME"
 ```
 
@@ -414,7 +421,7 @@ KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -A
 
 **What this does**
 
-- `GET /api/v1/plans` returns the configured plan catalog loaded from `docs/catalog/plans.json`.
+- `GET /api/v1/plans` returns the configured plan catalog loaded from `pkg/catalog/plans.json`.
 - `PUT /api/v1/tenants/{t}/plan`:
   - validates the requested plan name,
   - applies quotas and PolicySets associated with that plan,

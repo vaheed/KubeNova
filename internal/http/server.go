@@ -13,13 +13,14 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	capib "github.com/vaheed/kubenova/internal/backends/capsule"
-	"github.com/vaheed/kubenova/internal/logging"
-	"go.uber.org/zap"
 	velab "github.com/vaheed/kubenova/internal/backends/vela"
 	clusterpkg "github.com/vaheed/kubenova/internal/cluster"
 	"github.com/vaheed/kubenova/internal/lib/httperr"
+	"github.com/vaheed/kubenova/internal/logging"
 	"github.com/vaheed/kubenova/internal/store"
+	catalogdata "github.com/vaheed/kubenova/pkg/catalog"
 	kn "github.com/vaheed/kubenova/pkg/types"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -440,9 +441,12 @@ func (s *APIServer) applyPolicySets(ctx context.Context, kubeconfig []byte, tena
 // loadPolicySetCatalog loads the cluster-wide PolicySet catalog from data.
 // If the file is missing or invalid, it falls back to a minimal built-in baseline.
 func loadPolicySetCatalog() []PolicySet {
-	path := "docs/catalog/policysets.json"
-	b, err := os.ReadFile(path)
+	// Prefer embedded catalog (works in containers).
+	b, err := catalogdata.FS.ReadFile("policysets.json")
 	if err != nil {
+		b = nil
+	}
+	if len(b) == 0 {
 		desc := "Base guardrails"
 		return []PolicySet{{Name: "baseline", Description: &desc}}
 	}
@@ -454,7 +458,7 @@ func loadPolicySetCatalog() []PolicySet {
 	return items
 }
 
-// Plan describes a tenant plan (quotas + PolicySets) loaded from docs/catalog/plans.json.
+// Plan describes a tenant plan (quotas + PolicySets) loaded from the catalog.
 type Plan struct {
 	Name         string            `json:"name"`
 	Description  *string           `json:"description,omitempty"`
@@ -462,11 +466,19 @@ type Plan struct {
 	Policysets   []string          `json:"policysets,omitempty"`
 }
 
+// defaultTenantPlanName is the plan that is applied automatically on tenant
+// creation when the caller does not specify an explicit plan and the catalog
+// contains a matching entry.
+const defaultTenantPlanName = "baseline"
+
 // loadPlanCatalog loads the tenant plans catalog from data.
 func loadPlanCatalog() []Plan {
-	path := "docs/catalog/plans.json"
-	b, err := os.ReadFile(path)
+	// Prefer embedded catalog (works in containers).
+	b, err := catalogdata.FS.ReadFile("plans.json")
 	if err != nil {
+		b = nil
+	}
+	if len(b) == 0 {
 		return nil
 	}
 	var items []Plan
@@ -1504,17 +1516,51 @@ func (s *APIServer) PostApiV1ClustersCTenants(w http.ResponseWriter, r *http.Req
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
-	// read back to capture UID
+	// read back to capture UID and optionally apply a tenant plan / bootstrap Capsule
 	if t.Name != "" {
 		if tt, e := s.st.GetTenant(r.Context(), t.Name); e == nil && tt.UID != "" {
 			u := tt.UID
 			in.Uid = &u
-			// If a plan was requested at creation time, apply it now.
+
+			// Track which plan (if any) we actually applied, so we can surface it in the response.
+			appliedPlan := ""
+
+			// If a plan was requested at creation time, apply it now and surface errors to the caller.
 			if in.Plan != nil && strings.TrimSpace(*in.Plan) != "" {
-				if _, err := s.applyPlanToTenant(r.Context(), tt.UID, strings.TrimSpace(*in.Plan)); err != nil {
+				planName := strings.TrimSpace(*in.Plan)
+				if _, err := s.applyPlanToTenant(r.Context(), tt.UID, planName); err != nil {
 					s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 					return
 				}
+				appliedPlan = planName
+			} else if defaultTenantPlanName != "" {
+				// No explicit plan provided: best-effort apply the default plan when present in the catalog.
+				if _, err := s.applyPlanToTenant(r.Context(), tt.UID, defaultTenantPlanName); err != nil {
+					// Default plan application should not break tenant creation; log and continue.
+					logging.FromContext(r.Context()).Error("tenant.default_plan.apply_failed", zap.Error(err))
+				} else {
+					appliedPlan = defaultTenantPlanName
+				}
+			}
+
+			// If no plan was applied (explicit or default), best-effort ensure a Capsule Tenant exists.
+			if appliedPlan == "" {
+				var kb []byte
+				if _, enc, err := s.st.GetClusterByUID(r.Context(), string(c)); err == nil {
+					kb, _ = base64.StdEncoding.DecodeString(enc)
+				}
+				if len(kb) > 0 {
+					caps := s.newCapsule(kb)
+					if err := caps.EnsureTenant(r.Context(), tt.Name, tt.Owners, tt.Labels); err != nil {
+						logging.FromContext(r.Context()).Error("tenant.ensure_capsule_failed", zap.Error(err))
+					}
+				}
+			}
+
+			// Reflect the effective plan (if any) on the response DTO.
+			if appliedPlan != "" {
+				planName := appliedPlan
+				in.Plan = &planName
 			}
 		}
 	}
