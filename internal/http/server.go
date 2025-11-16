@@ -1794,10 +1794,6 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjects(w http.ResponseWriter, r *
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	if err != nil {
-		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
-		return
-	}
 	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
 		return
 	}

@@ -437,6 +437,31 @@ KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -A
 
 - Plans and PolicySets are defined in the embedded catalog under `pkg/catalog/plans.json` and `pkg/catalog/policysets.json`.
 - To customize them for your environment, edit those JSON files in your fork and rebuild/redeploy the Manager image; the `/api/v1/plans` and plan application behavior will then reflect your changes.
+- The default plan applied when `plan` is omitted on tenant creation is controlled by the `KUBENOVA_DEFAULT_TENANT_PLAN` env var (default `baseline`).
+
+**Example – switch default plan to gold**
+
+```bash
+# In the Manager environment (.env, Helm values, or deployment)
+export KUBENOVA_DEFAULT_TENANT_PLAN=gold
+
+# After restarting the Manager:
+curl -sS "$BASE/api/v1/features" | jq .
+# ...
+# "defaultTenantPlan": "gold",
+# "availablePlans": ["baseline","gold"]
+```
+
+Now a call to:
+
+```bash
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants" \
+  -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" \
+  -d '{"name":"acme"}'
+```
+
+will best‑effort apply the `gold` plan to `acme` (as long as a `gold` plan exists in the catalog).
 
 **kubectl checks – quotas and limits**
 
