@@ -13,13 +13,14 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	capib "github.com/vaheed/kubenova/internal/backends/capsule"
-	"github.com/vaheed/kubenova/internal/logging"
-	"go.uber.org/zap"
 	velab "github.com/vaheed/kubenova/internal/backends/vela"
 	clusterpkg "github.com/vaheed/kubenova/internal/cluster"
 	"github.com/vaheed/kubenova/internal/lib/httperr"
+	"github.com/vaheed/kubenova/internal/logging"
 	"github.com/vaheed/kubenova/internal/store"
+	catalogdata "github.com/vaheed/kubenova/pkg/catalog"
 	kn "github.com/vaheed/kubenova/pkg/types"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -440,9 +441,12 @@ func (s *APIServer) applyPolicySets(ctx context.Context, kubeconfig []byte, tena
 // loadPolicySetCatalog loads the cluster-wide PolicySet catalog from data.
 // If the file is missing or invalid, it falls back to a minimal built-in baseline.
 func loadPolicySetCatalog() []PolicySet {
-	path := "docs/catalog/policysets.json"
-	b, err := os.ReadFile(path)
+	// Prefer embedded catalog (works in containers).
+	b, err := catalogdata.FS.ReadFile("policysets.json")
 	if err != nil {
+		b = nil
+	}
+	if len(b) == 0 {
 		desc := "Base guardrails"
 		return []PolicySet{{Name: "baseline", Description: &desc}}
 	}
@@ -464,9 +468,12 @@ type Plan struct {
 
 // loadPlanCatalog loads the tenant plans catalog from data.
 func loadPlanCatalog() []Plan {
-	path := "docs/catalog/plans.json"
-	b, err := os.ReadFile(path)
+	// Prefer embedded catalog (works in containers).
+	b, err := catalogdata.FS.ReadFile("plans.json")
 	if err != nil {
+		b = nil
+	}
+	if len(b) == 0 {
 		return nil
 	}
 	var items []Plan
