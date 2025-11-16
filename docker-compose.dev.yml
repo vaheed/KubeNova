@@ -12,6 +12,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    network_mode: host
+    restart: unless-stopped
 
   manager:
     build:
@@ -24,6 +26,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    network_mode: host
     restart: unless-stopped
 
   kind:
