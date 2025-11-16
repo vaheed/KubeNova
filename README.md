@@ -64,7 +64,50 @@ End-to-end flow for a managed cluster:
 
 The diagram below shows these nodes and control/data paths for all managed clusters:
 
-![KubeNova architecture](docs/Diagrams/KubeNova.png)
+```text
+              +-----------------------------+
+              |        KubeNova Manager     |
+              |  - REST API /api/v1         |
+              |  - Store (Postgres/memory)  |
+              |  - Tokens, Plans, Policies  |
+              +--------------+--------------+
+                             |
+                 sync / telemetry / control
+                             |
+                (HTTPS, JWT, OpenAPI v1)
+                             |
+          +------------------+------------------+
+          |                  |                  |
+   Cluster A            Cluster B            Cluster C
+ (registered)         (registered)         (registered)
+
+   +---------------- Managed Cluster (per cluster) ---------------+
+   |                                                              |
+   |  +-------------------+     +-----------------------------+   |
+   |  |  KubeNova Agent   |<--->|     KubeNova Manager        |   |
+   |  |  - Reconcile      |     |  (remote control plane)     |   |
+   |  |    Tenants/Apps   |     +-----------------------------+   |
+   |  +---------+---------+                                      |
+   |            |                                                |
+   |            | applies Capsule tenants, namespaces, apps      |
+   |            v                                                |
+   |  +------------------+      +-----------------------------+  |
+   |  |   Capsule        |      |        KubeVela             |  |
+   |  | - Tenants CRD    |      | - Application CRD           |  |
+   |  | - Namespace RBAC |      | - Traits / Policies         |  |
+   |  +---------+--------+      +---------------+-------------+  |
+   |            |                               |                |
+   |            | labels / groups               | App specs      |
+   |            v                               v                |
+   |  +------------------+      +-----------------------------+  |
+   |  |  capsule-proxy    |<----|  tenant/project kubeconfigs |  |
+   |  |  (access proxy)   |     |  issued by Manager          |  |
+   |  +---------+---------+      +-----------------------------+  |
+   |            |                                                |
+   |            v (kubectl, tenants & projects)                  |
+   |        Kubernetes API server                                |
+   +--------------------------------------------------------------+
+```
 
 ## Installation
 
@@ -165,7 +208,7 @@ For a complete curl walkthrough, see `docs/index.md`. At a high level:
    - `POST /api/v1/clusters` with a base64‑encoded kubeconfig.
    - Manager stores the cluster and installs the Agent.
 3. **Create tenant & project**
-   - `POST /api/v1/clusters/{c}/tenants` to create a tenant.
+   - `POST /api/v1/clusters/{c}/tenants` to create a tenant (optionally with a `plan`; when omitted, the Manager best‑effort applies the default plan configured via `KUBENOVA_DEFAULT_TENANT_PLAN`).
    - `POST /api/v1/clusters/{c}/tenants/{t}/projects` to create a project (mapped to a Namespace).
 4. **Grant project access**
    - `PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access` with members + roles (tenantOwner/projectDev/readOnly).
@@ -243,6 +286,28 @@ See `docs/index.md` and `docs/openapi/openapi.yaml` for the precise behavior of 
   - `staticcheck ./...`
   - `gosec ./...` – must have no HIGH findings before release.
 
+### Local kind dev cluster
+
+For a throwaway local Kubernetes cluster with MetalLB, a ready-made setup lives under `kind/`:
+
+- `kind/Dockerfile` builds an image with `kind` and `kubectl` preinstalled.
+- `kind/entrypoint.sh` creates a cluster (default name `nova`), patches the kubeconfig to use the control-plane IP, installs MetalLB and applies `kind/metallb-config.yaml`, then writes a kubeconfig to `/kubeconfig/config`.
+- `kind/kind-config.yaml` configures the kind cluster (nodes, registry mirrors, IPv4 networking).
+
+A simple way to use it for local experiments:
+
+```bash
+docker build -t kubenova-kind kind
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+  -v "$(pwd)/kind-kubeconfig:/kubeconfig" \
+  kubenova-kind
+
+export KUBECONFIG="$(pwd)/kind-kubeconfig/config"
+kubectl get nodes
+```
+
+You can then base64‑encode `kind-kubeconfig/config` in step 3 of `docs/index.md` to register this cluster with the KubeNova manager.
+
 ---
 
 ## Docs & Roadmap
@@ -250,6 +315,6 @@ See `docs/index.md` and `docs/openapi/openapi.yaml` for the precise behavior of 
 - API contract: `docs/openapi/openapi.yaml`.
 - cURL + `kubectl` quickstart: `docs/index.md`.
 - Design/overview and mapping references: this `README.md` and other files under `docs/`.
-- Future work and platform‑level goals: `docs/roadmap.md`.
+- Future work and platform‑level goals: tracked in issues and milestones on GitHub, and reflected in `docs/openapi/openapi.yaml` for any planned API additions.
 
 KubeNova adheres to semantic versioning; see `CHANGELOG.md` for a detailed list of changes between versions.

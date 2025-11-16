@@ -108,6 +108,18 @@ GET    /api/v1/catalog/workflows
 - **TenancyAdapter:** Tenant, quotas, namespace options, RBAC, NetworkPolicy.
 - **AppsAdapter:** Application, Workflow, WorkflowRun, Definitions. Deploy per project namespace. Support rollback via revisions. In-cluster, the Agent runs an `AppReconciler` (`internal/reconcile/app.go`) that watches ConfigMaps labeled with the KubeNova app identity and uses `internal/backends/vela` to project them into KubeVela `Application` resources and keep traits/policies in sync.
 
+## Plans & PolicySets catalog
+
+- The tenant plan and PolicySet catalog is embedded from `pkg/catalog/plans.json` and `pkg/catalog/policysets.json`.
+- Plans define tenant‑level quotas and a list of PolicySets to attach; PolicySets describe higher‑level traits/policies that are turned into Vela traits/policies at deploy time.
+- The Manager exposes:
+  - `GET /api/v1/plans` and `GET /api/v1/plans/{name}` to inspect available plans.
+  - `PUT /api/v1/tenants/{t}/plan` to apply a plan to an existing tenant.
+- On tenant creation:
+  - If the request includes a `plan` field (for example `baseline` or `gold`), that plan is applied immediately.
+  - If `plan` is omitted and `KUBENOVA_DEFAULT_TENANT_PLAN` is set (default `baseline`) and exists in the catalog, the Manager best‑effort applies that plan as the default. If the configured default plan is missing or fails to apply, defaulting is effectively disabled and only the stored tenant record is created.
+- To customize plans/policysets, edit the JSON files in `pkg/catalog` and rebuild the Manager image; changes are read at process start and reflected in the `/plans` and `/policysets` APIs.
+
 ## Reconcile Loop
 Intent → Plan → Apply → Observe → Converge. Emit events with correlation-id.
 Status phases: `Pending|Applying|Deployed|Drifted|Error`.
@@ -120,7 +132,7 @@ Status phases: `Pending|Applying|Deployed|Drifted|Error`.
     - `readOnly` → group `tenant-viewers` (operators may bind this group for read-only access).
   - Issued tokens include both `roles` and `groups` claims so capsule-proxy and Kubernetes RBAC can enforce the same semantics.
 - Kubeconfigs via **KubeconfigGrant**: TTL, verbs, namespaces; endpoint = access proxy. Tenant and project kubeconfig endpoints embed these JWTs.
-- Envelope encryption for secrets; periodic key rotation.
+- Envelope encryption utilities are available in `internal/security` for future secret-at-rest encryption and key rotation; the current release does not yet encrypt stored data by default.
 
 New features
 - Tenant listing supports `labelSelector` and `owner` filters.
