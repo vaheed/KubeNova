@@ -297,7 +297,8 @@ TENANT_JSON=$(
     -d '{
       "name": "'"$TENANT_NAME"'",
       "owners": ["owner@example.com"],
-      "labels": { "team": "platform" }
+      "labels": { "team": "platform" },
+      "plan": "baseline"
     }'
 )
 
@@ -324,8 +325,8 @@ curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID" \
   - `name` is the logical name, unique per cluster.
   - `owners` is an array of e‑mail addresses or subjects that identify tenant owners.
   - `labels` lets you tag tenants for filtering (for example, `team=platform`).
+  - `plan` is optional; when provided (for example `baseline` or `gold`), that plan is applied immediately. When omitted, the manager best‑effort applies the default `baseline` plan when available.
 - The response includes a stable `uid` used in many subsequent calls; you store it in `TENANT_ID`.
-- When no explicit `plan` is provided, the manager best‑effort applies the default `baseline` plan (from `pkg/catalog/plans.json`) to the new tenant, which creates a Capsule `Tenant` CR and attaches default quotas/limits when the cluster is reachable.
 - `GET /api/v1/clusters/{c}/tenants` lists tenants; you can later add `labelSelector` or `owner` query parameters.
 - `GET /api/v1/clusters/{c}/tenants/{t}` returns a single tenant by UID.
 - Namespaces are still created lazily when you create projects (step 7); prior to that, quotas/limits are attached to the Capsule `Tenant` itself.
