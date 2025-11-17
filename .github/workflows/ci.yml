@@ -1,4 +1,6 @@
 name: ci
+permissions:
+  contents: read
 on:
   push:
     branches: [ develop, main ]
@@ -50,6 +52,8 @@ jobs:
 
   trivy_fs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Clean Trivy cache dir (avoid tar restore conflicts)
@@ -71,6 +75,8 @@ jobs:
 
   trivy_config:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Clean Trivy cache dir (avoid tar restore conflicts)
@@ -92,6 +98,8 @@ jobs:
 
   trivy_images:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Build scan images (local Docker)

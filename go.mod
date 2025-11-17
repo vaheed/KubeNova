@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/alicebob/miniredis/v2 v2.35.0
-	github.com/go-chi/chi/v5 v5.0.11
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/go-chi/httprate v0.15.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0
