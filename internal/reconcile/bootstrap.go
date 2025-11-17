@@ -111,7 +111,7 @@ PROXY_VER=""; if [ -n "$CAPSULE_PROXY_VERSION" ]; then PROXY_VER="--version $CAP
 helm upgrade --install capsule-proxy projectcapsule/capsule-proxy \
   -n capsule-system --set service.enabled=true \
   --set service.type=LoadBalancer \
-  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' $PROXY_VER || true
+  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers,tenant-viewers}' $PROXY_VER || true
 # Extra readiness checks for capsule and proxy
 kubectl -n capsule-system rollout status deploy/capsule-controller-manager --timeout=10m || {
   echo "[bootstrap][error] capsule-controller-manager not ready";

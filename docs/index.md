@@ -98,7 +98,7 @@ curl -sS "$BASE/api/v1/features" | jq .
 - `GET /api/v1/me` returns the `subject` and `roles` derived from your JWT or from the `X-KN-Roles` header in tests/dev.
 - `GET /api/v1/healthz` and `GET /api/v1/readyz` report basic liveness and readiness.
 - `GET /api/v1/version` returns version, commit, and build date for the manager.
-- `GET /api/v1/features` tells you which high‑level capabilities are enabled (tenancy, proxy, app delivery).
+- `GET /api/v1/features` tells you which high‑level capabilities are enabled (tenancy, proxy, app delivery) and, when plans are configured, surfaces the default tenant plan and the list of available plans.
 
 If `healthz` or `readyz` returns a non‑200 status, check the manager logs before continuing.
 
@@ -276,6 +276,9 @@ kubectl get pods -n vela-system
 
 # Capsule Tenant CRD present
 kubectl get crd tenants.capsule.clastix.io
+
+# capsule-proxy service and external IP (used by CAPSULE_PROXY_URL)
+kubectl get svc -n capsule-system capsule-proxy
 ```
 
 ---
@@ -418,6 +421,11 @@ printf "%s" "$TENANT_KCFG_B64" | base64 -d > kn-tenant-kubeconfig.yaml
 KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get ns
 KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -A
 ```
+
+If these commands fail:
+
+- with `no route to host`, verify that `CAPSULE_PROXY_URL` points to a reachable capsule‑proxy URL (including the correct port) and that the `capsule-proxy` Service has an accessible `EXTERNAL-IP`.
+- with `the server doesn't have a resource type "pods"/"ns"`, make sure `CAPSULE_PROXY_URL` is the capsule‑proxy endpoint, not the Manager’s `/api/v1` URL.
 
 **What this does**
 

@@ -177,6 +177,16 @@ func envOrDefault(key, def string) string {
 	return def
 }
 
+// signingKey returns the JWT signing/verification key. When the configured key
+// is empty (dev/test), it falls back to a small default so issued tokens can be
+// parsed by the same process.
+func (s *APIServer) signingKey() []byte {
+	if len(s.jwtKey) > 0 {
+		return s.jwtKey
+	}
+	return []byte("dev")
+}
+
 // --- helpers ---
 func parseBool(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
@@ -646,7 +656,7 @@ func (s *APIServer) subjectFromReq(r *http.Request) string {
 	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
 		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
 		var claims jwt.MapClaims
-		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.signingKey(), nil }); err == nil {
 			if ssub, ok := claims["sub"].(string); ok {
 				return ssub
 			}
@@ -663,7 +673,7 @@ func (s *APIServer) tenantFromReq(r *http.Request) string {
 	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
 		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
 		var claims jwt.MapClaims
-		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.signingKey(), nil }); err == nil {
 			if t, ok := claims["tenant"].(string); ok {
 				return t
 			}
@@ -707,7 +717,7 @@ func (s *APIServer) rolesFromToken(tok string) []string {
 		return nil
 	}
 	var claims jwt.MapClaims
-	_, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil })
+	_, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.signingKey(), nil })
 	if err != nil {
 		return nil
 	}
@@ -1222,6 +1232,23 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 	if sub := s.subjectFromReq(r); sub != "" {
 		claims["sub"] = sub
 	}
+	// Map role to Kubernetes groups for proxy/RBAC, consistent with internal/backends/proxy.
+	groupsSet := map[string]struct{}{}
+	switch role {
+	case "tenantOwner":
+		groupsSet["tenant-admins"] = struct{}{}
+	case "projectDev":
+		groupsSet["tenant-maintainers"] = struct{}{}
+	case "readOnly":
+		groupsSet["tenant-viewers"] = struct{}{}
+	}
+	if len(groupsSet) > 0 {
+		var groups []string
+		for g := range groupsSet {
+			groups = append(groups, g)
+		}
+		claims["groups"] = groups
+	}
 	var expPtr *time.Time
 	if ttl > 0 {
 		expTS := time.Now().Add(time.Duration(ttl) * time.Second)
@@ -1229,12 +1256,8 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 		et := expTS.UTC()
 		expPtr = &et
 	}
-	key := s.jwtKey
-	if len(key) == 0 {
-		key = []byte("dev")
-	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := tok.SignedString(key)
+	tokenStr, err := tok.SignedString(s.signingKey())
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
 		return
@@ -2353,12 +2376,8 @@ func (s *APIServer) PostApiV1Tokens(w http.ResponseWriter, r *http.Request) {
 	if len(groups) > 0 {
 		c["groups"] = groups
 	}
-	key := s.jwtKey
-	if len(key) == 0 {
-		key = []byte("dev")
-	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
-	ss, err := tok.SignedString(key)
+	ss, err := tok.SignedString(s.signingKey())
 	if err != nil {
 		s.writeError(w, 500, "KN-500", "sign failure")
 		return
@@ -2374,7 +2393,7 @@ func (s *APIServer) GetApiV1Me(w http.ResponseWriter, r *http.Request) {
 	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
 		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
 		var claims jwt.MapClaims
-		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.signingKey(), nil }); err == nil {
 			if ssub, ok := claims["sub"].(string); ok {
 				subject = ssub
 			}
