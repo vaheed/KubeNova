@@ -152,6 +152,11 @@ kubectl -n vela-system rollout status deploy/vela-core --timeout=10m || {
   kubectl -n vela-system describe deploy/vela-core || true;
   kubectl get apiservice | grep -i oam || true;
 }
+
+# Install default Vela PolicyDefinitions required by baseline plans (health checks)
+echo "[bootstrap] installing vela PolicyDefinition: health"
+kubectl apply -f https://raw.githubusercontent.com/oam-dev/kubevela/v1.10.0/charts/vela-core/templates/def_policy_health.yaml || true
+
 echo "[bootstrap] complete"
 `},
 	}}

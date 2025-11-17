@@ -490,6 +490,28 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
               examples: { missing: { value: { code: "KN-404", message: "cluster not found" } } }
+  /api/v1/clusters/{c}/bootstrap/paas:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    post:
+      summary: Bootstrap a default tenant, project, and kubeconfig for PaaS
+      description: |
+        Creates (or reuses) a tenant and project on the given cluster and returns
+        a project-scoped kubeconfig suitable for app deployment. Names and plan
+        are controlled by `KUBENOVA_BOOTSTRAP_*` environment variables.
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+              examples:
+                bootstrap:
+                  value:
+                    tenant: acme
+                    tenantId: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111"
+                    project: web
+                    projectId: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61"
+                    expiresAt: "2025-01-01T01:00:00Z"
   /api/v1/clusters/{c}/capabilities:
     parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
     get:

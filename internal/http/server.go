@@ -345,6 +345,13 @@ func (s *APIServer) applyPlanToTenant(ctx context.Context, tenantUID, planName s
 	return *plan, nil
 }
 
+// ApplyPlanToTenant is an exported wrapper around applyPlanToTenant for
+// operational code paths (for example, PaaS bootstrap) that run outside the
+// generated router but still need to respect the same plan semantics.
+func (s *APIServer) ApplyPlanToTenant(ctx context.Context, tenantUID, planName string) (Plan, error) {
+	return s.applyPlanToTenant(ctx, tenantUID, planName)
+}
+
 // (PUT /api/v1/tenants/{t}/plan)
 func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request, t TenantParam) {
 	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
@@ -1142,14 +1149,19 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.Response
 	if subject != "" {
 		claims["sub"] = subject
 	}
+	// Map role to Kubernetes groups for proxy/RBAC.
+	groupsSet := map[string]struct{}{"tenant-maintainers": {}}
+	var groups []string
+	for g := range groupsSet {
+		groups = append(groups, g)
+	}
+	if len(groups) > 0 {
+		claims["groups"] = groups
+	}
 	expTS := time.Now().Add(time.Hour)
 	claims["exp"] = expTS.Unix()
-	key := s.jwtKey
-	if len(key) == 0 {
-		key = []byte("dev")
-	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := tok.SignedString(key)
+	tokenStr, err := tok.SignedString(s.signingKey())
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
 		return

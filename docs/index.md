@@ -721,6 +721,60 @@ These endpoints return simple JSON arrays and are safe to call frequently.
 
 ---
 
+## 11) One-shot PaaS bootstrap (optional)
+
+Once you are comfortable with the individual steps above, you can use a single
+endpoint to create a default tenant, project, and project-scoped kubeconfig on
+an existing cluster. This is driven by `KUBENOVA_BOOTSTRAP_*` environment
+variables (see `env.example`).
+
+**Command**
+
+```bash
+curl -sS -X POST \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/bootstrap/paas" \
+  -H "$AUTH_HEADER" \
+  | jq .
+```
+
+Example response:
+
+```json
+{
+  "cluster": "03d95dfd-a551-4dfa-a48f-2f49390704c1",
+  "tenant": "acme",
+  "tenantId": "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111",
+  "project": "web",
+  "projectId": "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61",
+  "kubeconfig": "YXBpVmVyc2lvbjogdjEK...",
+  "expiresAt": "2025-01-01T01:00:00Z"
+}
+```
+
+**Using the returned kubeconfig**
+
+```bash
+PAAST_KCFG_B64=$(curl -sS -X POST \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/bootstrap/paas" \
+  -H "$AUTH_HEADER" | jq -r '.kubeconfig')
+printf "%s" "$PAAST_KCFG_B64" | base64 -d > paas-kubeconfig.yaml
+
+KUBECONFIG=paas-kubeconfig.yaml kubectl get ns
+KUBECONFIG=paas-kubeconfig.yaml kubectl get pods -A
+```
+
+**What this does**
+
+- Creates (or reuses) a tenant named `KUBENOVA_BOOTSTRAP_TENANT_NAME` (default `acme`) on the target cluster.
+- Optionally applies the plan configured via `KUBENOVA_BOOTSTRAP_TENANT_PLAN` (default `baseline`).
+- Creates (or reuses) a project named `KUBENOVA_BOOTSTRAP_PROJECT_NAME` (default `web`) in that tenant and ensures its namespace exists.
+- Issues a project-scoped kubeconfig (role `projectDev`) for that tenant/project with TTL controlled by `KUBENOVA_BOOTSTRAP_KUBECONFIG_TTL` (default `3600` seconds).
+
+You can now use `paas-kubeconfig.yaml` directly to deploy apps into the
+bootstrap project using `kubectl` or higher-level tools.
+
+---
+
 ## 10) Clean up resources
 
 To remove resources created during this quickstart:
