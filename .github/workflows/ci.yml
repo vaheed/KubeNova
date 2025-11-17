@@ -50,6 +50,8 @@ jobs:
 
   trivy_fs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Clean Trivy cache dir (avoid tar restore conflicts)
