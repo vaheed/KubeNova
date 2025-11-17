@@ -92,6 +92,8 @@ jobs:
 
   trivy_images:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Build scan images (local Docker)
