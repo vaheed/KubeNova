@@ -199,8 +199,7 @@ jobs:
           set -euo pipefail
           REPO="oci://ghcr.io/${OWNER}/kubenova-charts"
           for f in out/*.tgz; do echo pushing "$f"; helm push "$f" "$REPO"; done
-      - name: Tag charts with dev/latest via ORAS
-        if: ${{ github.ref_name == 'develop' || github.ref_name == 'main' }}
+      - name: Setup ORAS CLI
         uses: oras-project/setup-oras@v1
       - name: Apply lightweight tags (latest or dev)
         if: ${{ github.ref_name == 'develop' || github.ref_name == 'main' }}
