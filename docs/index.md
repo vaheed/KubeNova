@@ -401,12 +401,6 @@ curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
   -d '{"role":"tenantOwner","ttlSeconds":3600}' \
   | jq .
 
-# 6.4c) Project-scoped projectDev kubeconfig (1 hour TTL)
-curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
-  -H "$AUTH_HEADER" \
-  -H 'Content-Type: application/json' \
-  -d '{"project":"web","role":"projectDev","ttlSeconds":3600}' \
-  | jq .
 ```
 
 **Using tenant kubeconfigs with kubectl**
@@ -437,9 +431,7 @@ If these commands fail:
 - `GET /api/v1/tenants/{t}/usage` aggregates `cpu`, `memory`, and `pods` for the tenant, using live ResourceQuota data when available, falling back to example values in dev/test.
 - `POST /api/v1/tenants/{t}/kubeconfig` returns kubeconfigs targeting the configured access proxy (`CAPSULE_PROXY_URL`):
   - without a body, it issues a tenant-scoped read-only kubeconfig with unlimited TTL,
-  - with `role` and `ttlSeconds`, it records a requested role and expiry metadata,
-  - with `project`, it scopes the kubeconfig to that project’s namespace while still validating the tenant,
-  - when `role` is `projectDev`, a `project` must be provided (otherwise the request is rejected with KN-422).
+  - with `role` and `ttlSeconds`, it records a requested role and expiry metadata.
 
 **Customizing plans**
 
@@ -474,13 +466,8 @@ will best‑effort apply the `gold` plan to `acme` (as long as a `gold` plan exi
 **kubectl checks – quotas and limits**
 
 ```bash
-# Quotas and limits attached to the Capsule Tenant
+# Quotas and limits attached to the Capsule Tenant (after plan apply)
 kubectl get tenants.capsule.clastix.io "$TENANT_NAME" -o yaml
-
-# After you create a project/namespace, inspect effective limits there
-kubectl get resourcequota,limitrange -n "$PROJECT_NAME"
-kubectl describe resourcequota -n "$PROJECT_NAME"
-kubectl describe limitrange -n "$PROJECT_NAME"
 ```
 
 ---
