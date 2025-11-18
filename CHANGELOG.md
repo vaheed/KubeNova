@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] - 2025-11-18
+
+### Changed
+- Cluster registration now requires a per-cluster `capsuleProxyUrl` (and optional `capsuleProxyCa`) so all issued kubeconfigs target capsule-proxy instead of the raw kube-apiserver.
+- Tenant and project kubeconfig endpoints issue ServiceAccount-based kubeconfigs via capsule-proxy; Manager-signed JWTs are no longer used for kubeconfigs.
+- Removed global `CAPSULE_PROXY_URL` configuration; Capsule proxy is configured per cluster via the API and stored on the Cluster resource.
+- Updated docs (`docs/index.md`, `docs/openapi/openapi.yaml`, `README.md`) to reflect the new kubeconfig and cluster registration behavior with concrete curl examples.
+
+### Fixed
+- Ensured PaaS bootstrap (`/api/v1/clusters/{c}/bootstrap/paas`) and all kubeconfig endpoints work with the new capsule-proxy-only model and pass the full Go test suite.
+
+---
+
 ## [0.9.5] - 2025-11-15
 
 ### Changed

@@ -760,8 +760,8 @@ func (s *APIServer) PostApiV1Clusters(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
 		return
 	}
-	if strings.TrimSpace(in.Name) == "" || len(in.Kubeconfig) == 0 {
-		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "name and kubeconfig required")
+	if strings.TrimSpace(in.Name) == "" || len(in.Kubeconfig) == 0 || strings.TrimSpace(in.CapsuleProxyUrl) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "name, kubeconfig and capsuleProxyUrl required")
 		return
 	}
 	// Store encoded kubeconfig
@@ -1124,7 +1124,8 @@ func (s *APIServer) PostApiV1ClustersCBootstrapComponent(w http.ResponseWriter, 
 // (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig)
 func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
 	// ensure cluster, tenant, and project exist (uid-based lookups)
-	if _, _, err := s.st.GetClusterByUID(r.Context(), string(c)); err != nil {
+	cl, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil || enc == "" {
 		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
 		return
 	}
@@ -1133,42 +1134,41 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.Response
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev") {
+		return
+	}
 	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
 	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	// Issue a kubeconfig targeting the configured proxy URL with a short-lived token.
-	role := "projectDev"
-	subject := s.subjectFromReq(r)
-	claims := jwt.MapClaims{
-		"tenant":  ten.Name,
-		"roles":   []string{role},
-		"project": pr.Name,
-	}
-	if subject != "" {
-		claims["sub"] = subject
-	}
-	// Map role to Kubernetes groups for proxy/RBAC.
-	groupsSet := map[string]struct{}{"tenant-maintainers": {}}
-	var groups []string
-	for g := range groupsSet {
-		groups = append(groups, g)
-	}
-	if len(groups) > 0 {
-		claims["groups"] = groups
-	}
-	expTS := time.Now().Add(time.Hour)
-	claims["exp"] = expTS.Unix()
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := tok.SignedString(s.signingKey())
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+	kb, derr := base64.StdEncoding.DecodeString(enc)
+	if derr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "cluster kubeconfig decode error")
 		return
 	}
-	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), pr.Name, tokenStr)
-	exp := expTS.UTC()
-	resp := KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
+	// Derive proxy configuration from cluster labels.
+	proxyURL := ""
+	proxyCA := ""
+	if len(cl.Labels) > 0 {
+		if v, ok := cl.Labels["kubenova.capsuleProxyUrl"]; ok {
+			proxyURL = v
+		}
+		if v, ok := cl.Labels["kubenova.capsuleProxyCa"]; ok {
+			proxyCA = v
+		}
+	}
+	role := "projectDev"
+	ttl := 3600
+	cfgBytes, expTime, err := clusterpkg.IssueProjectKubeconfig(r.Context(), kb, proxyURL, proxyCA, ten.Name, pr.Name, role, ttl)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	exp := expTime.UTC()
+	resp := KubeconfigResponse{Kubeconfig: &cfgBytes, ExpiresAt: &exp}
+	filename := fmt.Sprintf("kubeconfig-%s-%s-%s.yaml", ten.Name, pr.Name, cl.Name)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -1178,6 +1178,9 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
 	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev") {
 		return
 	}
 	// Optional grant parameters: project (by name), role, ttlSeconds
@@ -1234,53 +1237,45 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 	if body.Role != nil && strings.TrimSpace(*body.Role) != "" {
 		role = strings.TrimSpace(*body.Role)
 	}
-	claims := jwt.MapClaims{
-		"tenant": ten.Name,
-		"roles":  []string{role},
-	}
-	if ns != "" {
-		claims["project"] = ns
-	}
-	if sub := s.subjectFromReq(r); sub != "" {
-		claims["sub"] = sub
-	}
-	// Map role to Kubernetes groups for proxy/RBAC, consistent with internal/backends/proxy.
-	groupsSet := map[string]struct{}{}
-	switch role {
-	case "tenantOwner":
-		groupsSet["tenant-admins"] = struct{}{}
-	case "projectDev":
-		groupsSet["tenant-maintainers"] = struct{}{}
-	case "readOnly":
-		groupsSet["tenant-viewers"] = struct{}{}
-	}
-	if len(groupsSet) > 0 {
-		var groups []string
-		for g := range groupsSet {
-			groups = append(groups, g)
-		}
-		claims["groups"] = groups
-	}
-	var expPtr *time.Time
-	if ttl > 0 {
-		expTS := time.Now().Add(time.Duration(ttl) * time.Second)
-		claims["exp"] = expTS.Unix()
-		et := expTS.UTC()
-		expPtr = &et
-	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := tok.SignedString(s.signingKey())
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+	if ns == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "project required for kubeconfig issuance")
 		return
 	}
-	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), ns, tokenStr)
-	var resp KubeconfigResponse
-	if expPtr != nil {
-		resp = KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: expPtr}
-	} else {
-		resp = KubeconfigResponse{Kubeconfig: &cfg}
+	// Resolve primary cluster for the tenant and derive proxy configuration.
+	clusterUID := ten.Labels["kubenova.cluster"]
+	if strings.TrimSpace(clusterUID) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "tenant has no primary cluster")
+		return
 	}
+	cl, enc, err := s.st.GetClusterByUID(r.Context(), clusterUID)
+	if err != nil || enc == "" {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	kb, derr := base64.StdEncoding.DecodeString(enc)
+	if derr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "cluster kubeconfig decode error")
+		return
+	}
+	proxyURL := ""
+	proxyCA := ""
+	if len(cl.Labels) > 0 {
+		if v, ok := cl.Labels["kubenova.capsuleProxyUrl"]; ok {
+			proxyURL = v
+		}
+		if v, ok := cl.Labels["kubenova.capsuleProxyCa"]; ok {
+			proxyCA = v
+		}
+	}
+	cfgBytes, expTime, err := clusterpkg.IssueProjectKubeconfig(r.Context(), kb, proxyURL, proxyCA, ten.Name, ns, role, ttl)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	expPtr := expTime.UTC()
+	resp := KubeconfigResponse{Kubeconfig: &cfgBytes, ExpiresAt: &expPtr}
+	filename := fmt.Sprintf("kubeconfig-%s-%s-%s.yaml", ten.Name, ns, cl.Name)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -2319,7 +2314,7 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsALogsComponent(w http.
 // System endpoints under /api/v1
 func (s *APIServer) GetApiV1Version(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"version": "0.9.5"})
+	_ = json.NewEncoder(w).Encode(map[string]any{"version": "0.9.6"})
 }
 
 func (s *APIServer) GetApiV1Features(w http.ResponseWriter, r *http.Request) {
@@ -2505,6 +2500,12 @@ func toTypesCluster(in ClusterRegistration) kn.Cluster {
 	out := kn.Cluster{Name: in.Name, Labels: map[string]string{}, CreatedAt: time.Now().UTC()}
 	if in.Labels != nil {
 		out.Labels = *in.Labels
+	}
+	if strings.TrimSpace(in.CapsuleProxyUrl) != "" {
+		out.Labels["kubenova.capsuleProxyUrl"] = strings.TrimSpace(in.CapsuleProxyUrl)
+	}
+	if in.CapsuleProxyCa != nil && len(*in.CapsuleProxyCa) > 0 {
+		out.Labels["kubenova.capsuleProxyCa"] = base64.StdEncoding.EncodeToString(*in.CapsuleProxyCa)
 	}
 	return out
 }

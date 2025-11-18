@@ -17,7 +17,7 @@ It stores clusters, tenants, projects, apps, plans, and policysets in a backing 
 (Postgres or in‑memory), and installs/coordinates in‑cluster **Agents** that
 talk to Capsule, capsule‑proxy, and KubeVela.
 
-Current release: **0.9.5**
+Current release: **0.9.6**
 
 ---
 
@@ -126,11 +126,10 @@ helm repo update
 ```bash
 helm upgrade --install manager kubenova/manager \
   -n kubenova-system --create-namespace \
-  --set image.tag=0.9.5 \
+  --set image.tag=0.9.6 \
   --set env.KUBENOVA_REQUIRE_AUTH=true \
   --set env.MANAGER_URL_PUBLIC=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
-  --set env.CAPSULE_PROXY_URL=http://capsule-proxy.capsule-system.svc.cluster.local:9001 \
-  --set env.AGENT_IMAGE=ghcr.io/vaheed/kubenova/agent:0.9.5
+  --set env.AGENT_IMAGE=ghcr.io/vaheed/kubenova/agent:0.9.6
 ```
 
 ### Agent Chart (installed into target clusters)
@@ -138,7 +137,7 @@ helm upgrade --install manager kubenova/manager \
 ```bash
 helm upgrade --install agent kubenova/agent \
   -n kubenova-system \
-  --set image.tag=0.9.5 \
+  --set image.tag=0.9.6 \
   --set manager.url=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
   --set redis.enabled=true \
   --set bootstrap.capsuleVersion=0.10.6 \
@@ -160,20 +159,20 @@ helm registry login ghcr.io -u <user> -p <token>
 helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version latest
 
 # Pull a specific version
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.5
+helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.6
 
 # Pull develop stream
 helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version dev
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.5-dev
+helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.6-dev
 
 # Pull a release tag alias
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version v0.9.5
+helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version v0.9.6
 ```
 
 Branch/tag mapping:
 
-- `develop`: chart version is suffixed with `-dev` (for example, `0.9.5-dev`). A lightweight OCI tag alias `dev` also points to the same artifact.
-- `main`: chart version is the normal semver (`0.9.5`). A lightweight OCI tag alias `latest` also points to the same artifact.
+- `develop`: chart version is suffixed with `-dev` (for example, `0.9.6-dev`). A lightweight OCI tag alias `dev` also points to the same artifact.
+- `main`: chart version is the normal semver (`0.9.6`). A lightweight OCI tag alias `latest` also points to the same artifact.
 - Release tags (`vX.Y.Z`): an additional OCI tag alias `vX.Y.Z` is applied to the same artifact.
 
 ---
@@ -189,7 +188,7 @@ KubeNova reads configuration from environment variables and chart values. Key se
   - `JWT_SIGNING_KEY` – HS256 signing key used by the Manager for tokens and kubeconfigs.
 - **Proxy & URLs**
   - `MANAGER_URL_PUBLIC` – URL used by Agents to reach the Manager.
-  - `CAPSULE_PROXY_URL` – access proxy URL used in issued kubeconfigs (capsule‑proxy or equivalent).
+  - Per‑cluster Capsule proxy URL – configured at cluster registration time via `capsuleProxyUrl` and, optionally, `capsuleProxyCa` on the `ClusterRegistration` resource; all issued kubeconfigs target this URL, never the raw kube‑apiserver.
 - **Agent image & bootstrap**
   - `AGENT_IMAGE` – container image used when the Manager auto‑installs the Agent into target clusters.
   - `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_CORE_VERSION` – optional version pins for bootstrap.
@@ -213,10 +212,9 @@ For a complete curl walkthrough, see `docs/index.md`. At a high level:
 4. **Grant project access**
    - `PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access` with members + roles (tenantOwner/projectDev/readOnly).
 5. **Issue kubeconfigs**
-   - Tenant‑scoped:
-     - `POST /api/v1/tenants/{t}/kubeconfig`
-   - Project‑scoped:
-     - `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig`
+   - Tenant/project‑scoped (via Capsule proxy):
+     - `POST /api/v1/tenants/{t}/kubeconfig` (requires `project` in the body and uses the tenant’s primary cluster and its `capsuleProxyUrl`).
+     - `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig` (explicit cluster/tenant/project path).
 6. **Use kubeconfigs with kubectl**
    - Save the returned kubeconfig (`.kubeconfig` field) to a file and run:
      - `KUBECONFIG=<file> kubectl get ns`
@@ -265,8 +263,8 @@ The current implementation is intentionally generic; you can model WordPress, Gr
     - `readOnly` → `tenant-viewers`
 
 - **Kubeconfigs**
-  - All kubeconfigs issued by KubeNova target the access proxy (`CAPSULE_PROXY_URL`), not the raw kube‑apiserver.
-  - JWTs embedded in kubeconfigs include `tenant`, optional `project`, `roles`, and `groups` claims.
+  - All kubeconfigs issued by KubeNova target the per-cluster access proxy configured via `capsuleProxyUrl` on the Cluster; they never point at the raw kube‑apiserver.
+  - Tokens embedded in kubeconfigs encode `tenant`, optional `project`, `roles`, and `groups` claims that Capsule and capsule‑proxy use for enforcement.
 
 See `docs/index.md` and `docs/openapi/openapi.yaml` for the precise behavior of `/tokens`, `/me`, and kubeconfig endpoints.
 

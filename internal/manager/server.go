@@ -14,7 +14,6 @@ import (
 	"github.com/go-chi/httprate"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/vaheed/kubenova/internal/backends/proxy"
 	"github.com/vaheed/kubenova/internal/cluster"
 	httpapi "github.com/vaheed/kubenova/internal/http"
 	"github.com/vaheed/kubenova/internal/lib/httperr"
@@ -207,14 +206,26 @@ func (s *Server) paasBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Issue a project-scoped kubeconfig via the proxy backend.
+	// Issue a project-scoped kubeconfig via Capsule proxy using a bound
+	// ServiceAccount token instead of a Manager-signed JWT.
 	role := "projectDev"
 	ttl := atoi(os.Getenv("KUBENOVA_BOOTSTRAP_KUBECONFIG_TTL"))
 	if ttl <= 0 {
 		ttl = 3600
 	}
-	proxyClient := proxy.New(nil, os.Getenv("CAPSULE_PROXY_URL"))
-	kcfg, exp, err := proxyClient.Issue(ctx, tenStored.Name, &prStored.Name, role, ttl)
+	// Derive proxy configuration from cluster labels; PaaS bootstrap requires
+	// a per-cluster Capsule proxy URL.
+	proxyURL := ""
+	proxyCA := ""
+	if len(cl.Labels) > 0 {
+		if v, ok := cl.Labels["kubenova.capsuleProxyUrl"]; ok {
+			proxyURL = v
+		}
+		if v, ok := cl.Labels["kubenova.capsuleProxyCa"]; ok {
+			proxyCA = v
+		}
+	}
+	kcfg, expTime, err := cluster.IssueProjectKubeconfig(ctx, kb, proxyURL, proxyCA, tenStored.Name, prStored.Name, role, ttl)
 	if err != nil {
 		httperr.Write(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
@@ -227,7 +238,7 @@ func (s *Server) paasBootstrap(w http.ResponseWriter, r *http.Request) {
 		"project":    prStored.Name,
 		"projectId":  prStored.UID,
 		"kubeconfig": kcfg,
-		"expiresAt":  time.Unix(exp, 0).UTC(),
+		"expiresAt":  expTime.UTC(),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

@@ -108,7 +108,7 @@ If `healthz` or `readyz` returns a non‑200 status, check the manager logs befo
 
 ## 3) Register a cluster
 
-KubeNova models clusters centrally and stores their kubeconfigs. First, base64‑encode your kubeconfig and register it.
+KubeNova models clusters centrally and stores their kubeconfigs. First, base64‑encode your kubeconfig and register it together with the Capsule proxy URL for that cluster.
 
 **Commands**
 
@@ -119,6 +119,10 @@ export CLUSTER_NAME=${CLUSTER_NAME:-dev}
 # 3.2) Base64‑encode your kubeconfig (single line)
 export KUBE_B64=$(base64 < ~/.kube/config | tr -d '\n')
 
+# 3.2b) Discover capsule-proxy URL for this cluster
+# Example using a LoadBalancer Service; adjust to your environment.
+export CAPSULE_PROXY_URL="https://capsule-proxy.example.com:9001"
+
 # 3.3) Register the cluster
 curl -sS -X POST "$BASE/api/v1/clusters" \
   -H 'Content-Type: application/json' \
@@ -126,6 +130,7 @@ curl -sS -X POST "$BASE/api/v1/clusters" \
   -d '{
     "name": "'"$CLUSTER_NAME"'",
     "kubeconfig": "'"$KUBE_B64"'",
+    "capsuleProxyUrl": "'"$CAPSULE_PROXY_URL"'",
     "labels": { "env": "dev" }
   }' \
   | jq .
@@ -137,6 +142,7 @@ curl -sS -X POST "$BASE/api/v1/clusters" \
 - `KUBE_B64` holds your kubeconfig encoded as base64, as required by the `ClusterRegistration` schema.
 - `POST /api/v1/clusters`:
   - persists the cluster in the store,
+  - records `capsuleProxyUrl` on the cluster so every kubeconfig issued for this cluster targets capsule‑proxy, never the raw kube‑apiserver,
   - asynchronously starts installing the KubeNova agent into the target cluster (if `AGENT_IMAGE` and `MANAGER_URL_PUBLIC` are set),
   - returns a JSON `Cluster` with a stable `uid` and any labels you provided.
 
@@ -277,7 +283,7 @@ kubectl get pods -n vela-system
 # Capsule Tenant CRD present
 kubectl get crd tenants.capsule.clastix.io
 
-# capsule-proxy service and external IP (used by CAPSULE_PROXY_URL)
+# capsule-proxy service and external IP (used as capsuleProxyUrl per cluster)
 kubectl get svc -n capsule-system capsule-proxy
 ```
 
@@ -389,16 +395,11 @@ curl -sS "$BASE/api/v1/tenants/$TENANT_ID/usage?range=24h" \
   -H "$AUTH_HEADER" \
   | jq .
 
-# 6.4) Request a tenant‑scoped proxy kubeconfig
-curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
-  -H "$AUTH_HEADER" \
-  | jq .
-
-# 6.4b) Tenant-scoped tenantOwner kubeconfig (1 hour TTL)
+# 6.4) Request a tenant/project-scoped proxy kubeconfig
 curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
   -H "$AUTH_HEADER" \
   -H 'Content-Type: application/json' \
-  -d '{"role":"tenantOwner","ttlSeconds":3600}' \
+  -d '{"project":"web","role":"projectDev","ttlSeconds":3600}' \
   | jq .
 
 ```
@@ -406,20 +407,23 @@ curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
 **Using tenant kubeconfigs with kubectl**
 
 ```bash
-# Save a tenant-scoped kubeconfig to a file
+# Save a project-scoped kubeconfig to a file
 TENANT_KCFG_B64=$(curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
-  -H "$AUTH_HEADER" | jq -r '.kubeconfig')
+  -H "$AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"project":"web","role":"projectDev","ttlSeconds":3600}' \
+  | jq -r '.kubeconfig')
 printf "%s" "$TENANT_KCFG_B64" | base64 -d > kn-tenant-kubeconfig.yaml
 
-# Use it against the access proxy (capsule-proxy)
+# Use it against the access proxy (capsule-proxy) for that project
 KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get ns
-KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -A
+KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -n web
 ```
 
 If these commands fail:
 
-- with `no route to host`, verify that `CAPSULE_PROXY_URL` points to a reachable capsule‑proxy URL (including the correct port) and that the `capsule-proxy` Service has an accessible `EXTERNAL-IP`.
-- with `the server doesn't have a resource type "pods"/"ns"`, make sure `CAPSULE_PROXY_URL` is the capsule‑proxy endpoint, not the Manager’s `/api/v1` URL.
+- with `no route to host`, verify that the `capsuleProxyUrl` you configured for the cluster points to a reachable capsule‑proxy URL (including the correct port) and that the `capsule-proxy` Service has an accessible `EXTERNAL-IP`.
+- with `the server doesn't have a resource type "pods"/"ns"`, make sure `capsuleProxyUrl` is the capsule‑proxy endpoint, not the Manager’s `/api/v1` URL.
 
 **What this does**
 
@@ -429,9 +433,9 @@ If these commands fail:
   - applies quotas and PolicySets associated with that plan,
   - records the chosen plan on the tenant.
 - `GET /api/v1/tenants/{t}/usage` aggregates `cpu`, `memory`, and `pods` for the tenant, using live ResourceQuota data when available, falling back to example values in dev/test.
-- `POST /api/v1/tenants/{t}/kubeconfig` returns kubeconfigs targeting the configured access proxy (`CAPSULE_PROXY_URL`):
-  - without a body, it issues a tenant-scoped read-only kubeconfig with unlimited TTL,
-  - with `role` and `ttlSeconds`, it records a requested role and expiry metadata.
+- `POST /api/v1/tenants/{t}/kubeconfig` returns kubeconfigs targeting the per-cluster access proxy configured via `capsuleProxyUrl` on the associated cluster:
+  - with `project`, it issues a project-scoped kubeconfig for that tenant/project,
+  - `role` and `ttlSeconds` control the logical role and optional TTL; roles map to Kubernetes RBAC via Capsule.
 
 **Customizing plans**
 
