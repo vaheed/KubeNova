@@ -767,6 +767,39 @@ KUBECONFIG=paas-kubeconfig.yaml kubectl get ns
 KUBECONFIG=paas-kubeconfig.yaml kubectl get pods -n web
 ```
 
+**Optional – create a tenantOwner kubeconfig for the same tenant/project**
+
+```bash
+# Extract tenant and project IDs from the PaaS bootstrap response
+BOOTSTRAP_JSON=$(
+  curl -sS -X POST \
+    "$BASE/api/v1/clusters/$CLUSTER_ID/bootstrap/paas" \
+    -H "$AUTH_HEADER"
+)
+
+export TENANT_ID=$(echo "$BOOTSTRAP_JSON" | jq -r '.tenantId')
+export PROJECT_ID=$(echo "$BOOTSTRAP_JSON" | jq -r '.projectId')
+
+# Set a logical owner subject for the tenant and mark it as owner in Capsule
+curl -sS -X PUT \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/owners" \
+  -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" \
+  -d '{"owners":["owner@example.com"]}' \
+  -i
+
+# Issue a tenantOwner kubeconfig scoped to the bootstrap project
+TENANT_OWNER_KCFG_B64=$(curl -sS -X POST \
+  "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
+  -H "$AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"project":"web","role":"tenantOwner","ttlSeconds":3600}' \
+  | jq -r '.kubeconfig')
+printf "%s" "$TENANT_OWNER_KCFG_B64" | base64 -d > paas-tenant-owner-kubeconfig.yaml
+
+KUBECONFIG=paas-tenant-owner-kubeconfig.yaml kubectl get pods -n web
+```
+
 **What this does**
 
 - Creates (or reuses) a tenant named `KUBENOVA_BOOTSTRAP_TENANT_NAME` (default `acme`) on the target cluster.
