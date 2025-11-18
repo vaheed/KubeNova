@@ -172,9 +172,37 @@ func EnsureProjectAccess(ctx context.Context, kubeconfig []byte, tenant, project
 }
 
 func projectRoleName(tenant, project, role string) string {
-	name := fmt.Sprintf("kubenova:%s:%s:%s", tenant, project, role)
+	// Build a base name and then sanitize it to a valid RFC1123 subdomain:
+	// lower-case alphanumeric, '-', '.', max 63 chars, starting/ending with alphanumeric.
+	base := fmt.Sprintf("kubenova-%s-%s-%s", tenant, project, role)
+	base = strings.ToLower(base)
+	var b strings.Builder
+	for _, ch := range base {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '.' {
+			b.WriteRune(ch)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	name := b.String()
+	if name == "" {
+		name = "kubenova"
+	}
+	// Ensure first and last characters are alphanumeric.
+	isAlnum := func(c byte) bool {
+		return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+	}
+	if !isAlnum(name[0]) {
+		name = "k" + name
+	}
+	if !isAlnum(name[len(name)-1]) {
+		name = name[:len(name)-1] + "0"
+	}
 	if len(name) > 63 {
 		name = name[:63]
+		if !isAlnum(name[len(name)-1]) {
+			name = name[:len(name)-1] + "0"
+		}
 	}
 	return name
 }

@@ -107,17 +107,25 @@ func (n *noop) TenantSummary(ctx context.Context, name string) (Summary, error) 
 
 func (c *client) EnsureTenant(ctx context.Context, name string, owners []string, labels map[string]string) error {
 	u := capadapter.TenantCR(name, owners, labels)
-	cur, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			_, err = c.dyn.Resource(tenantGVR).Create(ctx, u, metav1.CreateOptions{})
+	// Best-effort conflict handling: retry a few times when Capsule or other
+	// controllers update the Tenant between our GET and UPDATE.
+	for i := 0; i < 3; i++ {
+		cur, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			if errors.IsNotFound(err) {
+				_, err = c.dyn.Resource(tenantGVR).Create(ctx, u, metav1.CreateOptions{})
+				return err
+			}
 			return err
+		}
+		u.SetResourceVersion(cur.GetResourceVersion())
+		_, err = c.dyn.Resource(tenantGVR).Update(ctx, u, metav1.UpdateOptions{})
+		if errors.IsConflict(err) {
+			continue
 		}
 		return err
 	}
-	u.SetResourceVersion(cur.GetResourceVersion())
-	_, err = c.dyn.Resource(tenantGVR).Update(ctx, u, metav1.UpdateOptions{})
-	return err
+	return fmt.Errorf("ensure tenant %q: conflict after retries", name)
 }
 
 func (c *client) DeleteTenant(ctx context.Context, name string) error {
@@ -324,19 +332,27 @@ func (c *client) TenantSummary(ctx context.Context, name string) (Summary, error
 }
 
 func (c *client) patchSpec(ctx context.Context, name string, fragment map[string]any) error {
-	u, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
+	var lastErr error
+	for i := 0; i < 3; i++ {
+		u, err := c.dyn.Resource(tenantGVR).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		spec, _, _ := unstructured.NestedMap(u.Object, "spec")
+		for k, v := range fragment {
+			spec[k] = v
+		}
+		if err := unstructured.SetNestedMap(u.Object, spec, "spec"); err != nil {
+			return fmt.Errorf("set spec: %w", err)
+		}
+		_, err = c.dyn.Resource(tenantGVR).Update(ctx, u, metav1.UpdateOptions{})
+		if errors.IsConflict(err) {
+			lastErr = err
+			continue
+		}
 		return err
 	}
-	spec, _, _ := unstructured.NestedMap(u.Object, "spec")
-	for k, v := range fragment {
-		spec[k] = v
-	}
-	if err := unstructured.SetNestedMap(u.Object, spec, "spec"); err != nil {
-		return fmt.Errorf("set spec: %w", err)
-	}
-	_, err = c.dyn.Resource(tenantGVR).Update(ctx, u, metav1.UpdateOptions{})
-	return err
+	return lastErr
 }
 
 func toTenant(u *unstructured.Unstructured) Tenant {

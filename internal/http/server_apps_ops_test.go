@@ -88,7 +88,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 
 	// Register a cluster
 	kcfg := base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nclusters: []\ncontexts: []\n"))
-	reqBody := []byte(`{"name":"c","kubeconfig":"` + kcfg + `"}`)
+	reqBody := []byte(`{"name":"c","kubeconfig":"` + kcfg + `","capsuleProxyUrl":"https://capsule-proxy.example.com:9001"}`)
 	resp, err := http.Post(ts.URL+"/api/v1/clusters", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		t.Fatal(err)

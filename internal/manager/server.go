@@ -72,6 +72,7 @@ func NewServer(s store.Store) *Server {
 
 	// Custom endpoints that are operational (not yet in generated router)
 	mux.Post("/api/v1/clusters/{c}/cleanup", srv.cleanupCluster)
+	mux.Post("/api/v1/clusters/{c}/bootstrap/paas", srv.paasBootstrap)
 
 	// Single OpenAPI-first HTTP server mounted at /api/v1
 	opts := httpapi.ChiServerOptions{BaseRouter: mux, BaseURL: ""}
@@ -115,6 +116,132 @@ func (s *Server) cleanupCluster(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte(`{"accepted":true}`))
+}
+
+// paasBootstrap creates a default tenant and project on a given cluster and
+// returns a project-scoped kubeconfig suitable for app deployment.
+// Requires roles: admin or ops.
+func (s *Server) paasBootstrap(w http.ResponseWriter, r *http.Request) {
+	if s.requireAuth {
+		roles := rolesFromReq(r, s.jwtKey)
+		if !hasAnyRole(roles, "admin", "ops") {
+			httperr.Write(w, http.StatusForbidden, "KN-403", "forbidden")
+			return
+		}
+	}
+	cid := chi.URLParam(r, "c")
+	if cid == "" {
+		httperr.Write(w, http.StatusUnprocessableEntity, "KN-422", "cluster id required")
+		return
+	}
+	ctx := r.Context()
+	// Ensure cluster exists and obtain kubeconfig for namespace operations.
+	cl, enc, err := s.store.GetClusterByUID(ctx, cid)
+	if err != nil || enc == "" {
+		httperr.Write(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	kb, _ := base64.StdEncoding.DecodeString(enc)
+
+	tenantName := strings.TrimSpace(os.Getenv("KUBENOVA_BOOTSTRAP_TENANT_NAME"))
+	if tenantName == "" {
+		tenantName = "acme"
+	}
+	if tenantName == "" {
+		httperr.Write(w, http.StatusUnprocessableEntity, "KN-422", "invalid tenant name")
+		return
+	}
+	projectName := strings.TrimSpace(os.Getenv("KUBENOVA_BOOTSTRAP_PROJECT_NAME"))
+	if projectName == "" {
+		projectName = "web"
+	}
+	if projectName == "" {
+		httperr.Write(w, http.StatusUnprocessableEntity, "KN-422", "invalid project name")
+		return
+	}
+
+	now := time.Now().UTC()
+	// Create or upsert tenant.
+	ten := types.Tenant{
+		Name:      tenantName,
+		Labels:    map[string]string{"kubenova.cluster": cid},
+		Owners:    []string{},
+		CreatedAt: now,
+	}
+	if err := s.store.CreateTenant(ctx, ten); err != nil {
+		httperr.Write(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	tenStored, err := s.store.GetTenant(ctx, tenantName)
+	if err != nil {
+		httperr.Write(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+
+	// Best-effort: apply bootstrap plan if configured.
+	if plan := strings.TrimSpace(os.Getenv("KUBENOVA_BOOTSTRAP_TENANT_PLAN")); plan != "" {
+		api := httpapi.NewAPIServer(s.store)
+		if _, err := api.ApplyPlanToTenant(ctx, tenStored.UID, plan); err != nil {
+			// Log only; do not fail bootstrap if plan application fails.
+			logging.WithTrace(ctx, logging.FromContext(ctx)).Error("paas.bootstrap.plan_failed", zap.String("plan", plan), zap.Error(err))
+		}
+	}
+
+	// Create or upsert project.
+	pr := types.Project{
+		Tenant:    tenStored.Name,
+		Name:      projectName,
+		CreatedAt: now,
+	}
+	if err := s.store.CreateProject(ctx, pr); err != nil {
+		httperr.Write(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	// Ensure the project namespace exists and is labeled.
+	_ = cluster.EnsureProjectNamespace(ctx, kb, tenStored.Name, projectName)
+
+	prStored, err := s.store.GetProject(ctx, tenStored.Name, projectName)
+	if err != nil {
+		httperr.Write(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+
+	// Issue a project-scoped kubeconfig via Capsule proxy using a bound
+	// ServiceAccount token instead of a Manager-signed JWT.
+	role := "projectDev"
+	ttl := atoi(os.Getenv("KUBENOVA_BOOTSTRAP_KUBECONFIG_TTL"))
+	if ttl <= 0 {
+		ttl = 3600
+	}
+	// Derive proxy configuration from cluster labels; PaaS bootstrap requires
+	// a per-cluster Capsule proxy URL.
+	proxyURL := ""
+	proxyCA := ""
+	if len(cl.Labels) > 0 {
+		if v, ok := cl.Labels["kubenova.capsuleProxyUrl"]; ok {
+			proxyURL = v
+		}
+		if v, ok := cl.Labels["kubenova.capsuleProxyCa"]; ok {
+			proxyCA = v
+		}
+	}
+	kcfg, expTime, err := cluster.IssueProjectKubeconfig(ctx, kb, proxyURL, proxyCA, tenStored.Name, prStored.Name, role, ttl)
+	if err != nil {
+		httperr.Write(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+
+	resp := map[string]any{
+		"cluster":    cl.UID,
+		"tenant":     tenStored.Name,
+		"tenantId":   tenStored.UID,
+		"project":    prStored.Name,
+		"projectId":  prStored.UID,
+		"kubeconfig": kcfg,
+		"expiresAt":  expTime.UTC(),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // rolesFromReq parses roles from Authorization JWT or X-KN-Roles.

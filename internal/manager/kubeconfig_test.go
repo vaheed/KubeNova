@@ -8,7 +8,7 @@ import (
 
 func TestGenerateKubeconfig(t *testing.T) {
 	g := types.KubeconfigGrant{Tenant: "alice", Role: "tenant-dev", Expires: time.Now().Add(time.Hour)}
-	y, err := GenerateKubeconfig(g, "https://capsule-proxy.example")
+	y, err := GenerateKubeconfig(g, "https://capsule-proxy.example", []byte("dev"))
 	if err != nil {
 		t.Fatal(err)
 	}

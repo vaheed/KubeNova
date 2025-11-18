@@ -14,6 +14,7 @@ import (
 )
 
 func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
+	t.Setenv("KUBENOVA_E2E_FAKE", "1")
 	// Disable auth to keep focus on PolicySets behavior without dealing with JWT/tenant scopes here.
 	t.Setenv("KUBENOVA_REQUIRE_AUTH", "false")
 	st := store.NewMemory()
@@ -43,7 +44,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 
 	// Register a cluster
 	kcfg := base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nclusters: []\ncontexts: []\n"))
-	reg := map[string]any{"name": "kind", "kubeconfig": kcfg}
+	reg := map[string]any{"name": "kind", "kubeconfig": kcfg, "capsuleProxyUrl": "https://capsule-proxy.example.com:9001"}
 	rb, _ := json.Marshal(reg)
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters", bytes.NewReader(rb))
 	req.Header.Set("Content-Type", "application/json")
@@ -156,9 +157,10 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	resp.Body.Close()
 
 	// Tenant kubeconfig
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tenants/"+ten+"/kubeconfig", bytes.NewReader(nil))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tenants/"+ten+"/kubeconfig", bytes.NewReader([]byte(`{"project":"web","role":"projectDev","ttlSeconds":3600}`)))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test")
-	req.Header.Set("X-KN-Roles", "readOnly")
+	req.Header.Set("X-KN-Roles", "projectDev")
 	req.Header.Set("X-KN-Tenant", "acme")
 	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusOK {

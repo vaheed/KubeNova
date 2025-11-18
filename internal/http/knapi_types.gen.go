@@ -148,9 +148,11 @@ type ClusterCapabilities struct {
 
 // ClusterRegistration defines model for ClusterRegistration.
 type ClusterRegistration struct {
-	Kubeconfig []byte             `json:"kubeconfig"`
-	Labels     *map[string]string `json:"labels,omitempty"`
-	Name       string             `json:"name"`
+	CapsuleProxyCa  *[]byte            `json:"capsuleProxyCa,omitempty"`
+	CapsuleProxyUrl string             `json:"capsuleProxyUrl"`
+	Kubeconfig      []byte             `json:"kubeconfig"`
+	Labels          *map[string]string `json:"labels,omitempty"`
+	Name            string             `json:"name"`
 }
 
 // Condition defines model for Condition.

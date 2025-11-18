@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -19,17 +18,13 @@ type Client interface {
 
 // New returns a local JWT-based implementation that issues proxy kubeconfigs
 // consistent with the Manager's HTTP kubeconfig endpoints.
-// kubeconfig bytes are unused for now; proxyURL, when empty, falls back to
-// CAPSULE_PROXY_URL or a default in-cluster address.
+// kubeconfig bytes are unused for now; proxyURL must not be empty and is
+// expected to point at capsule-proxy or an equivalent access proxy.
 func New(_ []byte, proxyURL string) Client {
 	if proxyURL == "" {
-		if v := os.Getenv("CAPSULE_PROXY_URL"); v != "" {
-			proxyURL = v
-		} else {
-			proxyURL = "https://proxy.kubenova.svc"
-		}
+		proxyURL = "https://proxy.kubenova.svc"
 	}
-	key := []byte(os.Getenv("JWT_SIGNING_KEY"))
+	key := []byte("") // JWT signing key must be provided by caller when used.
 	if len(key) == 0 {
 		key = []byte("dev")
 	}

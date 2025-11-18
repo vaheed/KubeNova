@@ -177,6 +177,16 @@ func envOrDefault(key, def string) string {
 	return def
 }
 
+// signingKey returns the JWT signing/verification key. When the configured key
+// is empty (dev/test), it falls back to a small default so issued tokens can be
+// parsed by the same process.
+func (s *APIServer) signingKey() []byte {
+	if len(s.jwtKey) > 0 {
+		return s.jwtKey
+	}
+	return []byte("dev")
+}
+
 // --- helpers ---
 func parseBool(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
@@ -333,6 +343,13 @@ func (s *APIServer) applyPlanToTenant(ctx context.Context, tenantUID, planName s
 		return Plan{}, err
 	}
 	return *plan, nil
+}
+
+// ApplyPlanToTenant is an exported wrapper around applyPlanToTenant for
+// operational code paths (for example, PaaS bootstrap) that run outside the
+// generated router but still need to respect the same plan semantics.
+func (s *APIServer) ApplyPlanToTenant(ctx context.Context, tenantUID, planName string) (Plan, error) {
+	return s.applyPlanToTenant(ctx, tenantUID, planName)
 }
 
 // (PUT /api/v1/tenants/{t}/plan)
@@ -646,7 +663,7 @@ func (s *APIServer) subjectFromReq(r *http.Request) string {
 	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
 		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
 		var claims jwt.MapClaims
-		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.signingKey(), nil }); err == nil {
 			if ssub, ok := claims["sub"].(string); ok {
 				return ssub
 			}
@@ -663,7 +680,7 @@ func (s *APIServer) tenantFromReq(r *http.Request) string {
 	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
 		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
 		var claims jwt.MapClaims
-		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.signingKey(), nil }); err == nil {
 			if t, ok := claims["tenant"].(string); ok {
 				return t
 			}
@@ -707,7 +724,7 @@ func (s *APIServer) rolesFromToken(tok string) []string {
 		return nil
 	}
 	var claims jwt.MapClaims
-	_, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil })
+	_, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.signingKey(), nil })
 	if err != nil {
 		return nil
 	}
@@ -743,8 +760,8 @@ func (s *APIServer) PostApiV1Clusters(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
 		return
 	}
-	if strings.TrimSpace(in.Name) == "" || len(in.Kubeconfig) == 0 {
-		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "name and kubeconfig required")
+	if strings.TrimSpace(in.Name) == "" || len(in.Kubeconfig) == 0 || strings.TrimSpace(in.CapsuleProxyUrl) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "name, kubeconfig and capsuleProxyUrl required")
 		return
 	}
 	// Store encoded kubeconfig
@@ -1107,7 +1124,8 @@ func (s *APIServer) PostApiV1ClustersCBootstrapComponent(w http.ResponseWriter, 
 // (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig)
 func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
 	// ensure cluster, tenant, and project exist (uid-based lookups)
-	if _, _, err := s.st.GetClusterByUID(r.Context(), string(c)); err != nil {
+	cl, enc, err := s.st.GetClusterByUID(r.Context(), string(c))
+	if err != nil || enc == "" {
 		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
 		return
 	}
@@ -1116,37 +1134,41 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.Response
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev") {
+		return
+	}
 	pr, err := s.st.GetProjectByUID(r.Context(), string(p))
 	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
 		return
 	}
-	// Issue a kubeconfig targeting the configured proxy URL with a short-lived token.
-	role := "projectDev"
-	subject := s.subjectFromReq(r)
-	claims := jwt.MapClaims{
-		"tenant":  ten.Name,
-		"roles":   []string{role},
-		"project": pr.Name,
-	}
-	if subject != "" {
-		claims["sub"] = subject
-	}
-	expTS := time.Now().Add(time.Hour)
-	claims["exp"] = expTS.Unix()
-	key := s.jwtKey
-	if len(key) == 0 {
-		key = []byte("dev")
-	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := tok.SignedString(key)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+	kb, derr := base64.StdEncoding.DecodeString(enc)
+	if derr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "cluster kubeconfig decode error")
 		return
 	}
-	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), pr.Name, tokenStr)
-	exp := expTS.UTC()
-	resp := KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: &exp}
+	// Derive proxy configuration from cluster labels.
+	proxyURL := ""
+	proxyCA := ""
+	if len(cl.Labels) > 0 {
+		if v, ok := cl.Labels["kubenova.capsuleProxyUrl"]; ok {
+			proxyURL = v
+		}
+		if v, ok := cl.Labels["kubenova.capsuleProxyCa"]; ok {
+			proxyCA = v
+		}
+	}
+	role := "projectDev"
+	ttl := 3600
+	cfgBytes, expTime, err := clusterpkg.IssueProjectKubeconfig(r.Context(), kb, proxyURL, proxyCA, ten.Name, pr.Name, role, ttl)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	exp := expTime.UTC()
+	resp := KubeconfigResponse{Kubeconfig: &cfgBytes, ExpiresAt: &exp}
+	filename := fmt.Sprintf("kubeconfig-%s-%s-%s.yaml", ten.Name, pr.Name, cl.Name)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -1156,6 +1178,9 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 	ten, err := s.st.GetTenantByUID(r.Context(), string(t))
 	if err != nil {
 		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner", "projectDev") {
 		return
 	}
 	// Optional grant parameters: project (by name), role, ttlSeconds
@@ -1212,40 +1237,45 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 	if body.Role != nil && strings.TrimSpace(*body.Role) != "" {
 		role = strings.TrimSpace(*body.Role)
 	}
-	claims := jwt.MapClaims{
-		"tenant": ten.Name,
-		"roles":  []string{role},
-	}
-	if ns != "" {
-		claims["project"] = ns
-	}
-	if sub := s.subjectFromReq(r); sub != "" {
-		claims["sub"] = sub
-	}
-	var expPtr *time.Time
-	if ttl > 0 {
-		expTS := time.Now().Add(time.Duration(ttl) * time.Second)
-		claims["exp"] = expTS.Unix()
-		et := expTS.UTC()
-		expPtr = &et
-	}
-	key := s.jwtKey
-	if len(key) == 0 {
-		key = []byte("dev")
-	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := tok.SignedString(key)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "KN-500", "sign failure")
+	if ns == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "project required for kubeconfig issuance")
 		return
 	}
-	cfg := generateProxyKubeconfig(os.Getenv("CAPSULE_PROXY_URL"), ns, tokenStr)
-	var resp KubeconfigResponse
-	if expPtr != nil {
-		resp = KubeconfigResponse{Kubeconfig: &cfg, ExpiresAt: expPtr}
-	} else {
-		resp = KubeconfigResponse{Kubeconfig: &cfg}
+	// Resolve primary cluster for the tenant and derive proxy configuration.
+	clusterUID := ten.Labels["kubenova.cluster"]
+	if strings.TrimSpace(clusterUID) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "tenant has no primary cluster")
+		return
 	}
+	cl, enc, err := s.st.GetClusterByUID(r.Context(), clusterUID)
+	if err != nil || enc == "" {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	kb, derr := base64.StdEncoding.DecodeString(enc)
+	if derr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "cluster kubeconfig decode error")
+		return
+	}
+	proxyURL := ""
+	proxyCA := ""
+	if len(cl.Labels) > 0 {
+		if v, ok := cl.Labels["kubenova.capsuleProxyUrl"]; ok {
+			proxyURL = v
+		}
+		if v, ok := cl.Labels["kubenova.capsuleProxyCa"]; ok {
+			proxyCA = v
+		}
+	}
+	cfgBytes, expTime, err := clusterpkg.IssueProjectKubeconfig(r.Context(), kb, proxyURL, proxyCA, ten.Name, ns, role, ttl)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	expPtr := expTime.UTC()
+	resp := KubeconfigResponse{Kubeconfig: &cfgBytes, ExpiresAt: &expPtr}
+	filename := fmt.Sprintf("kubeconfig-%s-%s-%s.yaml", ten.Name, ns, cl.Name)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -2284,7 +2314,7 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsALogsComponent(w http.
 // System endpoints under /api/v1
 func (s *APIServer) GetApiV1Version(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"version": "0.9.5"})
+	_ = json.NewEncoder(w).Encode(map[string]any{"version": "0.9.6"})
 }
 
 func (s *APIServer) GetApiV1Features(w http.ResponseWriter, r *http.Request) {
@@ -2353,12 +2383,8 @@ func (s *APIServer) PostApiV1Tokens(w http.ResponseWriter, r *http.Request) {
 	if len(groups) > 0 {
 		c["groups"] = groups
 	}
-	key := s.jwtKey
-	if len(key) == 0 {
-		key = []byte("dev")
-	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
-	ss, err := tok.SignedString(key)
+	ss, err := tok.SignedString(s.signingKey())
 	if err != nil {
 		s.writeError(w, 500, "KN-500", "sign failure")
 		return
@@ -2374,7 +2400,7 @@ func (s *APIServer) GetApiV1Me(w http.ResponseWriter, r *http.Request) {
 	if hdr != "" && strings.HasPrefix(strings.ToLower(hdr), "bearer ") {
 		tok := strings.TrimSpace(strings.TrimPrefix(hdr, "Bearer"))
 		var claims jwt.MapClaims
-		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.jwtKey, nil }); err == nil {
+		if _, err := jwt.ParseWithClaims(tok, &claims, func(token *jwt.Token) (interface{}, error) { return s.signingKey(), nil }); err == nil {
 			if ssub, ok := claims["sub"].(string); ok {
 				subject = ssub
 			}
@@ -2474,6 +2500,12 @@ func toTypesCluster(in ClusterRegistration) kn.Cluster {
 	out := kn.Cluster{Name: in.Name, Labels: map[string]string{}, CreatedAt: time.Now().UTC()}
 	if in.Labels != nil {
 		out.Labels = *in.Labels
+	}
+	if strings.TrimSpace(in.CapsuleProxyUrl) != "" {
+		out.Labels["kubenova.capsuleProxyUrl"] = strings.TrimSpace(in.CapsuleProxyUrl)
+	}
+	if in.CapsuleProxyCa != nil && len(*in.CapsuleProxyCa) > 0 {
+		out.Labels["kubenova.capsuleProxyCa"] = base64.StdEncoding.EncodeToString(*in.CapsuleProxyCa)
 	}
 	return out
 }

@@ -2,7 +2,6 @@ package manager
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -12,13 +11,9 @@ import (
 // GenerateKubeconfig builds a kubeconfig bound to the given proxy server URL.
 // It embeds a signed JWT token that encodes tenant/role information, using the
 // same semantics as the HTTP kubeconfig endpoints (tenantOwner/projectDev/readOnly).
-func GenerateKubeconfig(grant interface{}, server string) ([]byte, error) {
+func GenerateKubeconfig(grant interface{}, server string, key []byte) ([]byte, error) {
 	if server == "" {
-		if v := os.Getenv("CAPSULE_PROXY_URL"); v != "" {
-			server = v
-		} else {
-			server = "https://proxy.kubenova.svc"
-		}
+		return nil, fmt.Errorf("server is required")
 	}
 	// Derive tenant, role, and expiry from the optional KubeconfigGrant.
 	role := "readOnly"
@@ -64,10 +59,6 @@ func GenerateKubeconfig(grant interface{}, server string) ([]byte, error) {
 	}
 	if exp != nil {
 		claims["exp"] = exp.Unix()
-	}
-	key := []byte(os.Getenv("JWT_SIGNING_KEY"))
-	if len(key) == 0 {
-		key = []byte("dev")
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenStr, err := tok.SignedString(key)

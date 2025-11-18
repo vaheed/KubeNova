@@ -111,7 +111,7 @@ PROXY_VER=""; if [ -n "$CAPSULE_PROXY_VERSION" ]; then PROXY_VER="--version $CAP
 helm upgrade --install capsule-proxy projectcapsule/capsule-proxy \
   -n capsule-system --set service.enabled=true \
   --set service.type=LoadBalancer \
-  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers}' $PROXY_VER || true
+  --set options.allowedUserGroups='{tenant-admins,tenant-maintainers,tenant-viewers}' $PROXY_VER || true
 # Extra readiness checks for capsule and proxy
 kubectl -n capsule-system rollout status deploy/capsule-controller-manager --timeout=10m || {
   echo "[bootstrap][error] capsule-controller-manager not ready";
@@ -152,6 +152,11 @@ kubectl -n vela-system rollout status deploy/vela-core --timeout=10m || {
   kubectl -n vela-system describe deploy/vela-core || true;
   kubectl get apiservice | grep -i oam || true;
 }
+
+# Install default Vela PolicyDefinitions required by baseline plans (health checks)
+echo "[bootstrap] installing vela PolicyDefinition: health"
+kubectl apply -f https://raw.githubusercontent.com/oam-dev/kubevela/v1.10.0/charts/vela-core/templates/def_policy_health.yaml || true
+
 echo "[bootstrap] complete"
 `},
 	}}

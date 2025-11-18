@@ -24,7 +24,7 @@ func TestContract_ClustersAndTenants(t *testing.T) {
 
 	// Create Cluster
 	kcfg := []byte("apiVersion: v1\nclusters: []\ncontexts: []\n")
-	reg := ClusterRegistration{Name: "kind", Kubeconfig: kcfg}
+	reg := ClusterRegistration{Name: "kind", Kubeconfig: kcfg, CapsuleProxyUrl: "https://capsule-proxy.example.com:9001"}
 	b, _ := json.Marshal(reg)
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
@@ -125,7 +125,7 @@ func TestContract_ClustersListWithCursorAndLabels(t *testing.T) {
 	// seed clusters with labels
 	seed := func(name, env string) {
 		kcfg := []byte("apiVersion: v1\nclusters: []\ncontexts: []\n")
-		reg := ClusterRegistration{Name: name, Labels: &map[string]string{"env": env}, Kubeconfig: kcfg}
+		reg := ClusterRegistration{Name: name, Labels: &map[string]string{"env": env}, Kubeconfig: kcfg, CapsuleProxyUrl: "https://capsule-proxy.example.com:9001"}
 		b, _ := json.Marshal(reg)
 		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters", bytes.NewReader(b))
 		req.Header.Set("Content-Type", "application/json")
@@ -187,7 +187,7 @@ func TestContract_ClusterRegistrationBase64(t *testing.T) {
 
 	raw := []byte("raw-kubeconfig")
 	enc := base64.StdEncoding.EncodeToString(raw)
-	body := []byte(`{"name":"kind","kubeconfig":"` + enc + `"}`)
+	body := []byte(`{"name":"kind","kubeconfig":"` + enc + `","capsuleProxyUrl":"https://capsule-proxy.example.com:9001"}`)
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)

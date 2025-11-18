@@ -9,7 +9,6 @@ helm upgrade --install manager kubenova/manager \
   --set image.tag=latest \
   --set env.KUBENOVA_REQUIRE_AUTH=true \
   --set env.MANAGER_URL_PUBLIC=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
-  --set env.CAPSULE_PROXY_URL=http://capsule-proxy.capsule-system.svc.cluster.local:9001 \
   --set env.AGENT_IMAGE=ghcr.io/vaheed/kubenova/agent:latest
 ```
 
@@ -30,10 +29,8 @@ Values
 - `env.KUBENOVA_REQUIRE_AUTH` (bool string) – "true" to enforce JWT
 - `env.AGENT_IMAGE` (string) – agent image ref used for remote install
 - `env.MANAGER_URL_PUBLIC` (string) – public URL for callbacks/clients
-- `env.CAPSULE_PROXY_URL` (string, optional) – HTTP URL to capsule-proxy
 - `env.DEFAULT_NS_RESOURCEQUOTA` (string, optional) – JSON for defaults
 - `env.DEFAULT_PROJECT_QUOTA` (string, optional) – JSON for defaults
 - `jwt.existingSecret` (string) – name of Secret that holds JWT key
 - `jwt.value` (string) – inline key (chart will create Secret)
 - `jwt.key` (string) – secret key name (default `JWT_SIGNING_KEY`)
-

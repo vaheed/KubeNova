@@ -45,7 +45,7 @@ func TestCreateClusterEndpoint(t *testing.T) {
 
 	// bogus kubeconfig base64 to pass validation
 	kcfg := base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nclusters: []\ncontexts: []\n"))
-	body := map[string]any{"name": "c1", "kubeconfig": kcfg}
+	body := map[string]any{"name": "c1", "kubeconfig": kcfg, "capsuleProxyUrl": "https://capsule-proxy.example.com:9001"}
 	b, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters", bytes.NewReader(b))
 	w := httptest.NewRecorder()

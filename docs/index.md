@@ -98,7 +98,7 @@ curl -sS "$BASE/api/v1/features" | jq .
 - `GET /api/v1/me` returns the `subject` and `roles` derived from your JWT or from the `X-KN-Roles` header in tests/dev.
 - `GET /api/v1/healthz` and `GET /api/v1/readyz` report basic liveness and readiness.
 - `GET /api/v1/version` returns version, commit, and build date for the manager.
-- `GET /api/v1/features` tells you which high‑level capabilities are enabled (tenancy, proxy, app delivery).
+- `GET /api/v1/features` tells you which high‑level capabilities are enabled (tenancy, proxy, app delivery) and, when plans are configured, surfaces the default tenant plan and the list of available plans.
 
 If `healthz` or `readyz` returns a non‑200 status, check the manager logs before continuing.
 
@@ -108,7 +108,7 @@ If `healthz` or `readyz` returns a non‑200 status, check the manager logs befo
 
 ## 3) Register a cluster
 
-KubeNova models clusters centrally and stores their kubeconfigs. First, base64‑encode your kubeconfig and register it.
+KubeNova models clusters centrally and stores their kubeconfigs. First, base64‑encode your kubeconfig and register it together with the Capsule proxy URL for that cluster.
 
 **Commands**
 
@@ -119,6 +119,10 @@ export CLUSTER_NAME=${CLUSTER_NAME:-dev}
 # 3.2) Base64‑encode your kubeconfig (single line)
 export KUBE_B64=$(base64 < ~/.kube/config | tr -d '\n')
 
+# 3.2b) Discover capsule-proxy URL for this cluster
+# Example using a LoadBalancer Service; adjust to your environment.
+export CAPSULE_PROXY_URL="https://capsule-proxy.example.com:9001"
+
 # 3.3) Register the cluster
 curl -sS -X POST "$BASE/api/v1/clusters" \
   -H 'Content-Type: application/json' \
@@ -126,6 +130,7 @@ curl -sS -X POST "$BASE/api/v1/clusters" \
   -d '{
     "name": "'"$CLUSTER_NAME"'",
     "kubeconfig": "'"$KUBE_B64"'",
+    "capsuleProxyUrl": "'"$CAPSULE_PROXY_URL"'",
     "labels": { "env": "dev" }
   }' \
   | jq .
@@ -137,6 +142,7 @@ curl -sS -X POST "$BASE/api/v1/clusters" \
 - `KUBE_B64` holds your kubeconfig encoded as base64, as required by the `ClusterRegistration` schema.
 - `POST /api/v1/clusters`:
   - persists the cluster in the store,
+  - records `capsuleProxyUrl` on the cluster so every kubeconfig issued for this cluster targets capsule‑proxy, never the raw kube‑apiserver,
   - asynchronously starts installing the KubeNova agent into the target cluster (if `AGENT_IMAGE` and `MANAGER_URL_PUBLIC` are set),
   - returns a JSON `Cluster` with a stable `uid` and any labels you provided.
 
@@ -276,6 +282,9 @@ kubectl get pods -n vela-system
 
 # Capsule Tenant CRD present
 kubectl get crd tenants.capsule.clastix.io
+
+# capsule-proxy service and external IP (used as capsuleProxyUrl per cluster)
+kubectl get svc -n capsule-system capsule-proxy
 ```
 
 ---
@@ -386,38 +395,35 @@ curl -sS "$BASE/api/v1/tenants/$TENANT_ID/usage?range=24h" \
   -H "$AUTH_HEADER" \
   | jq .
 
-# 6.4) Request a tenant‑scoped proxy kubeconfig
-curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
-  -H "$AUTH_HEADER" \
-  | jq .
-
-# 6.4b) Tenant-scoped tenantOwner kubeconfig (1 hour TTL)
-curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
-  -H "$AUTH_HEADER" \
-  -H 'Content-Type: application/json' \
-  -d '{"role":"tenantOwner","ttlSeconds":3600}' \
-  | jq .
-
-# 6.4c) Project-scoped projectDev kubeconfig (1 hour TTL)
+# 6.4) Request a tenant/project-scoped proxy kubeconfig
 curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
   -H "$AUTH_HEADER" \
   -H 'Content-Type: application/json' \
   -d '{"project":"web","role":"projectDev","ttlSeconds":3600}' \
   | jq .
+
 ```
 
 **Using tenant kubeconfigs with kubectl**
 
 ```bash
-# Save a tenant-scoped kubeconfig to a file
+# Save a project-scoped kubeconfig to a file
 TENANT_KCFG_B64=$(curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
-  -H "$AUTH_HEADER" | jq -r '.kubeconfig')
+  -H "$AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"project":"web","role":"projectDev","ttlSeconds":3600}' \
+  | jq -r '.kubeconfig')
 printf "%s" "$TENANT_KCFG_B64" | base64 -d > kn-tenant-kubeconfig.yaml
 
-# Use it against the access proxy (capsule-proxy)
+# Use it against the access proxy (capsule-proxy) for that project
 KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get ns
-KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -A
+KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -n web
 ```
+
+If these commands fail:
+
+- with `no route to host`, verify that the `capsuleProxyUrl` you configured for the cluster points to a reachable capsule‑proxy URL (including the correct port) and that the `capsule-proxy` Service has an accessible `EXTERNAL-IP`.
+- with `the server doesn't have a resource type "pods"/"ns"`, make sure `capsuleProxyUrl` is the capsule‑proxy endpoint, not the Manager’s `/api/v1` URL.
 
 **What this does**
 
@@ -427,11 +433,9 @@ KUBECONFIG=kn-tenant-kubeconfig.yaml kubectl get pods -A
   - applies quotas and PolicySets associated with that plan,
   - records the chosen plan on the tenant.
 - `GET /api/v1/tenants/{t}/usage` aggregates `cpu`, `memory`, and `pods` for the tenant, using live ResourceQuota data when available, falling back to example values in dev/test.
-- `POST /api/v1/tenants/{t}/kubeconfig` returns kubeconfigs targeting the configured access proxy (`CAPSULE_PROXY_URL`):
-  - without a body, it issues a tenant-scoped read-only kubeconfig with unlimited TTL,
-  - with `role` and `ttlSeconds`, it records a requested role and expiry metadata,
-  - with `project`, it scopes the kubeconfig to that project’s namespace while still validating the tenant,
-  - when `role` is `projectDev`, a `project` must be provided (otherwise the request is rejected with KN-422).
+- `POST /api/v1/tenants/{t}/kubeconfig` returns kubeconfigs targeting the per-cluster access proxy configured via `capsuleProxyUrl` on the associated cluster:
+  - with `project`, it issues a project-scoped kubeconfig for that tenant/project,
+  - `role` and `ttlSeconds` control the logical role and optional TTL; roles map to Kubernetes RBAC via Capsule.
 
 **Customizing plans**
 
@@ -466,13 +470,8 @@ will best‑effort apply the `gold` plan to `acme` (as long as a `gold` plan exi
 **kubectl checks – quotas and limits**
 
 ```bash
-# Quotas and limits attached to the Capsule Tenant
+# Quotas and limits attached to the Capsule Tenant (after plan apply)
 kubectl get tenants.capsule.clastix.io "$TENANT_NAME" -o yaml
-
-# After you create a project/namespace, inspect effective limits there
-kubectl get resourcequota,limitrange -n "$PROJECT_NAME"
-kubectl describe resourcequota -n "$PROJECT_NAME"
-kubectl describe limitrange -n "$PROJECT_NAME"
 ```
 
 ---
@@ -723,6 +722,94 @@ curl -sS "$BASE/api/v1/catalog/workflows" \
 - `GET /api/v1/catalog/workflows` lists workflows (for example, rollout strategies).
 
 These endpoints return simple JSON arrays and are safe to call frequently.
+
+---
+
+## 11) One-shot PaaS bootstrap (optional)
+
+Once you are comfortable with the individual steps above, you can use a single
+endpoint to create a default tenant, project, and project-scoped kubeconfig on
+an existing cluster. This is driven by `KUBENOVA_BOOTSTRAP_*` environment
+variables (see `env.example`).
+
+**Command**
+
+```bash
+curl -sS -X POST \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/bootstrap/paas" \
+  -H "$AUTH_HEADER" \
+  | jq .
+```
+
+Example response:
+
+```json
+{
+  "cluster": "03d95dfd-a551-4dfa-a48f-2f49390704c1",
+  "tenant": "acme",
+  "tenantId": "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111",
+  "project": "web",
+  "projectId": "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61",
+  "kubeconfig": "YXBpVmVyc2lvbjogdjEK...",
+  "expiresAt": "2025-01-01T01:00:00Z"
+}
+```
+
+**Using the returned kubeconfig**
+
+```bash
+PAAST_KCFG_B64=$(curl -sS -X POST \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/bootstrap/paas" \
+  -H "$AUTH_HEADER" | jq -r '.kubeconfig')
+printf "%s" "$PAAST_KCFG_B64" | base64 -d > paas-kubeconfig.yaml
+
+KUBECONFIG=paas-kubeconfig.yaml kubectl get ns
+KUBECONFIG=paas-kubeconfig.yaml kubectl get pods -n web
+```
+
+**Optional – create a tenantOwner kubeconfig for the same tenant/project**
+
+```bash
+# Extract tenant and project IDs from the PaaS bootstrap response
+BOOTSTRAP_JSON=$(
+  curl -sS -X POST \
+    "$BASE/api/v1/clusters/$CLUSTER_ID/bootstrap/paas" \
+    -H "$AUTH_HEADER"
+)
+
+export TENANT_ID=$(echo "$BOOTSTRAP_JSON" | jq -r '.tenantId')
+export PROJECT_ID=$(echo "$BOOTSTRAP_JSON" | jq -r '.projectId')
+
+# Set a logical owner subject for the tenant and mark it as owner in Capsule
+curl -sS -X PUT \
+  "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/owners" \
+  -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" \
+  -d '{"owners":["owner@example.com"]}' \
+  -i
+
+# Issue a tenantOwner kubeconfig scoped to the bootstrap project
+TENANT_OWNER_KCFG_B64=$(curl -sS -X POST \
+  "$BASE/api/v1/tenants/$TENANT_ID/kubeconfig" \
+  -H "$AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"project":"web","role":"tenantOwner","ttlSeconds":3600}' \
+  | jq -r '.kubeconfig')
+printf "%s" "$TENANT_OWNER_KCFG_B64" | base64 -d > paas-tenant-owner-kubeconfig.yaml
+
+KUBECONFIG=paas-tenant-owner-kubeconfig.yaml kubectl get pods -n web
+```
+
+**What this does**
+
+- Creates (or reuses) a tenant named `KUBENOVA_BOOTSTRAP_TENANT_NAME` (default `acme`) on the target cluster.
+- Optionally applies the plan configured via `KUBENOVA_BOOTSTRAP_TENANT_PLAN` (default `baseline`).
+- Creates (or reuses) a project named `KUBENOVA_BOOTSTRAP_PROJECT_NAME` (default `web`) in that tenant and ensures its namespace exists.
+- Issues a project-scoped kubeconfig (role `projectDev`) for that tenant/project with TTL controlled by `KUBENOVA_BOOTSTRAP_KUBECONFIG_TTL` (default `3600` seconds).
+  - It is **namespaced** to the bootstrap project; cluster-scoped operations like `kubectl get ns` are expected to be forbidden by RBAC.
+
+You can now use `paas-kubeconfig.yaml` directly to deploy apps into the
+bootstrap project (for example, `kubectl get pods -n web`) using `kubectl` or higher-level tools.
 
 ---
 
