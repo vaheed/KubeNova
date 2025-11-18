@@ -764,7 +764,7 @@ PAAST_KCFG_B64=$(curl -sS -X POST \
 printf "%s" "$PAAST_KCFG_B64" | base64 -d > paas-kubeconfig.yaml
 
 KUBECONFIG=paas-kubeconfig.yaml kubectl get ns
-KUBECONFIG=paas-kubeconfig.yaml kubectl get pods -A
+KUBECONFIG=paas-kubeconfig.yaml kubectl get pods -n web
 ```
 
 **What this does**
@@ -773,9 +773,10 @@ KUBECONFIG=paas-kubeconfig.yaml kubectl get pods -A
 - Optionally applies the plan configured via `KUBENOVA_BOOTSTRAP_TENANT_PLAN` (default `baseline`).
 - Creates (or reuses) a project named `KUBENOVA_BOOTSTRAP_PROJECT_NAME` (default `web`) in that tenant and ensures its namespace exists.
 - Issues a project-scoped kubeconfig (role `projectDev`) for that tenant/project with TTL controlled by `KUBENOVA_BOOTSTRAP_KUBECONFIG_TTL` (default `3600` seconds).
+  - It is **namespaced** to the bootstrap project; cluster-scoped operations like `kubectl get ns` are expected to be forbidden by RBAC.
 
 You can now use `paas-kubeconfig.yaml` directly to deploy apps into the
-bootstrap project using `kubectl` or higher-level tools.
+bootstrap project (for example, `kubectl get pods -n web`) using `kubectl` or higher-level tools.
 
 ---
 
