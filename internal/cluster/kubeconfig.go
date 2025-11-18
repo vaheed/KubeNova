@@ -76,6 +76,14 @@ func IssueProjectKubeconfig(
 	if err := ensureNamespacedRBAC(ctx, cset, saNamespace, saName, tenant, project, role); err != nil {
 		return nil, time.Time{}, err
 	}
+	// TenantOwner kubeconfigs should be able to inspect Namespaces; grant
+	// read-only access to the namespaces resource cluster-wide. Capsule and
+	// capsule-proxy still enforce tenant scoping based on labels.
+	if role == "tenantOwner" {
+		if err := ensureTenantNamespacesView(ctx, cset, saNamespace, saName, tenant); err != nil {
+			return nil, time.Time{}, err
+		}
+	}
 
 	token, exp, err := issueServiceAccountToken(ctx, cset, saNamespace, saName, ttlSeconds)
 	if err != nil {
@@ -198,4 +206,68 @@ func buildProxyKubeconfig(server, namespace, token, caData string) []byte {
 	}
 	cfg := "apiVersion: v1\nkind: Config\nclusters:\n- name: kn-proxy\n  cluster:\n" + clusterBlock + "contexts:\n- name: tenant\n  context:\n    cluster: kn-proxy\n    user: tenant-user\n" + nsLine + "current-context: tenant\nusers:\n- name: tenant-user\n  user:\n    token: " + token + "\n"
 	return []byte(cfg)
+}
+
+func ensureTenantNamespacesView(ctx context.Context, cset kubernetes.Interface, namespace, saName, tenant string) error {
+	crClient := cset.RbacV1().ClusterRoles()
+	crbClient := cset.RbacV1().ClusterRoleBindings()
+	crName := projectRoleName(tenant, "all", "tenantowner-ns")
+	rules := []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"namespaces"},
+			Verbs:     []string{"get", "list"},
+		},
+	}
+	if cr, err := crClient.Get(ctx, crName, metav1.GetOptions{}); err == nil {
+		cr.Rules = rules
+		if _, err := crClient.Update(ctx, cr, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		cr := &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: crName},
+			Rules:      rules,
+		}
+		if _, err := crClient.Create(ctx, cr, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+	}
+	crbName := crName + "-binding"
+	subjects := []rbacv1.Subject{{
+		Kind:      "ServiceAccount",
+		Namespace: namespace,
+		Name:      saName,
+	}}
+	if crb, err := crbClient.Get(ctx, crbName, metav1.GetOptions{}); err == nil {
+		crb.Subjects = subjects
+		crb.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     crName,
+		}
+		if _, err := crbClient.Update(ctx, crb, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		crb := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: crbName},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "ClusterRole",
+				Name:     crName,
+			},
+			Subjects: subjects,
+		}
+		if _, err := crbClient.Create(ctx, crb, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+	}
+	return nil
 }
