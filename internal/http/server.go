@@ -1358,6 +1358,99 @@ func (s *APIServer) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *http.R
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// (POST /api/v1/tenants/{t}/sandbox)
+func (s *APIServer) PostApiV1TenantsTSandbox(w http.ResponseWriter, r *http.Request, t TenantParam) {
+	ten, err := s.st.GetTenantByUID(r.Context(), t.String())
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, ten.Name, "admin", "ops", "tenantOwner") {
+		return
+	}
+	var body struct {
+		Name       string `json:"name"`
+		TtlSeconds *int   `json:"ttlSeconds,omitempty"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+			return
+		}
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "sandbox name required")
+		return
+	}
+	if _, err := s.st.GetSandbox(r.Context(), ten.Name, name); err == nil {
+		s.writeError(w, http.StatusConflict, "KN-409", "sandbox already exists")
+		return
+	} else if err != nil && err != store.ErrNotFound {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	clusterUID := ten.Labels["kubenova.cluster"]
+	if strings.TrimSpace(clusterUID) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "tenant has no primary cluster")
+		return
+	}
+	cl, enc, err := s.st.GetClusterByUID(r.Context(), clusterUID)
+	if err != nil || enc == "" {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	kb, derr := base64.StdEncoding.DecodeString(enc)
+	if derr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "cluster kubeconfig decode error")
+		return
+	}
+	if err := clusterpkg.EnsureSandboxNamespace(r.Context(), kb, ten.Name, name); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	sb := kn.Sandbox{
+		Tenant:    ten.Name,
+		Name:      name,
+		Namespace: clusterpkg.SandboxNamespaceName(ten.Name, name),
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.st.CreateSandbox(r.Context(), sb); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	ttl := 0
+	if body.TtlSeconds != nil && *body.TtlSeconds >= 0 {
+		ttl = *body.TtlSeconds
+	}
+	proxyURL := ""
+	proxyCA := ""
+	if len(cl.Labels) > 0 {
+		if v, ok := cl.Labels["kubenova.capsuleProxyUrl"]; ok {
+			proxyURL = v
+		}
+		if v, ok := cl.Labels["kubenova.capsuleProxyCa"]; ok {
+			proxyCA = v
+		}
+	}
+	kcfg, exp, err := clusterpkg.IssueSandboxKubeconfig(r.Context(), kb, proxyURL, proxyCA, ten.Name, name, ttl)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	resp := map[string]any{
+		"uid":        sb.UID,
+		"tenant":     sb.Tenant,
+		"name":       sb.Name,
+		"namespace":  sb.Namespace,
+		"kubeconfig": kcfg,
+		"expiresAt":  exp.UTC(),
+		"createdAt":  sb.CreatedAt.UTC(),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 // --- Usage ---
 
 // (GET /api/v1/tenants/{t}/usage)
@@ -1439,7 +1532,7 @@ func (s *APIServer) GetApiV1ProjectsPUsage(w http.ResponseWriter, r *http.Reques
 	if clusterUID != "" {
 		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusterUID); err2 == nil {
 			kb, _ := base64.StdEncoding.DecodeString(enc)
-			if u, err3 := clusterpkg.ProjectUsage(r.Context(), kb, pr.Name); err3 == nil {
+			if u, err3 := clusterpkg.ProjectUsage(r.Context(), kb, clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)); err3 == nil {
 				if u.CPU != "" {
 					resp.Cpu = &u.CPU
 				}
@@ -1455,7 +1548,7 @@ func (s *APIServer) GetApiV1ProjectsPUsage(w http.ResponseWriter, r *http.Reques
 	} else if clusters, _, err := s.st.ListClusters(r.Context(), 100, "", ""); err == nil && len(clusters) > 0 {
 		if _, enc, err2 := s.st.GetClusterByUID(r.Context(), clusters[0].UID); err2 == nil {
 			kb, _ := base64.StdEncoding.DecodeString(enc)
-			if u, err3 := clusterpkg.ProjectUsage(r.Context(), kb, pr.Name); err3 == nil {
+			if u, err3 := clusterpkg.ProjectUsage(r.Context(), kb, clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)); err3 == nil {
 				if u.CPU != "" {
 					resp.Cpu = &u.CPU
 				}
@@ -2061,7 +2154,8 @@ func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAccess(w http.ResponseWrit
 		return
 	}
 	kb, _ := base64.StdEncoding.DecodeString(enc)
-	if err := clusterpkg.EnsureProjectAccess(r.Context(), kb, ten.Name, pr.Name, members); err != nil {
+	nsName := clusterpkg.AppNamespaceName(ten.Name, pr.Name)
+	if err := clusterpkg.EnsureProjectAccess(r.Context(), kb, nsName, ten.Name, pr.Name, members); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -2137,9 +2231,10 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPApps(w http.ResponseWrite
 	if in.Spec != nil && in.Spec.Source != nil {
 		sourceKind = string(in.Spec.Source.Kind)
 	}
+	projectNS := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
 	// Best-effort: materialize an App ConfigMap in the project namespace so the
 	// in-cluster AppReconciler can project it into a Vela Application.
-	_ = s.ensureAppConfigMap(r.Context(), c.String(), pr.Name, pr.Tenant, t.String(), p.String(), a.UID, sourceKind, in)
+	_ = s.ensureAppConfigMap(r.Context(), c.String(), projectNS, pr.Tenant, t.String(), p.String(), a.UID, sourceKind, in)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(appToDTO(a))
 }
@@ -2193,7 +2288,8 @@ func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAppsA(w http.ResponseWrite
 	if in.Spec != nil && in.Spec.Source != nil {
 		sourceKind = string(in.Spec.Source.Kind)
 	}
-	_ = s.ensureAppConfigMap(r.Context(), c.String(), ap.Project, ap.Tenant, t.String(), p.String(), ap.UID, sourceKind, in)
+	projectNS := clusterpkg.AppNamespaceName(ap.Tenant, ap.Project)
+	_ = s.ensureAppConfigMap(r.Context(), c.String(), projectNS, ap.Tenant, t.String(), p.String(), ap.UID, sourceKind, in)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(appToDTO(item))
 }
@@ -2233,12 +2329,13 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsADeploy(w http.Respon
 		s.writeError(w, http.StatusNotFound, "KN-404", "app not found")
 		return
 	}
+	namespace := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
 	// Apply any attached PolicySets as traits/policies before deploy.
 	if err := s.applyPolicySets(r.Context(), kb, t.String(), pr.Name, ap.Name); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
-	if err := s.newVela(kb).Deploy(r.Context(), pr.Name, ap.Name); err != nil {
+	if err := s.newVela(kb).Deploy(r.Context(), namespace, ap.Name); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -2256,7 +2353,8 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsASuspend(w http.Respo
 	}
 	pr, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap, _ := s.st.GetAppByUID(r.Context(), a.String())
-	if err := s.newVela(kb).Suspend(r.Context(), pr.Name, ap.Name); err != nil {
+	namespace := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
+	if err := s.newVela(kb).Suspend(r.Context(), namespace, ap.Name); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -2274,7 +2372,8 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsAResume(w http.Respon
 	}
 	pr, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap, _ := s.st.GetAppByUID(r.Context(), a.String())
-	if err := s.newVela(kb).Resume(r.Context(), pr.Name, ap.Name); err != nil {
+	namespace := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
+	if err := s.newVela(kb).Resume(r.Context(), namespace, ap.Name); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -2296,7 +2395,8 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsARollback(w http.Resp
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	pr, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap, _ := s.st.GetAppByUID(r.Context(), a.String())
-	if err := s.newVela(kb).Rollback(r.Context(), pr.Name, ap.Name, body.ToRevision); err != nil {
+	namespace := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
+	if err := s.newVela(kb).Rollback(r.Context(), namespace, ap.Name, body.ToRevision); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -2316,7 +2416,8 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsAStatus(w http.Respons
 	kb, _ := base64.StdEncoding.DecodeString(enc)
 	pr, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap, _ := s.st.GetAppByUID(r.Context(), a.String())
-	st, err := s.newVela(kb).Status(r.Context(), pr.Name, ap.Name)
+	namespace := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
+	st, err := s.newVela(kb).Status(r.Context(), namespace, ap.Name)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
@@ -2338,7 +2439,8 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsARevisions(w http.Resp
 	kb, _ := base64.StdEncoding.DecodeString(enc)
 	pr, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap, _ := s.st.GetAppByUID(r.Context(), a.String())
-	revs, err := s.newVela(kb).Revisions(r.Context(), pr.Name, ap.Name)
+	namespace := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
+	revs, err := s.newVela(kb).Revisions(r.Context(), namespace, ap.Name)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
@@ -2360,7 +2462,8 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsADiffRevARevB(w http.R
 	kb, _ := base64.StdEncoding.DecodeString(enc)
 	pr, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap, _ := s.st.GetAppByUID(r.Context(), a.String())
-	d, err := s.newVela(kb).Diff(r.Context(), pr.Name, ap.Name, revA, revB)
+	namespace := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
+	d, err := s.newVela(kb).Diff(r.Context(), namespace, ap.Name, revA, revB)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
@@ -2394,7 +2497,8 @@ func (s *APIServer) GetApiV1ClustersCTenantsTProjectsPAppsALogsComponent(w http.
 	}
 	pr, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap, _ := s.st.GetAppByUID(r.Context(), a.String())
-	lines, err := s.newVela(kb).Logs(ctx, pr.Name, ap.Name, component, follow)
+	namespace := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
+	lines, err := s.newVela(kb).Logs(ctx, namespace, ap.Name, component, follow)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
@@ -2526,7 +2630,8 @@ func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAppsATraits(w http.Respons
 	kb, _ := base64.StdEncoding.DecodeString(enc)
 	pr, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap, _ := s.st.GetAppByUID(r.Context(), a.String())
-	if err := s.newVela(kb).SetTraits(r.Context(), pr.Name, ap.Name, body); err != nil {
+	namespace := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
+	if err := s.newVela(kb).SetTraits(r.Context(), namespace, ap.Name, body); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -2551,7 +2656,8 @@ func (s *APIServer) PutApiV1ClustersCTenantsTProjectsPAppsAPolicies(w http.Respo
 	kb, _ := base64.StdEncoding.DecodeString(enc)
 	pr2, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap2, _ := s.st.GetAppByUID(r.Context(), a.String())
-	if err := s.newVela(kb).SetPolicies(r.Context(), pr2.Name, ap2.Name, body); err != nil {
+	namespace := clusterpkg.AppNamespaceName(pr2.Tenant, pr2.Name)
+	if err := s.newVela(kb).SetPolicies(r.Context(), namespace, ap2.Name, body); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
@@ -2580,7 +2686,8 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPAppsAImageUpdate(w http.R
 	}
 	pr3, _ := s.st.GetProjectByUID(r.Context(), p.String())
 	ap3, _ := s.st.GetAppByUID(r.Context(), a.String())
-	if err := s.newVela(kb).ImageUpdate(r.Context(), pr3.Name, ap3.Name, body.Component, body.Image, tag); err != nil {
+	namespace := clusterpkg.AppNamespaceName(pr3.Tenant, pr3.Name)
+	if err := s.newVela(kb).ImageUpdate(r.Context(), namespace, ap3.Name, body.Component, body.Image, tag); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}

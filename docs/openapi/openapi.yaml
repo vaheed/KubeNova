@@ -162,6 +162,30 @@ components:
         labels: { type: object, additionalProperties: { type: string } }
         annotations: { type: object, additionalProperties: { type: string } }
         createdAt: { type: string, format: date-time }
+    Sandbox:
+      type: object
+      properties:
+        uid:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f-]{36}$'
+        tenant: { type: string }
+        name: { type: string }
+        namespace: { type: string }
+        kubeconfig:
+          type: string
+          format: byte
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt: { type: string, format: date-time }
+    SandboxCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        ttlSeconds: { type: integer, minimum: 0 }
     ProjectAccess:
       type: object
       properties:
@@ -1517,6 +1541,51 @@ paths:
               examples:
                 kubeconfig:
                   value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
+  /api/v1/tenants/{t}/sandbox:
+    parameters: [ { $ref: '#/components/parameters/TenantParam' } ]
+    post:
+      summary: Create a tenant sandbox namespace with a kubeconfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SandboxCreate' }
+            examples:
+              sandbox:
+                value: { name: "playground", ttlSeconds: 3600 }
+      responses:
+        '200':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sandbox' }
+              examples:
+                created:
+                  value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f66", tenant: "acme", name: "playground", namespace: "tn-acme-sandbox-playground", kubeconfig: "YXBp...", expiresAt: "2025-01-01T01:00:00Z", createdAt: "2024-01-01T00:00:00Z" }
+        '404':
+          description: cluster not found or tenant missing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+        '422':
+          description: invalid payload or tenant misconfiguration
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                invalid:
+                  value: { code: "KN-422", message: "invalid payload" }
+        '409':
+          description: sandbox already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                exists:
+                  value: { code: "KN-409", message: "sandbox already exists" }
   # Plans
   /api/v1/plans:
     get:

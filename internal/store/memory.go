@@ -21,6 +21,8 @@ type Memory struct {
 	tenantByUID  map[string]string        // uid -> tenant name
 	projectByUID map[string]types.Project // uid -> project (tenant name + name)
 	appByUID     map[string]types.App     // uid -> app (tenant/project names + name)
+	sandboxes    map[string]map[string]types.Sandbox
+	sandboxByUID map[string]types.Sandbox
 	evts         []memEvent
 }
 
@@ -36,6 +38,8 @@ func NewMemory() *Memory {
 		tenantByUID:  map[string]string{},
 		projectByUID: map[string]types.Project{},
 		appByUID:     map[string]types.App{},
+		sandboxes:    map[string]map[string]types.Sandbox{},
+		sandboxByUID: map[string]types.Sandbox{},
 	}
 }
 
@@ -219,6 +223,71 @@ func (m *Memory) DeleteProject(ctx context.Context, tenant, name string) error {
 	}
 	if ma, ok := m.apps[tenant]; ok {
 		delete(ma, name)
+	}
+	return nil
+}
+
+func (m *Memory) CreateSandbox(ctx context.Context, sb types.Sandbox) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.sandboxes[sb.Tenant]; !ok {
+		m.sandboxes[sb.Tenant] = map[string]types.Sandbox{}
+	}
+	if existing, ok := m.sandboxes[sb.Tenant][sb.Name]; ok {
+		sb.UID = existing.UID
+		sb.CreatedAt = existing.CreatedAt
+	} else {
+		sb.CreatedAt = stamp(sb.CreatedAt)
+		if sb.UID == "" {
+			sb.UID = uuidNew()
+		}
+	}
+	m.sandboxes[sb.Tenant][sb.Name] = sb
+	m.sandboxByUID[sb.UID] = sb
+	return nil
+}
+
+func (m *Memory) GetSandbox(ctx context.Context, tenant, name string) (types.Sandbox, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if mp, ok := m.sandboxes[tenant]; ok {
+		if sb, ok2 := mp[name]; ok2 {
+			return sb, nil
+		}
+	}
+	return types.Sandbox{}, ErrNotFound
+}
+
+func (m *Memory) GetSandboxByUID(ctx context.Context, uid string) (types.Sandbox, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if sb, ok := m.sandboxByUID[uid]; ok {
+		return sb, nil
+	}
+	return types.Sandbox{}, ErrNotFound
+}
+
+func (m *Memory) ListSandboxes(ctx context.Context, tenant string) ([]types.Sandbox, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if mp, ok := m.sandboxes[tenant]; ok {
+		out := make([]types.Sandbox, 0, len(mp))
+		for _, sb := range mp {
+			out = append(out, sb)
+		}
+		return out, nil
+	}
+	return []types.Sandbox{}, nil
+}
+
+func (m *Memory) DeleteSandbox(ctx context.Context, tenant, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if mp, ok := m.sandboxes[tenant]; ok {
+		if sb, ok2 := mp[name]; ok2 {
+			delete(m.sandboxByUID, sb.UID)
+		}
+		delete(mp, name)
 	}
 	return nil
 }

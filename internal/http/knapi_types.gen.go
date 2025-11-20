@@ -337,6 +337,23 @@ type ProjectAccess struct {
 // ProjectAccessMembersRole defines model for ProjectAccess.Members.Role.
 type ProjectAccessMembersRole string
 
+// Sandbox defines model for Sandbox.
+type Sandbox struct {
+	CreatedAt  *time.Time          `json:"createdAt,omitempty"`
+	ExpiresAt  *time.Time          `json:"expiresAt"`
+	Kubeconfig *[]byte             `json:"kubeconfig,omitempty"`
+	Name       *string             `json:"name,omitempty"`
+	Namespace  *string             `json:"namespace,omitempty"`
+	Tenant     *string             `json:"tenant,omitempty"`
+	Uid        *openapi_types.UUID `json:"uid,omitempty"`
+}
+
+// SandboxCreate defines model for SandboxCreate.
+type SandboxCreate struct {
+	Name       string `json:"name"`
+	TtlSeconds *int   `json:"ttlSeconds,omitempty"`
+}
+
 // SecretRef defines model for SecretRef.
 type SecretRef struct {
 	Name      *string `json:"name,omitempty"`
@@ -601,6 +618,9 @@ type PostApiV1TenantsTKubeconfigJSONRequestBody PostApiV1TenantsTKubeconfigJSONB
 
 // PutApiV1TenantsTPlanJSONRequestBody defines body for PutApiV1TenantsTPlan for application/json ContentType.
 type PutApiV1TenantsTPlanJSONRequestBody PutApiV1TenantsTPlanJSONBody
+
+// PostApiV1TenantsTSandboxJSONRequestBody defines body for PostApiV1TenantsTSandbox for application/json ContentType.
+type PostApiV1TenantsTSandboxJSONRequestBody = SandboxCreate
 
 // PostApiV1TokensJSONRequestBody defines body for PostApiV1Tokens for application/json ContentType.
 type PostApiV1TokensJSONRequestBody = TokenRequest

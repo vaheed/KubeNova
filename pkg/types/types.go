@@ -47,6 +47,14 @@ type Project struct {
 	CreatedAt   time.Time         `json:"createdAt,omitempty"`
 }
 
+type Sandbox struct {
+	UID       string    `json:"uid,omitempty"`
+	Tenant    string    `json:"tenant"`
+	Name      string    `json:"name"`
+	Namespace string    `json:"namespace"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
+}
+
 type App struct {
 	UID         string            `json:"uid,omitempty"`
 	Tenant      string            `json:"tenant"`

@@ -1,6 +1,7 @@
 package capsule
 
 import (
+	"github.com/vaheed/kubenova/internal/tenancy"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -15,7 +16,8 @@ func TenantCR(name string, owners []string, labels map[string]string) *unstructu
 			"labels": labels,
 		},
 		"spec": map[string]interface{}{
-			"owners": ownersToSpec(owners),
+			"owners":        ownersToSpec(owners),
+			"allowedGroups": []string{tenancy.TenantDevGroup(name)},
 		},
 	}}
 	return u

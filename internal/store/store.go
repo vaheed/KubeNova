@@ -25,6 +25,13 @@ type Store interface {
 	UpdateProject(ctx context.Context, p types.Project) error
 	DeleteProject(ctx context.Context, tenant, name string) error
 
+	// Sandboxes
+	CreateSandbox(ctx context.Context, sb types.Sandbox) error
+	GetSandbox(ctx context.Context, tenant, name string) (types.Sandbox, error)
+	GetSandboxByUID(ctx context.Context, uid string) (types.Sandbox, error)
+	ListSandboxes(ctx context.Context, tenant string) ([]types.Sandbox, error)
+	DeleteSandbox(ctx context.Context, tenant, name string) error
+
 	// Apps
 	CreateApp(ctx context.Context, a types.App) error
 	GetApp(ctx context.Context, tenant, project, name string) (types.App, error)

@@ -175,6 +175,62 @@ func (p *Postgres) DeleteProject(ctx context.Context, tenant, name string) error
 	return err
 }
 
+func (p *Postgres) CreateSandbox(ctx context.Context, sb types.Sandbox) error {
+	sb.CreatedAt = stamp(sb.CreatedAt)
+	if sb.UID == "" {
+		sb.UID = types.NewID().String()
+	}
+	_, err := p.db.Exec(ctx, `
+INSERT INTO sandboxes(uid, tenant, name, namespace, created_at)
+VALUES ($1,$2,$3,$4,$5)
+ON CONFLICT (tenant,name) DO UPDATE
+SET namespace = EXCLUDED.namespace
+`, sb.UID, sb.Tenant, sb.Name, sb.Namespace, sb.CreatedAt)
+	return err
+}
+
+func (p *Postgres) GetSandbox(ctx context.Context, tenant, name string) (types.Sandbox, error) {
+	var sb types.Sandbox
+	err := p.db.QueryRow(ctx, `SELECT uid, tenant, name, namespace, created_at FROM sandboxes WHERE tenant=$1 AND name=$2`, tenant, name).
+		Scan(&sb.UID, &sb.Tenant, &sb.Name, &sb.Namespace, &sb.CreatedAt)
+	if err != nil {
+		return types.Sandbox{}, ErrNotFound
+	}
+	return sb, nil
+}
+
+func (p *Postgres) GetSandboxByUID(ctx context.Context, uid string) (types.Sandbox, error) {
+	var sb types.Sandbox
+	err := p.db.QueryRow(ctx, `SELECT uid, tenant, name, namespace, created_at FROM sandboxes WHERE uid=$1`, uid).
+		Scan(&sb.UID, &sb.Tenant, &sb.Name, &sb.Namespace, &sb.CreatedAt)
+	if err != nil {
+		return types.Sandbox{}, ErrNotFound
+	}
+	return sb, nil
+}
+
+func (p *Postgres) ListSandboxes(ctx context.Context, tenant string) ([]types.Sandbox, error) {
+	rows, err := p.db.Query(ctx, `SELECT uid, tenant, name, namespace, created_at FROM sandboxes WHERE tenant=$1 ORDER BY name`, tenant)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []types.Sandbox{}
+	for rows.Next() {
+		var sb types.Sandbox
+		if err := rows.Scan(&sb.UID, &sb.Tenant, &sb.Name, &sb.Namespace, &sb.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, sb)
+	}
+	return out, nil
+}
+
+func (p *Postgres) DeleteSandbox(ctx context.Context, tenant, name string) error {
+	_, err := p.db.Exec(ctx, `DELETE FROM sandboxes WHERE tenant=$1 AND name=$2`, tenant, name)
+	return err
+}
+
 func (p *Postgres) CreateApp(ctx context.Context, a types.App) error {
 	a.CreatedAt = stamp(a.CreatedAt)
 	if a.UID == "" {
@@ -237,11 +293,11 @@ func (p *Postgres) DeleteApp(ctx context.Context, tenant, project, name string) 
 }
 
 type appSpecPayload struct {
-	Description *string         `json:"description,omitempty"`
+	Description *string           `json:"description,omitempty"`
 	Components  *[]map[string]any `json:"components,omitempty"`
 	Traits      *[]map[string]any `json:"traits,omitempty"`
 	Policies    *[]map[string]any `json:"policies,omitempty"`
-	Spec        *types.AppSpec   `json:"spec,omitempty"`
+	Spec        *types.AppSpec    `json:"spec,omitempty"`
 }
 
 func marshalAppSpecPayload(a types.App) ([]byte, error) {
@@ -452,6 +508,15 @@ CREATE TABLE IF NOT EXISTS apps (
   project TEXT NOT NULL,
   name TEXT NOT NULL,
   UNIQUE(tenant,project,name)
+);
+CREATE TABLE IF NOT EXISTS sandboxes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid TEXT UNIQUE NOT NULL,
+  tenant TEXT NOT NULL,
+  name TEXT NOT NULL,
+  namespace TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(tenant,name)
 );
 CREATE TABLE IF NOT EXISTS policysets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

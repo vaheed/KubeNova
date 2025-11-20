@@ -200,6 +200,9 @@ type ServerInterface interface {
 	// Apply a plan to a tenant (quotas + PolicySets)
 	// (PUT /api/v1/tenants/{t}/plan)
 	PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request, t TenantParam)
+	// Create a tenant sandbox namespace with a kubeconfig
+	// (POST /api/v1/tenants/{t}/sandbox)
+	PostApiV1TenantsTSandbox(w http.ResponseWriter, r *http.Request, t TenantParam)
 	// Usage report for a tenant
 	// (GET /api/v1/tenants/{t}/usage)
 	GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Request, t TenantParam, params GetApiV1TenantsTUsageParams)
@@ -584,6 +587,12 @@ func (_ Unimplemented) PostApiV1TenantsTKubeconfig(w http.ResponseWriter, r *htt
 // Apply a plan to a tenant (quotas + PolicySets)
 // (PUT /api/v1/tenants/{t}/plan)
 func (_ Unimplemented) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request, t TenantParam) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a tenant sandbox namespace with a kubeconfig
+// (POST /api/v1/tenants/{t}/sandbox)
+func (_ Unimplemented) PostApiV1TenantsTSandbox(w http.ResponseWriter, r *http.Request, t TenantParam) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3224,6 +3233,34 @@ func (siw *ServerInterfaceWrapper) PutApiV1TenantsTPlan(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r.WithContext(ctx))
 }
 
+// PostApiV1TenantsTSandbox operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1TenantsTSandbox(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "t" -------------
+	var t TenantParam
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "t", runtime.ParamLocationPath, chi.URLParam(r, "t"), &t)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "t", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV1TenantsTSandbox(w, r, t)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
 // GetApiV1TenantsTUsage operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV1TenantsTUsage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -3603,6 +3640,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/tenants/{t}/plan", wrapper.PutApiV1TenantsTPlan)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/tenants/{t}/sandbox", wrapper.PostApiV1TenantsTSandbox)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tenants/{t}/usage", wrapper.GetApiV1TenantsTUsage)

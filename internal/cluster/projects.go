@@ -14,6 +14,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
 	"strings"
+
+	"github.com/vaheed/kubenova/internal/tenancy"
 )
 
 // EnsureProjectNamespace ensures a Namespace exists for the given tenant/project
@@ -30,15 +32,17 @@ func EnsureProjectNamespace(ctx context.Context, kubeconfig []byte, tenant, proj
 		return err
 	}
 	nsClient := cset.CoreV1().Namespaces()
-	ns, err := nsClient.Get(ctx, project, metav1.GetOptions{})
+	nsName := AppNamespaceName(tenant, project)
+	ns, err := nsClient.Get(ctx, nsName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: project,
+				Name: nsName,
 				Labels: map[string]string{
-					"kubenova.project":          project,
-					"kubenova.tenant":           tenant,
+					LabelProject:                project,
+					LabelTenant:                 tenant,
 					"capsule.clastix.io/tenant": tenant,
+					LabelNamespaceType:          NamespaceTypeApp,
 				},
 			},
 		}
@@ -52,26 +56,113 @@ func EnsureProjectNamespace(ctx context.Context, kubeconfig []byte, tenant, proj
 		ns.Labels = map[string]string{}
 	}
 	changed := false
-	if ns.Labels["kubenova.project"] != project {
-		ns.Labels["kubenova.project"] = project
+	if ns.Labels[LabelProject] != project {
+		ns.Labels[LabelProject] = project
 		changed = true
 	}
-	if ns.Labels["kubenova.tenant"] != tenant {
-		ns.Labels["kubenova.tenant"] = tenant
+	if ns.Labels[LabelTenant] != tenant {
+		ns.Labels[LabelTenant] = tenant
 		changed = true
 	}
 	if ns.Labels["capsule.clastix.io/tenant"] != tenant {
 		ns.Labels["capsule.clastix.io/tenant"] = tenant
 		changed = true
 	}
+	if ns.Labels[LabelNamespaceType] != NamespaceTypeApp {
+		ns.Labels[LabelNamespaceType] = NamespaceTypeApp
+		changed = true
+	}
 	if changed {
 		_, err = nsClient.Update(ctx, ns, metav1.UpdateOptions{})
 		return err
 	}
-	if err := applyDefaultResourceQuota(ctx, cset, project); err != nil {
+	group := tenancy.TenantDevGroup(tenant)
+	if err := ensureAppClusterRole(ctx, cset); err != nil {
 		return err
 	}
-	if err := applyDefaultLimitRange(ctx, cset, project); err != nil {
+	if err := ensureNamespaceGroupBinding(ctx, cset, nsName, appNamespaceRoleBindingName, appClusterRoleName, group); err != nil {
+		return err
+	}
+	if err := applyDefaultResourceQuota(ctx, cset, nsName); err != nil {
+		return err
+	}
+	if err := applyDefaultLimitRange(ctx, cset, nsName); err != nil {
+		return err
+	}
+	return nil
+}
+
+// EnsureSandboxNamespace ensures a sandbox namespace exists for the given tenant.
+func EnsureSandboxNamespace(ctx context.Context, kubeconfig []byte, tenant, sandbox string) error {
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	if err != nil {
+		return nil
+	}
+	cset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return err
+	}
+	nsClient := cset.CoreV1().Namespaces()
+	nsName := SandboxNamespaceName(tenant, sandbox)
+	ns, err := nsClient.Get(ctx, nsName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		ns = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: nsName,
+				Labels: map[string]string{
+					LabelTenant:                 tenant,
+					LabelProject:                sandbox,
+					"capsule.clastix.io/tenant": tenant,
+					LabelNamespaceType:          NamespaceTypeSandbox,
+					LabelSandbox:                "true",
+				},
+			},
+		}
+		_, err = nsClient.Create(ctx, ns, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if ns.Labels == nil {
+		ns.Labels = map[string]string{}
+	}
+	changed := false
+	if ns.Labels[LabelTenant] != tenant {
+		ns.Labels[LabelTenant] = tenant
+		changed = true
+	}
+	if ns.Labels[LabelProject] != sandbox {
+		ns.Labels[LabelProject] = sandbox
+		changed = true
+	}
+	if ns.Labels["capsule.clastix.io/tenant"] != tenant {
+		ns.Labels["capsule.clastix.io/tenant"] = tenant
+		changed = true
+	}
+	if ns.Labels[LabelNamespaceType] != NamespaceTypeSandbox {
+		ns.Labels[LabelNamespaceType] = NamespaceTypeSandbox
+		changed = true
+	}
+	if ns.Labels[LabelSandbox] != "true" {
+		ns.Labels[LabelSandbox] = "true"
+		changed = true
+	}
+	if changed {
+		_, err = nsClient.Update(ctx, ns, metav1.UpdateOptions{})
+		return err
+	}
+	group := tenancy.TenantDevGroup(tenant)
+	if err := ensureSandboxClusterRole(ctx, cset); err != nil {
+		return err
+	}
+	if err := ensureNamespaceGroupBinding(ctx, cset, nsName, sandboxNamespaceRoleBindingName, sandboxClusterRoleName, group); err != nil {
+		return err
+	}
+	if err := applyDefaultResourceQuota(ctx, cset, nsName); err != nil {
+		return err
+	}
+	if err := applyDefaultLimitRange(ctx, cset, nsName); err != nil {
 		return err
 	}
 	return nil
@@ -84,8 +175,8 @@ type ProjectAccessMember struct {
 }
 
 // EnsureProjectAccess creates or updates Roles and RoleBindings for the given members
-// in the project namespace. Best-effort: if kubeconfig cannot be parsed, this is a no-op.
-func EnsureProjectAccess(ctx context.Context, kubeconfig []byte, tenant, project string, members []ProjectAccessMember) error {
+// in the provided namespace. Best-effort: if kubeconfig cannot be parsed, this is a no-op.
+func EnsureProjectAccess(ctx context.Context, kubeconfig []byte, namespace, tenant, project string, members []ProjectAccessMember) error {
 	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
 	if err != nil {
 		// In tests/dev the kubeconfig may be a stub; skip access management.
@@ -95,7 +186,7 @@ func EnsureProjectAccess(ctx context.Context, kubeconfig []byte, tenant, project
 	if err != nil {
 		return err
 	}
-	ns := project
+	ns := namespace
 	roleClient := cset.RbacV1().Roles(ns)
 	rbClient := cset.RbacV1().RoleBindings(ns)
 
@@ -174,7 +265,10 @@ func EnsureProjectAccess(ctx context.Context, kubeconfig []byte, tenant, project
 func projectRoleName(tenant, project, role string) string {
 	// Build a base name and then sanitize it to a valid RFC1123 subdomain:
 	// lower-case alphanumeric, '-', '.', max 63 chars, starting/ending with alphanumeric.
-	base := fmt.Sprintf("kubenova-%s-%s-%s", tenant, project, role)
+	t := sanitizeSegment(tenant, "tenant", 15)
+	p := sanitizeSegment(project, "project", 15)
+	r := sanitizeSegment(role, role, 10)
+	base := fmt.Sprintf("kubenova-%s-%s-%s", t, p, r)
 	base = strings.ToLower(base)
 	var b strings.Builder
 	for _, ch := range base {

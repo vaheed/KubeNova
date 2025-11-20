@@ -33,22 +33,66 @@ func IssueProjectKubeconfig(
 	if tenant == "" || project == "" {
 		return nil, time.Time{}, fmt.Errorf("tenant and project required")
 	}
+	nsName := AppNamespaceName(tenant, project)
+	if err := EnsureProjectNamespace(ctx, clusterKubeconfig, tenant, project); err != nil {
+		return nil, time.Time{}, err
+	}
+	if role == "" {
+		role = "readOnly"
+	}
+	return issueNamespaceKubeconfig(ctx, clusterKubeconfig, proxyURL, proxyCA, tenant, nsName, project, role, ttlSeconds)
+}
+
+func IssueSandboxKubeconfig(
+	ctx context.Context,
+	clusterKubeconfig []byte,
+	proxyURL string,
+	proxyCA string,
+	tenant string,
+	sandbox string,
+	ttlSeconds int,
+) ([]byte, time.Time, error) {
+	if tenant == "" || sandbox == "" {
+		return nil, time.Time{}, fmt.Errorf("tenant and sandbox required")
+	}
+	nsName := SandboxNamespaceName(tenant, sandbox)
+	if err := EnsureSandboxNamespace(ctx, clusterKubeconfig, tenant, sandbox); err != nil {
+		return nil, time.Time{}, err
+	}
+	return issueNamespaceKubeconfig(ctx, clusterKubeconfig, proxyURL, proxyCA, tenant, nsName, sandbox, "tenantOwner", ttlSeconds)
+}
+
+func issueNamespaceKubeconfig(
+	ctx context.Context,
+	clusterKubeconfig []byte,
+	proxyURL string,
+	proxyCA string,
+	tenant string,
+	namespace string,
+	project string,
+	role string,
+	ttlSeconds int,
+) ([]byte, time.Time, error) {
+	if tenant == "" || project == "" {
+		return nil, time.Time{}, fmt.Errorf("tenant and project required")
+	}
+	if namespace == "" {
+		return nil, time.Time{}, fmt.Errorf("namespace required")
+	}
 	if proxyURL == "" {
 		return nil, time.Time{}, fmt.Errorf("proxy url required")
 	}
-	// In E2E/dev mode, skip live Kubernetes calls and return a synthetic kubeconfig.
 	if parseBool(os.Getenv("KUBENOVA_E2E_FAKE")) {
 		if ttlSeconds <= 0 {
 			ttlSeconds = 3600
 		}
 		exp := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)
-		cfgBytes := buildProxyKubeconfig(proxyURL, project, "dev-token", proxyCA)
+		cfgBytes := buildProxyKubeconfig(proxyURL, namespace, "dev-token", proxyCA)
 		return cfgBytes, exp, nil
 	}
 	if role == "" {
 		role = "readOnly"
 	}
-	// For now we support the same logical roles used elsewhere.
 	switch role {
 	case "tenantOwner", "projectDev", "readOnly":
 	default:
@@ -64,33 +108,25 @@ func IssueProjectKubeconfig(
 		return nil, time.Time{}, err
 	}
 
-	// Best-effort: ensure namespace exists and is labeled; ignore failures.
-	_ = EnsureProjectNamespace(ctx, clusterKubeconfig, tenant, project)
-
-	saNamespace := project
 	saName := projectRoleName(tenant, project, role)
-
-	if err := ensureServiceAccount(ctx, cset, saNamespace, saName); err != nil {
+	if err := ensureServiceAccount(ctx, cset, namespace, saName); err != nil {
 		return nil, time.Time{}, err
 	}
-	if err := ensureNamespacedRBAC(ctx, cset, saNamespace, saName, tenant, project, role); err != nil {
+	if err := ensureNamespacedRBAC(ctx, cset, namespace, saName, tenant, project, role); err != nil {
 		return nil, time.Time{}, err
 	}
-	// TenantOwner kubeconfigs should be able to inspect Namespaces; grant
-	// read-only access to the namespaces resource cluster-wide. Capsule and
-	// capsule-proxy still enforce tenant scoping based on labels.
 	if role == "tenantOwner" {
-		if err := ensureTenantNamespacesView(ctx, cset, saNamespace, saName, tenant); err != nil {
+		if err := ensureTenantNamespacesView(ctx, cset, namespace, saName, tenant); err != nil {
 			return nil, time.Time{}, err
 		}
 	}
 
-	token, exp, err := issueServiceAccountToken(ctx, cset, saNamespace, saName, ttlSeconds)
+	token, exp, err := issueServiceAccountToken(ctx, cset, namespace, saName, ttlSeconds)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
 
-	cfgBytes := buildProxyKubeconfig(proxyURL, project, token, proxyCA)
+	cfgBytes := buildProxyKubeconfig(proxyURL, namespace, token, proxyCA)
 	return cfgBytes, exp, nil
 }
 

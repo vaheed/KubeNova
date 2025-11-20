@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 
+	"github.com/vaheed/kubenova/internal/cluster"
 	"github.com/vaheed/kubenova/internal/logging"
 	"github.com/vaheed/kubenova/internal/telemetry"
 	"go.uber.org/zap"
@@ -27,6 +28,12 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 	const finalizer = "kubenova.io/finalizer-project"
 	ns := &corev1.Namespace{}
 	if err := r.Get(ctx, req.NamespacedName, ns); err == nil {
+		if ns.Labels != nil && ns.Labels[cluster.LabelSandbox] == "true" {
+			return reconcile.Result{}, nil
+		}
+		if cluster.IsSandboxNamespace(ns.Name) {
+			return reconcile.Result{}, nil
+		}
 		// Handle deletion finalizer
 		if !ns.DeletionTimestamp.IsZero() {
 			if controllerutil.ContainsFinalizer(ns, finalizer) {
@@ -47,14 +54,33 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 			ns.Labels = map[string]string{}
 		}
 		changed := false
-		if ns.Labels["kubenova.project"] == "" {
-			ns.Labels["kubenova.project"] = req.Name
+		project := ns.Labels[cluster.LabelProject]
+		if project == "" {
+			if _, parsedProject, ok := cluster.ParseAppNamespace(ns.Name); ok {
+				project = parsedProject
+			} else {
+				project = ns.Name
+			}
+			ns.Labels[cluster.LabelProject] = project
 			changed = true
 		}
-		tenant := ns.Labels["kubenova.tenant"]
+		tenant := ns.Labels[cluster.LabelTenant]
 		if tenant == "" {
-			tenant = "default"
-			ns.Labels["kubenova.tenant"] = tenant
+			if parsedTenant, _, ok := cluster.ParseAppNamespace(ns.Name); ok {
+				tenant = parsedTenant
+			}
+			if tenant == "" {
+				tenant = "default"
+			}
+			ns.Labels[cluster.LabelTenant] = tenant
+			changed = true
+		}
+		if ns.Labels["capsule.clastix.io/tenant"] != tenant {
+			ns.Labels["capsule.clastix.io/tenant"] = tenant
+			changed = true
+		}
+		if ns.Labels[cluster.LabelNamespaceType] != cluster.NamespaceTypeApp {
+			ns.Labels[cluster.LabelNamespaceType] = cluster.NamespaceTypeApp
 			changed = true
 		}
 		if changed {
@@ -74,14 +100,27 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (re
 		telemetry.PublishEvent(map[string]any{
 			"type":      "namespace",
 			"tenant":    tenant,
-			"project":   ns.Labels["kubenova.project"],
+			"project":   ns.Labels[cluster.LabelProject],
 			"name":      ns.Name,
 			"operation": "reconciled",
 		})
 		return reconcile.Result{}, nil
 	}
 	// Create namespace if missing
-	ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: req.Name, Labels: map[string]string{"kubenova.project": req.Name}}}
+	if cluster.IsSandboxNamespace(req.Name) {
+		return reconcile.Result{}, nil
+	}
+	ns = &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: req.Name,
+			Labels: map[string]string{
+				cluster.LabelProject:        req.Name,
+				cluster.LabelTenant:         "default",
+				"capsule.clastix.io/tenant": "default",
+				cluster.LabelNamespaceType:  cluster.NamespaceTypeApp,
+			},
+		},
+	}
 	if err := r.Create(ctx, ns); err != nil {
 		return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
 	}

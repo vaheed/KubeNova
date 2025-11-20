@@ -2,6 +2,31 @@
 
 This roadmap turns the existing Manager‑Agent control plane into a full multi‑tenant PaaS without sacrificing the API‑first, Capsule/KubeVela architecture. Each phase ends in a shippable surface (API + persisted store + Agent behavior) so future teams can build CLI/console workflows on a stable base.
 
+## Phase 0 – Tenancy Model (done)
+
+### Goal
+Establish the safety boundaries tenants expect before any catalog or source work: read-only App namespaces managed by the platform, full-edit sandboxes for developers, predictable kubeconfigs via Capsule, and a manager-driven namespace model.
+
+### Deliverables
+1. **Namespace model**
+   - App namespaces follow `tn-<tenant>-app-<project>` so every App maps to exactly one namespace.
+   - Sandbox namespaces (`tn-<tenant>-sandbox-<name>`) can be created through the new `/api/v1/tenants/{t}/sandbox` handler; they are labeled `kubenova.io/sandbox=true` so the Agent ignores them.
+2. **Capsule + RBAC integration**
+   - Capsule Tenants now declare `allowedGroups = <tenant>-devs` and the manager ensures every tenant namespace carries the right labels/quotas.
+   - App namespaces bind `<tenant>-devs` to a read-only `ClusterRole` (`kubenova-app-reader`); sandbox namespaces bind the same group to the full-edit `kubenova-sandbox-editor` role.
+3. **Manager logic**
+   - Manager auto-creates namespace/RBAC/RoleBindings for App and sandbox namespaces.
+   - Tenant kubeconfigs continue to go through Capsule-proxy, but they target manager-controlled service accounts with read-only scope inside App namespaces and full-edit scope within sandboxes.
+
+### Milestones
+- [x] Namespace naming, labels, and Agent changes complete.
+- [x] Capsule tenant templates now include `allowedGroups`.
+- [x] Manager issues sandbox kubeconfigs + stores sandbox metadata.
+- [x] RBAC cluster roles + bindings enforced for app vs sandbox.
+
+### Status
+Phase 0 is complete; the stack is ready to focus on Phase 1 (App sources, UUID normalization, and catalog work).
+
 ## Phase 1 – App Source Model & UUID Baseline
 
 ### Goal
