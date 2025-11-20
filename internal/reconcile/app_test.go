@@ -30,17 +30,23 @@ func (f *fakeVelaClient) EnsureApp(_ context.Context, ns, name string, spec map[
 	f.spec = spec
 	return nil
 }
-func (f *fakeVelaClient) DeleteApp(context.Context, string, string) error                       { return nil }
-func (f *fakeVelaClient) GetApp(context.Context, string, string) (map[string]any, error)       { return nil, nil }
+func (f *fakeVelaClient) DeleteApp(context.Context, string, string) error { return nil }
+func (f *fakeVelaClient) GetApp(context.Context, string, string) (map[string]any, error) {
+	return nil, nil
+}
 func (f *fakeVelaClient) ListApps(context.Context, string, int, string) ([]map[string]any, string, error) {
 	return nil, "", nil
 }
-func (f *fakeVelaClient) Deploy(context.Context, string, string) error                         { return nil }
-func (f *fakeVelaClient) Suspend(context.Context, string, string) error                        { return nil }
-func (f *fakeVelaClient) Resume(context.Context, string, string) error                         { return nil }
-func (f *fakeVelaClient) Rollback(context.Context, string, string, *int) error                 { return nil }
-func (f *fakeVelaClient) Status(context.Context, string, string) (map[string]any, error)       { return nil, nil }
-func (f *fakeVelaClient) Revisions(context.Context, string, string) ([]map[string]any, error)  { return nil, nil }
+func (f *fakeVelaClient) Deploy(context.Context, string, string) error         { return nil }
+func (f *fakeVelaClient) Suspend(context.Context, string, string) error        { return nil }
+func (f *fakeVelaClient) Resume(context.Context, string, string) error         { return nil }
+func (f *fakeVelaClient) Rollback(context.Context, string, string, *int) error { return nil }
+func (f *fakeVelaClient) Status(context.Context, string, string) (map[string]any, error) {
+	return nil, nil
+}
+func (f *fakeVelaClient) Revisions(context.Context, string, string) ([]map[string]any, error) {
+	return nil, nil
+}
 func (f *fakeVelaClient) Diff(context.Context, string, string, int, int) (map[string]any, error) {
 	return nil, nil
 }
@@ -76,6 +82,9 @@ func TestAppReconcilerProjectsConfigMapToVela(t *testing.T) {
 		"components": []any{
 			map[string]any{"name": "web", "type": "webservice"},
 		},
+		"source": map[string]any{
+			"kind": "containerImage",
+		},
 	}
 	specRaw, _ := json.Marshal(spec)
 	traitsRaw, _ := json.Marshal([]map[string]any{{"type": "scaler"}})
@@ -85,9 +94,13 @@ func TestAppReconcilerProjectsConfigMapToVela(t *testing.T) {
 	cm.Name = "app-spec"
 	cm.Namespace = "proj"
 	cm.Labels = map[string]string{
-		"kubenova.app":     "demo",
-		"kubenova.tenant":  "acme",
-		"kubenova.project": "proj",
+		"kubenova.app":            "demo",
+		"kubenova.tenant":         "acme",
+		"kubenova.project":        "proj",
+		"kubenova.io/app-id":      "app-123",
+		"kubenova.io/tenant-id":   "tenant-123",
+		"kubenova.io/project-id":  "project-123",
+		"kubenova.io/source-kind": "containerImage",
 	}
 	cm.Data = map[string]string{
 		"spec":     string(specRaw),
@@ -111,4 +124,3 @@ func TestAppReconcilerProjectsConfigMapToVela(t *testing.T) {
 		t.Fatalf("expected traits and policies to be applied, got: %+v %+v", fv.traits, fv.policies)
 	}
 }
-

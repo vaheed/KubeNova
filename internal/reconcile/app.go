@@ -22,15 +22,15 @@ import (
 // Contract for ConfigMaps:
 //   - kind: ConfigMap
 //   - metadata:
-//       namespace: <project-namespace>
-//       labels:
-//         kubenova.app:     <app-name>
-//         kubenova.tenant:  <tenant-name>
-//         kubenova.project: <project-name>
+//     namespace: <project-namespace>
+//     labels:
+//     kubenova.app:     <app-name>
+//     kubenova.tenant:  <tenant-name>
+//     kubenova.project: <project-name>
 //   - data:
-//       spec:      JSON object with the base Application spec (components, etc.)
-//       traits:    JSON array of trait objects (optional)
-//       policies:  JSON array of policy objects (optional)
+//     spec:      JSON object with the base Application spec (components, etc.)
+//     traits:    JSON array of trait objects (optional)
+//     policies:  JSON array of policy objects (optional)
 //
 // This representation can be produced by the manager or other controllers and
 // is treated as the in-cluster projection of the App DTO.
@@ -61,10 +61,33 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconc
 	}
 	appName := cm.Labels["kubenova.app"]
 	if appName == "" {
+		appName = cm.Name
+	}
+	if appName == "" {
 		return reconcile.Result{}, nil
 	}
 	tenant := cm.Labels["kubenova.tenant"]
+	if tenant == "" {
+		tenant = cm.Labels["kubenova.io/tenant-id"]
+	}
 	project := cm.Labels["kubenova.project"]
+	if project == "" {
+		project = cm.Labels["kubenova.io/project-id"]
+	}
+	appID := cm.Labels["kubenova.io/app-id"]
+	tenantID := cm.Labels["kubenova.io/tenant-id"]
+	projectID := cm.Labels["kubenova.io/project-id"]
+	sourceKind := cm.Labels["kubenova.io/source-kind"]
+
+	log = log.With(
+		zap.String("tenant", tenant),
+		zap.String("tenant_id", tenantID),
+		zap.String("project", project),
+		zap.String("project_id", projectID),
+		zap.String("app", appName),
+		zap.String("app_id", appID),
+		zap.String("source_kind", sourceKind),
+	)
 
 	spec := map[string]any{}
 	if raw := cm.Data["spec"]; raw != "" {
@@ -83,6 +106,16 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconc
 	if raw := cm.Data["policies"]; raw != "" {
 		if err := json.Unmarshal([]byte(raw), &policies); err != nil {
 			log.With(zap.Error(err)).Error("decode policies")
+		}
+	}
+
+	if sourceKind == "" {
+		if raw, ok := spec["source"]; ok {
+			if m, ok := raw.(map[string]any); ok {
+				if kind, ok := m["kind"].(string); ok && kind != "" {
+					sourceKind = kind
+				}
+			}
 		}
 	}
 
@@ -121,12 +154,17 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconc
 		zap.String("app", appName),
 	).Info("app projected to vela")
 	telemetry.PublishEvent(map[string]any{
-		"type":      "app",
-		"tenant":    tenant,
-		"project":   project,
-		"name":      appName,
-		"namespace": ns,
-		"operation": "reconciled",
+		"type":       "app",
+		"tenant":     tenant,
+		"tenantId":   tenantID,
+		"project":    project,
+		"projectId":  projectID,
+		"app":        appName,
+		"appId":      appID,
+		"name":       appName,
+		"namespace":  ns,
+		"sourceKind": sourceKind,
+		"operation":  "reconciled",
 	})
 	return reconcile.Result{}, nil
 }
