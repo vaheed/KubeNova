@@ -23,7 +23,7 @@ func TestTenantsListFilters(t *testing.T) {
 	defer ts.Close()
 
 	// labelSelector match
-	resp, err := http.Get(ts.URL + "/api/v1/clusters/c/tenants?labelSelector=env%3Dprod,tier%3Dgold")
+	resp, err := http.Get(ts.URL + "/api/v1/clusters/" + testClusterID + "/tenants?labelSelector=env%3Dprod,tier%3Dgold")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestTenantsListFilters(t *testing.T) {
 	}
 
 	// owner filter
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/c/tenants?owner=alice@example.com")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + testClusterID + "/tenants?owner=alice@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

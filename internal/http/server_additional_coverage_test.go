@@ -51,7 +51,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	_ = st.CreateProject(context.Background(), kn.Project{Tenant: "acme", Name: "proj1"})
 
 	// 1) Bootstrap component
-	resp, err = http.Post(ts.URL+"/api/v1/clusters/"+*cl.Uid+"/bootstrap/tenancy", "application/json", nil)
+	resp, err = http.Post(ts.URL+"/api/v1/clusters/"+uidStr(cl.Uid)+"/bootstrap/tenancy", "application/json", nil)
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	resp.Body.Close()
 
 	// 2) PolicySet catalog
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + *cl.Uid + "/policysets/catalog")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(cl.Uid) + "/policysets/catalog")
 	if err != nil {
 		t.Fatalf("catalog: %v", err)
 	}
@@ -85,13 +85,13 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	_ = json.NewDecoder(resp2.Body).Decode(&c)
 	resp2.Body.Close()
 	tb, _ := json.Marshal(Tenant{Name: "acme"})
-	rq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants", bytes.NewReader(tb))
+	rq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants", bytes.NewReader(tb))
 	rq.Header.Set("Content-Type", "application/json")
 	rr, _ := http.DefaultClient.Do(rq)
 	var tnt Tenant
 	_ = json.NewDecoder(rr.Body).Decode(&tnt)
 	rr.Body.Close()
-	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/owners", bytes.NewReader(owners))
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/owners", bytes.NewReader(owners))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -103,7 +103,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	resp.Body.Close()
 
 	// 4) Tenant summary
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + *c.Uid + "/tenants/" + *tnt.Uid + "/summary")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(c.Uid) + "/tenants/" + uidStr(tnt.Uid) + "/summary")
 	if err != nil {
 		t.Fatalf("tenant summary: %v", err)
 	}
@@ -117,13 +117,13 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	// 5) Project access update
 	// create a project
 	pb, _ := json.Marshal(Project{Name: "proj1"})
-	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects", bytes.NewReader(pb))
+	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects", bytes.NewReader(pb))
 	rq.Header.Set("Content-Type", "application/json")
 	rr, _ = http.DefaultClient.Do(rq)
 	var pr Project
 	_ = json.NewDecoder(rr.Body).Decode(&pr)
 	rr.Body.Close()
-	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/access", bytes.NewReader([]byte(`{"members":[]}`)))
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/access", bytes.NewReader([]byte(`{"members":[]}`)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -137,13 +137,13 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	// 6) App delete action (idempotent)
 	// create app
 	ab, _ := json.Marshal(App{Name: "appA"})
-	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps", bytes.NewReader(ab))
+	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps", bytes.NewReader(ab))
 	rq.Header.Set("Content-Type", "application/json")
 	rr, _ = http.DefaultClient.Do(rq)
 	var ap App
 	_ = json.NewDecoder(rr.Body).Decode(&ap)
 	rr.Body.Close()
-	resp, err = http.Post(ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+":delete", "application/json", nil)
+	resp, err = http.Post(ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps/"+uidStr(ap.Uid)+":delete", "application/json", nil)
 	if err != nil {
 		t.Fatalf("app delete: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	resp.Body.Close()
 
 	// 7) Project usage
-	resp, err = http.Get(ts.URL + "/api/v1/projects/" + *pr.Uid + "/usage")
+	resp, err = http.Get(ts.URL + "/api/v1/projects/" + uidStr(pr.Uid) + "/usage")
 	if err != nil {
 		t.Fatalf("project usage: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestAdditionalEndpointsCoverage(t *testing.T) {
 	}
 
 	// 8) Tenant usage
-	resp, err = http.Get(ts.URL + "/api/v1/tenants/" + *tnt.Uid + "/usage")
+	resp, err = http.Get(ts.URL + "/api/v1/tenants/" + uidStr(tnt.Uid) + "/usage")
 	if err != nil {
 		t.Fatalf("tenant usage: %v", err)
 	}

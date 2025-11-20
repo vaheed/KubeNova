@@ -102,7 +102,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 
 	// Create tenant
 	tb, _ := json.Marshal(Tenant{Name: "t"})
-	rq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants", bytes.NewReader(tb))
+	rq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants", bytes.NewReader(tb))
 	rq.Header.Set("Content-Type", "application/json")
 	rr, _ := http.DefaultClient.Do(rq)
 	var tnt Tenant
@@ -114,7 +114,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 
 	// Create project
 	pb, _ := json.Marshal(Project{Name: "p"})
-	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects", bytes.NewReader(pb))
+	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects", bytes.NewReader(pb))
 	rq.Header.Set("Content-Type", "application/json")
 	rr, _ = http.DefaultClient.Do(rq)
 	var pr Project
@@ -126,7 +126,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 
 	// Create app
 	ab, _ := json.Marshal(App{Name: "a"})
-	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps", bytes.NewReader(ab))
+	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps", bytes.NewReader(ab))
 	rq.Header.Set("Content-Type", "application/json")
 	rr, _ = http.DefaultClient.Do(rq)
 	var ap App
@@ -152,11 +152,11 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 		}
 		resp.Body.Close()
 	}
-	op(http.MethodPost, "/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+":deploy", nil)
-	op(http.MethodPost, "/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+":suspend", nil)
-	op(http.MethodPost, "/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+":resume", nil)
-	op(http.MethodPost, "/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+":rollback", []byte(`{"toRevision":1}`))
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + *c.Uid + "/tenants/" + *tnt.Uid + "/projects/" + *pr.Uid + "/apps/" + *ap.Uid + "/status")
+	op(http.MethodPost, "/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps/"+uidStr(ap.Uid)+":deploy", nil)
+	op(http.MethodPost, "/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps/"+uidStr(ap.Uid)+":suspend", nil)
+	op(http.MethodPost, "/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps/"+uidStr(ap.Uid)+":resume", nil)
+	op(http.MethodPost, "/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps/"+uidStr(ap.Uid)+":rollback", []byte(`{"toRevision":1}`))
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(c.Uid) + "/tenants/" + uidStr(tnt.Uid) + "/projects/" + uidStr(pr.Uid) + "/apps/" + uidStr(ap.Uid) + "/status")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 		t.Fatalf("status: %s", resp.Status)
 	}
 	resp.Body.Close()
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + *c.Uid + "/tenants/" + *tnt.Uid + "/projects/" + *pr.Uid + "/apps/" + *ap.Uid + "/revisions")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(c.Uid) + "/tenants/" + uidStr(tnt.Uid) + "/projects/" + uidStr(pr.Uid) + "/apps/" + uidStr(ap.Uid) + "/revisions")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 		t.Fatalf("revisions: %s", resp.Status)
 	}
 	resp.Body.Close()
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + *c.Uid + "/tenants/" + *tnt.Uid + "/projects/" + *pr.Uid + "/apps/" + *ap.Uid + "/diff/1/2")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(c.Uid) + "/tenants/" + uidStr(tnt.Uid) + "/projects/" + uidStr(pr.Uid) + "/apps/" + uidStr(ap.Uid) + "/diff/1/2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 		t.Fatalf("diff: %s", resp.Status)
 	}
 	resp.Body.Close()
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + *c.Uid + "/tenants/" + *tnt.Uid + "/projects/" + *pr.Uid + "/apps/" + *ap.Uid + "/logs/web")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(c.Uid) + "/tenants/" + uidStr(tnt.Uid) + "/projects/" + uidStr(pr.Uid) + "/apps/" + uidStr(ap.Uid) + "/logs/web")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 	resp.Body.Close()
 
 	// traits
-	rq, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+"/traits", bytes.NewReader([]byte(`[]`)))
+	rq, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps/"+uidStr(ap.Uid)+"/traits", bytes.NewReader([]byte(`[]`)))
 	rq.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(rq)
 	if err != nil {
@@ -201,7 +201,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 	}
 	resp.Body.Close()
 	// policies
-	rq, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+"/policies", bytes.NewReader([]byte(`[]`)))
+	rq, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps/"+uidStr(ap.Uid)+"/policies", bytes.NewReader([]byte(`[]`)))
 	rq.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(rq)
 	if err != nil {
@@ -212,7 +212,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 	}
 	resp.Body.Close()
 	// image update
-	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+*c.Uid+"/tenants/"+*tnt.Uid+"/projects/"+*pr.Uid+"/apps/"+*ap.Uid+"/image-update", bytes.NewReader([]byte(`{"component":"web","image":"busybox","tag":"latest"}`)))
+	rq, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(pr.Uid)+"/apps/"+uidStr(ap.Uid)+"/image-update", bytes.NewReader([]byte(`{"component":"web","image":"busybox","tag":"latest"}`)))
 	rq.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(rq)
 	if err != nil {

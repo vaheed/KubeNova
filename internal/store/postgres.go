@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -179,27 +180,40 @@ func (p *Postgres) CreateApp(ctx context.Context, a types.App) error {
 	if a.UID == "" {
 		a.UID = types.NewID().String()
 	}
-	_, err := p.db.Exec(ctx, `INSERT INTO apps(uid, tenant, project, name) VALUES ($1,$2,$3,$4) ON CONFLICT (tenant,project,name) DO NOTHING`, a.UID, a.Tenant, a.Project, a.Name)
+	spec, err := marshalAppSpecPayload(a)
+	if err != nil {
+		return err
+	}
+	_, err = p.db.Exec(ctx, `
+INSERT INTO apps(uid, tenant, project, name, spec, created_at)
+VALUES ($1,$2,$3,$4,$5,$6)
+ON CONFLICT (tenant,project,name) DO UPDATE
+SET spec = EXCLUDED.spec
+`, a.UID, a.Tenant, a.Project, a.Name, spec, a.CreatedAt)
 	return err
 }
 func (p *Postgres) GetApp(ctx context.Context, tenant, project, name string) (types.App, error) {
 	var a types.App
-	err := p.db.QueryRow(ctx, `SELECT uid, tenant, project, name FROM apps WHERE tenant=$1 AND project=$2 AND name=$3`, tenant, project, name).Scan(&a.UID, &a.Tenant, &a.Project, &a.Name)
+	var spec []byte
+	err := p.db.QueryRow(ctx, `SELECT uid, tenant, project, name, spec, created_at FROM apps WHERE tenant=$1 AND project=$2 AND name=$3`, tenant, project, name).Scan(&a.UID, &a.Tenant, &a.Project, &a.Name, &spec, &a.CreatedAt)
 	if err != nil {
 		return types.App{}, ErrNotFound
 	}
+	_ = applyAppSpecPayload(&a, spec)
 	return a, nil
 }
 func (p *Postgres) GetAppByUID(ctx context.Context, uid string) (types.App, error) {
 	var a types.App
-	err := p.db.QueryRow(ctx, `SELECT uid, tenant, project, name FROM apps WHERE uid=$1`, uid).Scan(&a.UID, &a.Tenant, &a.Project, &a.Name)
+	var spec []byte
+	err := p.db.QueryRow(ctx, `SELECT uid, tenant, project, name, spec, created_at FROM apps WHERE uid=$1`, uid).Scan(&a.UID, &a.Tenant, &a.Project, &a.Name, &spec, &a.CreatedAt)
 	if err != nil {
 		return types.App{}, ErrNotFound
 	}
+	_ = applyAppSpecPayload(&a, spec)
 	return a, nil
 }
 func (p *Postgres) ListApps(ctx context.Context, tenant, project string) ([]types.App, error) {
-	rows, err := p.db.Query(ctx, `SELECT tenant, project, name FROM apps WHERE tenant=$1 AND project=$2 ORDER BY name`, tenant, project)
+	rows, err := p.db.Query(ctx, `SELECT uid, tenant, project, name, spec, created_at FROM apps WHERE tenant=$1 AND project=$2 ORDER BY name`, tenant, project)
 	if err != nil {
 		return nil, err
 	}
@@ -207,9 +221,11 @@ func (p *Postgres) ListApps(ctx context.Context, tenant, project string) ([]type
 	var out []types.App
 	for rows.Next() {
 		var a types.App
-		if err := rows.Scan(&a.Tenant, &a.Project, &a.Name); err != nil {
+		var spec []byte
+		if err := rows.Scan(&a.UID, &a.Tenant, &a.Project, &a.Name, &spec, &a.CreatedAt); err != nil {
 			return nil, err
 		}
+		_ = applyAppSpecPayload(&a, spec)
 		out = append(out, a)
 	}
 	return out, nil
@@ -218,6 +234,41 @@ func (p *Postgres) UpdateApp(ctx context.Context, a types.App) error { return p.
 func (p *Postgres) DeleteApp(ctx context.Context, tenant, project, name string) error {
 	_, err := p.db.Exec(ctx, `DELETE FROM apps WHERE tenant=$1 AND project=$2 AND name=$3`, tenant, project, name)
 	return err
+}
+
+type appSpecPayload struct {
+	Description *string         `json:"description,omitempty"`
+	Components  *[]map[string]any `json:"components,omitempty"`
+	Traits      *[]map[string]any `json:"traits,omitempty"`
+	Policies    *[]map[string]any `json:"policies,omitempty"`
+	Spec        *types.AppSpec   `json:"spec,omitempty"`
+}
+
+func marshalAppSpecPayload(a types.App) ([]byte, error) {
+	payload := appSpecPayload{
+		Description: a.Description,
+		Components:  a.Components,
+		Traits:      a.Traits,
+		Policies:    a.Policies,
+		Spec:        a.Spec,
+	}
+	return json.Marshal(payload)
+}
+
+func applyAppSpecPayload(a *types.App, data []byte) error {
+	if a == nil || len(data) == 0 {
+		return nil
+	}
+	var payload appSpecPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	a.Description = payload.Description
+	a.Components = payload.Components
+	a.Traits = payload.Traits
+	a.Policies = payload.Policies
+	a.Spec = payload.Spec
+	return nil
 }
 
 // PolicySets

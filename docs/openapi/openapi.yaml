@@ -212,7 +212,102 @@ components:
         components: { type: array, items: { type: object } }
         traits: { type: array, items: { type: object } }
         policies: { type: array, items: { type: object } }
+        spec: { $ref: '#/components/schemas/AppSpec' }
         createdAt: { type: string, format: date-time }
+    AppSpec:
+      type: object
+      properties:
+        source: { $ref: '#/components/schemas/AppSource' }
+    AppSource:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [helmHttp, helmOci, velaTemplate, kubeManifest, containerImage, gitRepo]
+        catalogRef: { $ref: '#/components/schemas/AppCatalogRef' }
+        helmHttp: { $ref: '#/components/schemas/AppSourceHelmHttp' }
+        helmOci: { $ref: '#/components/schemas/AppSourceHelmOci' }
+        velaTemplate: { $ref: '#/components/schemas/AppSourceVelaTemplate' }
+        kubeManifest: { $ref: '#/components/schemas/AppSourceKubeManifest' }
+        containerImage: { $ref: '#/components/schemas/AppSourceContainerImage' }
+        gitRepo: { $ref: '#/components/schemas/AppSourceGitRepo' }
+    AppCatalogRef:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        version: { type: string }
+    AppSourceHelmHttp:
+      type: object
+      properties:
+        repoUrl:
+          type: string
+          format: uri
+        chart: { type: string }
+        version: { type: string }
+        values: { type: object, additionalProperties: true }
+        credentialsSecretRef: { $ref: '#/components/schemas/SecretRef' }
+    AppSourceHelmOci:
+      type: object
+      properties:
+        registry:
+          type: string
+          format: uri
+        chart: { type: string }
+        version: { type: string }
+        values: { type: object, additionalProperties: true }
+        credentialsSecretRef: { $ref: '#/components/schemas/SecretRef' }
+    AppSourceVelaTemplate:
+      type: object
+      properties:
+        template: { type: string }
+        version: { type: string }
+        parameters: { type: object, additionalProperties: true }
+        credentialsSecretRef: { $ref: '#/components/schemas/SecretRef' }
+    AppSourceKubeManifest:
+      type: object
+      properties:
+        manifest: { type: object, additionalProperties: true }
+    AppSourceContainerImage:
+      type: object
+      properties:
+        image: { type: string }
+        tag: { type: string }
+        ports: { type: array, items: { type: integer } }
+        env:
+          type: array
+          items: { $ref: '#/components/schemas/AppSourceEnvVar' }
+        resources: { $ref: '#/components/schemas/AppSourceResources' }
+        credentialsSecretRef: { $ref: '#/components/schemas/SecretRef' }
+    AppSourceGitRepo:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        revision: { type: string }
+        path: { type: string }
+        credentialsSecretRef: { $ref: '#/components/schemas/SecretRef' }
+    AppSourceEnvVar:
+      type: object
+      properties:
+        name: { type: string }
+        value: { type: string }
+    AppSourceResources:
+      type: object
+      properties:
+        requests:
+          type: object
+          additionalProperties: { type: string }
+        limits:
+          type: object
+          additionalProperties: { type: string }
+    SecretRef:
+      type: object
+      properties:
+        name: { type: string }
+        namespace: { type: string }
     AppStatus:
       type: object
       properties:
@@ -915,17 +1010,17 @@ paths:
               examples:
                 list:
                   value: [ { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" } ]
-      post:
-        summary: Create app
-        requestBody:
-          required: true
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/App' }
-              examples:
-                create:
-                  value: { name: "hello" }
-        responses:
+    post:
+      summary: Create app
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/App' }
+            examples:
+              create:
+                value: { name: "hello" }
+      responses:
         '200':
           description: created
           content:

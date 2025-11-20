@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -59,26 +60,36 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 
 	// Register a cluster so handlers can resolve kubeconfig by name
 	kcfg := base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nclusters: []\ncontexts: []\n"))
-	reqBody := []byte(`{"name":"cluster-a","kubeconfig":"` + kcfg + `"}`)
+	reqBody := []byte(`{"name":"cluster-a","kubeconfig":"` + kcfg + `","capsuleProxyUrl":"https://capsule-proxy.example.com:9001"}`)
 	resp, err := http.Post(ts.URL+"/api/v1/clusters", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		t.Fatal(err)
 	}
+	var createdCluster Cluster
+	_ = json.NewDecoder(resp.Body).Decode(&createdCluster)
+	clusterID := uidStr(createdCluster.Uid)
 	resp.Body.Close()
+	if clusterID == "" {
+		t.Fatalf("cluster uid missing")
+	}
 
 	body, _ := json.Marshal(map[string]string{"cpu": "2"})
 	// create tenant to get UID
 	tb, _ := json.Marshal(Tenant{Name: "acme"})
-	r2, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/cluster-a/tenants", bytes.NewReader(tb))
+	r2, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants", bytes.NewReader(tb))
 	r2.Header.Set("Content-Type", "application/json")
 	rr, _ := http.DefaultClient.Do(r2)
-	var tnt Tenant
-	_ = json.NewDecoder(rr.Body).Decode(&tnt)
+	bodyData, _ := io.ReadAll(rr.Body)
 	rr.Body.Close()
+	if rr.StatusCode != http.StatusOK {
+		t.Fatalf("create tenant: %d %s", rr.StatusCode, string(bodyData))
+	}
+	var tnt Tenant
+	_ = json.Unmarshal(bodyData, &tnt)
 	if tnt.Uid == nil {
 		t.Fatalf("tenant uid missing")
 	}
-	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/cluster-a/tenants/"+*tnt.Uid+"/quotas", bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants/"+uidStr(tnt.Uid)+"/quotas", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -89,7 +100,7 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/cluster-a/tenants/"+*tnt.Uid+"/limits", bytes.NewReader(body))
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants/"+uidStr(tnt.Uid)+"/limits", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -101,7 +112,7 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	resp.Body.Close()
 
 	nb, _ := json.Marshal(map[string]any{"defaultDeny": true})
-	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/cluster-a/tenants/"+*tnt.Uid+"/network-policies", bytes.NewReader(nb))
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants/"+uidStr(tnt.Uid)+"/network-policies", bytes.NewReader(nb))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {

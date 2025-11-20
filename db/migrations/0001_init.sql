@@ -25,8 +25,10 @@ CREATE TABLE IF NOT EXISTS apps (
   tenant TEXT NOT NULL,
   project TEXT NOT NULL,
   name TEXT NOT NULL,
+  spec JSONB DEFAULT '{}'::jsonb,
   UNIQUE(tenant,project,name)
 );
+ALTER TABLE IF EXISTS apps ADD COLUMN IF NOT EXISTS spec JSONB DEFAULT '{}'::jsonb;
 CREATE TABLE IF NOT EXISTS policysets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_uid TEXT NOT NULL,

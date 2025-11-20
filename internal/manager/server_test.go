@@ -15,17 +15,22 @@ import (
 )
 
 func TestTenantsCRUD(t *testing.T) {
-	s := NewServer(store.NewMemory())
+	st := store.NewMemory()
+	clusterID, err := st.CreateCluster(context.Background(), types.Cluster{Name: "cluster-a"}, "")
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+	s := NewServer(st)
 	// create (new API surface)
 	body := []byte(`{"name":"alice"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/c/tenants", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/"+clusterID.String()+"/tenants", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	s.Router().ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("create tenant failed: %d", w.Code)
 	}
 	// list
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/clusters/c/tenants", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/clusters/"+clusterID.String()+"/tenants", nil)
 	w = httptest.NewRecorder()
 	s.Router().ServeHTTP(w, req)
 	if w.Code != 200 {

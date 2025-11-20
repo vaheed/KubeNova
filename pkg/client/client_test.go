@@ -10,10 +10,16 @@ import (
 )
 
 func TestClientTenantProjectApp(t *testing.T) {
-	srv := mngr.NewServer(store.NewMemory())
+	st := store.NewMemory()
+	clusterID, err := st.CreateCluster(context.Background(), types.Cluster{Name: "cluster-a"}, "")
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+	srv := mngr.NewServer(st)
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 	c := New(ts.URL, "")
+	c.cluster = clusterID.String()
 	ctx := context.Background()
 	if _, err := c.CreateTenant(ctx, types.Tenant{Name: "alice"}); err != nil {
 		t.Fatal(err)
