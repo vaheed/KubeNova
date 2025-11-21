@@ -333,6 +333,8 @@ Support kubectl directly, safely, without drift.
 ### Implementation status
 - AppReconciler now logs and emits telemetry for `catalogVersion`, `catalogItemId`, and `catalogOverrides`, so upgrades are visible when Agents project Apps into Vela (`internal/reconcile/app.go`).
 - Manager-configured ConfigMaps carry the catalog metadata so the Agent can detect drift between installed versions and stored templates (`internal/http/server.go::ensureAppConfigMap`).
+- Manager now cannibalizes the `kubenova.io/*` labels that the Agent writes onto every Vela Application, and the API exposes `GET /api/v1/clusters/{c}/apps/orphans` plus the supporting schema so operators can query drifted workloads (docs/openapi/openapi.yaml, internal/http/server.go).
+- The orphan summary response is a natural signal for telemetry or dashboards, so worth emitting events or metrics from the Manager whenever the orphan list grows long.
 
 ---
 

@@ -41,6 +41,9 @@ type ServerInterface interface {
 	// Get cluster
 	// (GET /api/v1/clusters/{c})
 	GetApiV1ClustersC(w http.ResponseWriter, r *http.Request, c ClusterParam)
+	// List Vela applications that lack App records
+	// (GET /api/v1/clusters/{c}/apps/orphans)
+	GetApiV1ClustersCAppsOrphans(w http.ResponseWriter, r *http.Request, c ClusterParam)
 	// Bootstrap a default tenant, project, and kubeconfig for PaaS
 	// (POST /api/v1/clusters/{c}/bootstrap/paas)
 	PostApiV1ClustersCBootstrapPaas(w http.ResponseWriter, r *http.Request, c ClusterParam)
@@ -278,6 +281,12 @@ func (_ Unimplemented) DeleteApiV1ClustersC(w http.ResponseWriter, r *http.Reque
 // Get cluster
 // (GET /api/v1/clusters/{c})
 func (_ Unimplemented) GetApiV1ClustersC(w http.ResponseWriter, r *http.Request, c ClusterParam) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List Vela applications that lack App records
+// (GET /api/v1/clusters/{c}/apps/orphans)
+func (_ Unimplemented) GetApiV1ClustersCAppsOrphans(w http.ResponseWriter, r *http.Request, c ClusterParam) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -877,6 +886,34 @@ func (siw *ServerInterfaceWrapper) GetApiV1ClustersC(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetApiV1ClustersC(w, r, c)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// GetApiV1ClustersCAppsOrphans operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1ClustersCAppsOrphans(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "c" -------------
+	var c ClusterParam
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "c", runtime.ParamLocationPath, chi.URLParam(r, "c"), &c)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "c", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV1ClustersCAppsOrphans(w, r, c)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3620,6 +3657,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/clusters/{c}", wrapper.GetApiV1ClustersC)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/clusters/{c}/apps/orphans", wrapper.GetApiV1ClustersCAppsOrphans)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/clusters/{c}/bootstrap/paas", wrapper.PostApiV1ClustersCBootstrapPaas)

@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/vaheed/kubenova/internal/backends/vela"
 	"github.com/vaheed/kubenova/internal/cluster"
@@ -153,7 +154,23 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconc
 		}
 	}
 
-	if err := backend.EnsureApp(ctx, ns, appName, spec); err != nil {
+	meta := map[string]string{}
+	addMeta := func(key, value string) {
+		if v := strings.TrimSpace(value); v != "" {
+			meta[key] = v
+		}
+	}
+	addMeta("kubenova.app", cm.Labels["kubenova.app"])
+	addMeta("kubenova.tenant", cm.Labels["kubenova.tenant"])
+	addMeta("kubenova.project", cm.Labels["kubenova.project"])
+	addMeta("kubenova.io/app-id", cm.Labels["kubenova.io/app-id"])
+	addMeta("kubenova.io/tenant-id", cm.Labels["kubenova.io/tenant-id"])
+	addMeta("kubenova.io/project-id", cm.Labels["kubenova.io/project-id"])
+	addMeta("kubenova.io/source-kind", sourceKind)
+	if len(meta) == 0 {
+		meta = nil
+	}
+	if err := backend.EnsureApp(ctx, ns, appName, spec, meta); err != nil {
 		log.With(zap.Error(err)).Error("ensure app")
 		return reconcile.Result{}, nil
 	}

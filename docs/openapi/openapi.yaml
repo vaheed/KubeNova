@@ -395,6 +395,27 @@ components:
         from: { type: integer }
         to: { type: integer }
         changes: { type: array, items: { type: object } }
+    OrphanedApplication:
+      type: object
+      required: [namespace, name, reason]
+      properties:
+        namespace: { type: string }
+        name: { type: string }
+        appId:
+          type: string
+          format: uuid
+        tenant: { type: string }
+        project: { type: string }
+        labels:
+          type: object
+          additionalProperties: { type: string }
+        reason: { type: string }
+    OrphanedApplications:
+      type: object
+      properties:
+        orphans:
+          type: array
+          items: { $ref: '#/components/schemas/OrphanedApplication' }
     LogLine:
       type: object
       properties:
@@ -697,6 +718,68 @@ paths:
               examples:
                 caps:
                   value: { tenancy: true, vela: true, proxy: true }
+
+  /api/v1/clusters/{c}/apps/orphans:
+    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
+    get:
+      summary: List Vela applications that lack App records
+      description: |
+        Uses the kubenova.io/app-id label to correlate every Vela Application with
+        the Manager's App catalog. Any Vela App that is missing that label or has
+        no matching App entry is reported as an orphan.
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrphanedApplications' }
+              examples:
+                orphaned:
+                  value:
+                    orphans:
+                      - namespace: tn-acme-shop-app-web
+                        name: nginx
+                        appId: "3c3089b9-6a10-4b9f-8b7a-294a4c3c4513"
+                        tenant: acme
+                        project: shop
+                        labels:
+                          kubenova.app: nginx
+                          kubenova.tenant: acme
+                          kubenova.project: shop
+                          kubenova.io/app-id: "3c3089b9-6a10-4b9f-8b7a-294a4c3c4513"
+                        reason: app record missing
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-401", message: "missing bearer token" }
+        '403':
+          description: forbidden
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                deny:
+                  value: { code: "KN-403", message: "forbidden" }
+        '404':
+          description: cluster not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                missing:
+                  value: { code: "KN-404", message: "cluster not found" }
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                failure:
+                  value: { code: "KN-500", message: "store error" }
 
   # Tenants
   /api/v1/clusters/{c}/tenants:

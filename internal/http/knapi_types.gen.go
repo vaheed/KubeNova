@@ -341,6 +341,22 @@ type MeResponse struct {
 	Subject *string   `json:"subject,omitempty"`
 }
 
+// OrphanedApplication defines model for OrphanedApplication.
+type OrphanedApplication struct {
+	AppId     *openapi_types.UUID `json:"appId,omitempty"`
+	Labels    *map[string]string  `json:"labels,omitempty"`
+	Name      string              `json:"name"`
+	Namespace string              `json:"namespace"`
+	Project   *string             `json:"project,omitempty"`
+	Reason    string              `json:"reason"`
+	Tenant    *string             `json:"tenant,omitempty"`
+}
+
+// OrphanedApplications defines model for OrphanedApplications.
+type OrphanedApplications struct {
+	Orphans *[]OrphanedApplication `json:"orphans,omitempty"`
+}
+
 // Plan defines model for Plan.
 type Plan struct {
 	Description  *string            `json:"description,omitempty"`

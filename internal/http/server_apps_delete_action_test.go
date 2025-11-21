@@ -15,7 +15,9 @@ import (
 
 type fakeVelaDelete struct{ called bool }
 
-func (f *fakeVelaDelete) EnsureApp(context.Context, string, string, map[string]any) error { return nil }
+func (f *fakeVelaDelete) EnsureApp(context.Context, string, string, map[string]any, map[string]string) error {
+	return nil
+}
 func (f *fakeVelaDelete) DeleteApp(context.Context, string, string) error {
 	f.called = true
 	return nil
@@ -65,6 +67,7 @@ func TestAppDeleteActionInvokesBackend(t *testing.T) {
 		Revisions(context.Context, string, string) ([]map[string]any, error)
 		Diff(context.Context, string, string, int, int) (map[string]any, error)
 		Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
+		ListApps(context.Context, string, int, string) ([]map[string]any, string, error)
 		SetTraits(context.Context, string, string, []map[string]any) error
 		SetPolicies(context.Context, string, string, []map[string]any) error
 		ImageUpdate(context.Context, string, string, string, string, string) error

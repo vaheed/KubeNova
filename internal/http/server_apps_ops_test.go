@@ -73,6 +73,7 @@ func TestAppsOpsInvokeBackend(t *testing.T) {
 		Revisions(context.Context, string, string) ([]map[string]any, error)
 		Diff(context.Context, string, string, int, int) (map[string]any, error)
 		Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
+		ListApps(context.Context, string, int, string) ([]map[string]any, string, error)
 		SetTraits(context.Context, string, string, []map[string]any) error
 		SetPolicies(context.Context, string, string, []map[string]any) error
 		ImageUpdate(context.Context, string, string, string, string, string) error

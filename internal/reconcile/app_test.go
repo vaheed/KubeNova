@@ -21,13 +21,15 @@ type fakeVelaClient struct {
 	ns       string
 	name     string
 	spec     map[string]any
+	meta     map[string]string
 }
 
-func (f *fakeVelaClient) EnsureApp(_ context.Context, ns, name string, spec map[string]any) error {
+func (f *fakeVelaClient) EnsureApp(_ context.Context, ns, name string, spec map[string]any, meta map[string]string) error {
 	f.ensured = true
 	f.ns = ns
 	f.name = name
 	f.spec = spec
+	f.meta = meta
 	return nil
 }
 func (f *fakeVelaClient) DeleteApp(context.Context, string, string) error { return nil }
@@ -122,5 +124,19 @@ func TestAppReconcilerProjectsConfigMapToVela(t *testing.T) {
 	}
 	if len(fv.traits) != 1 || len(fv.policies) != 1 {
 		t.Fatalf("expected traits and policies to be applied, got: %+v %+v", fv.traits, fv.policies)
+	}
+	expectedMeta := map[string]string{
+		"kubenova.app":            "demo",
+		"kubenova.tenant":         "acme",
+		"kubenova.project":        "proj",
+		"kubenova.io/app-id":      "app-123",
+		"kubenova.io/tenant-id":   "tenant-123",
+		"kubenova.io/project-id":  "project-123",
+		"kubenova.io/source-kind": "containerImage",
+	}
+	for key, want := range expectedMeta {
+		if fv.meta == nil || fv.meta[key] != want {
+			t.Fatalf("metadata %s mismatch: expected %s got %v", key, want, fv.meta[key])
+		}
 	}
 }

@@ -225,6 +225,23 @@ kubectl logs -n <namespace> <pod-name> --tail=100
 
 These `kubectl` checks are optional from KubeNova’s perspective, but they are useful to confirm that the underlying cluster is ready for the API flows described in the next sections.
 
+## 3.2) Confirm the Agent labels every Vela Application
+
+The Agent projects apps into KubeVela and tags every Application with `kubenova.io/app-id`, `kubenova.io/tenant-id`, `kubenova.io/project-id`, and `kubenova.io/source-kind`. These labels keep `kubectl` queries safe and let the Manager detect drift.
+
+```bash
+# list Applications and show the KubeNova labels
+kubectl get applications.core.oam.dev -n tn-<tenant>-app-<project> \
+  -o jsonpath='{range .items[*]}{.metadata.name} {.metadata.labels.kubenova.io/app-id} {.metadata.labels.kubenova.io/tenant-id} {.metadata.labels.kubenova.io/project-id} {.metadata.labels.kubenova.io/source-kind}{"\n"}{end}'
+
+# ask the Manager for orphaned Applications (admin/ops token required)
+curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/apps/orphans" \
+  -H "$AUTH_HEADER" \
+  | jq .
+```
+
+Legitimate apps are filtered out of the `/apps/orphans` response; only Applications that omit the KubeNova label or reference a missing App row are returned, which makes this a handy drift detection shortcut.
+
 ---
 
 ## 4) Inspect cluster capabilities and bootstrap components

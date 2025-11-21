@@ -47,6 +47,7 @@ type APIServer struct {
 		Revisions(context.Context, string, string) ([]map[string]any, error)
 		Diff(context.Context, string, string, int, int) (map[string]any, error)
 		Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
+		ListApps(context.Context, string, int, string) ([]map[string]any, string, error)
 		SetTraits(context.Context, string, string, []map[string]any) error
 		SetPolicies(context.Context, string, string, []map[string]any) error
 		ImageUpdate(context.Context, string, string, string, string, string) error
@@ -74,6 +75,7 @@ func NewAPIServer(st store.Store) *APIServer {
 			Revisions(context.Context, string, string) ([]map[string]any, error)
 			Diff(context.Context, string, string, int, int) (map[string]any, error)
 			Logs(context.Context, string, string, string, bool) ([]map[string]any, error)
+			ListApps(context.Context, string, int, string) ([]map[string]any, string, error)
 			SetTraits(context.Context, string, string, []map[string]any) error
 			SetPolicies(context.Context, string, string, []map[string]any) error
 			ImageUpdate(context.Context, string, string, string, string, string) error
@@ -1211,6 +1213,36 @@ func (s *APIServer) GetApiV1ClustersCCapabilities(w http.ResponseWriter, r *http
 	t, v, p := true, true, true
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ClusterCapabilities{Tenancy: &t, Vela: &v, Proxy: &p})
+}
+
+// (GET /api/v1/clusters/{c}/apps/orphans)
+func (s *APIServer) GetApiV1ClustersCAppsOrphans(w http.ResponseWriter, r *http.Request, c ClusterParam) {
+	if !s.requireRoles(w, r, "admin", "ops") {
+		return
+	}
+	clusterID := c.String()
+	_, enc, err := s.st.GetClusterByID(r.Context(), clusterID)
+	if err != nil || enc == "" {
+		s.writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	kb, derr := base64.StdEncoding.DecodeString(enc)
+	if derr != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "cluster kubeconfig decode error")
+		return
+	}
+	apps, err := s.listClusterApplications(r.Context(), kb)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "vela list error")
+		return
+	}
+	orphans, err := s.findOrphanedApplications(r.Context(), apps)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", "store error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(OrphanedApplications{Orphans: &orphans})
 }
 
 // --- PolicySets & Catalog ---
@@ -2975,6 +3007,82 @@ func toTypesTenant(in Tenant) kn.Tenant {
 			out.Annotations = map[string]string{}
 		}
 		out.Annotations["kubenova.io/plan"] = strings.TrimSpace(*in.Plan)
+	}
+	return out
+}
+
+func (s *APIServer) listClusterApplications(ctx context.Context, kubeconfig []byte) ([]map[string]any, error) {
+	client := s.newVela(kubeconfig)
+	all := []map[string]any{}
+	cursor := ""
+	for {
+		page, next, err := client.ListApps(ctx, metav1.NamespaceAll, 200, cursor)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if next == "" {
+			break
+		}
+		cursor = next
+	}
+	return all, nil
+}
+
+func (s *APIServer) findOrphanedApplications(ctx context.Context, apps []map[string]any) ([]OrphanedApplication, error) {
+	out := make([]OrphanedApplication, 0, len(apps))
+	for _, item := range apps {
+		meta, _ := item["metadata"].(map[string]any)
+		if meta == nil {
+			continue
+		}
+		name, _ := meta["name"].(string)
+		namespace, _ := meta["namespace"].(string)
+		labels := flattenLabels(meta["labels"])
+		appID := labels["kubenova.io/app-id"]
+		reason := ""
+		if appID == "" {
+			reason = "missing kubenova.io/app-id label"
+		} else {
+			if _, err := s.st.GetAppByID(ctx, appID); err != nil {
+				if err == store.ErrNotFound {
+					reason = "app record missing"
+				} else {
+					return nil, err
+				}
+			}
+		}
+		if reason == "" {
+			continue
+		}
+		out = append(out, OrphanedApplication{
+			Namespace: namespace,
+			Name:      name,
+			AppId:     uuidFromString(appID),
+			Tenant:    stringPtr(labels["kubenova.tenant"]),
+			Project:   stringPtr(labels["kubenova.project"]),
+			Labels:    &labels,
+			Reason:    reason,
+		})
+	}
+	return out, nil
+}
+
+func stringPtr(v string) *string {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	return &v
+}
+
+func flattenLabels(raw any) map[string]string {
+	out := map[string]string{}
+	if dict, ok := raw.(map[string]any); ok {
+		for key, value := range dict {
+			if str, ok2 := value.(string); ok2 {
+				out[key] = str
+			}
+		}
 	}
 	return out
 }

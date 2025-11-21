@@ -20,7 +20,7 @@ import (
 
 // Client abstracts app delivery concepts without leaking vendor constructs.
 type Client interface {
-	EnsureApp(ctx context.Context, ns, name string, spec map[string]any) error
+	EnsureApp(ctx context.Context, ns, name string, spec map[string]any, meta map[string]string) error
 	DeleteApp(ctx context.Context, ns, name string) error
 	GetApp(ctx context.Context, ns, name string) (map[string]any, error)
 	ListApps(ctx context.Context, ns string, limit int, cursor string) ([]map[string]any, string, error)
@@ -81,11 +81,12 @@ func newFromRESTConfig(cfg *rest.Config) Client {
 
 type noop struct{}
 
-func (n *noop) EnsureApp(ctx context.Context, ns, name string, spec map[string]any) error {
+func (n *noop) EnsureApp(ctx context.Context, ns, name string, spec map[string]any, meta map[string]string) error {
 	_ = ctx
 	_ = ns
 	_ = name
 	_ = spec
+	_ = meta
 	return nil
 }
 func (n *noop) DeleteApp(ctx context.Context, ns, name string) error {
@@ -185,28 +186,26 @@ func (n *noop) ImageUpdate(ctx context.Context, ns, name, component, image, tag 
 }
 
 // real impl methods
-func (c *client) EnsureApp(ctx context.Context, ns, name string, spec map[string]any) error {
-	u := vadapter.ApplicationCR(ns, name, "")
-	if len(spec) > 0 {
-		// If a spec map is provided (for example from AppReconciler via ConfigMap),
-		// use it as the Application spec so higher-level controllers can shape
-		// components/traits/policies (including Helm-based apps like WordPress).
-		copied := map[string]any{}
-		for k, v := range spec {
-			copied[k] = v
-		}
-		u.Object["spec"] = copied
-	}
+func (c *client) EnsureApp(ctx context.Context, ns, name string, spec map[string]any, meta map[string]string) error {
+	specCopy := copySpec(spec)
 	cur, err := c.dyn.Resource(appGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
+			u := vadapter.ApplicationCR(ns, name, "")
+			if specCopy != nil {
+				u.Object["spec"] = specCopy
+			}
+			applyMetaLabels(u, meta)
 			_, err = c.dyn.Resource(appGVR).Namespace(ns).Create(ctx, u, metav1.CreateOptions{})
 			return err
 		}
 		return err
 	}
-	u.SetResourceVersion(cur.GetResourceVersion())
-	_, err = c.dyn.Resource(appGVR).Namespace(ns).Update(ctx, u, metav1.UpdateOptions{})
+	if specCopy != nil {
+		cur.Object["spec"] = specCopy
+	}
+	applyMetaLabels(cur, meta)
+	_, err = c.dyn.Resource(appGVR).Namespace(ns).Update(ctx, cur, metav1.UpdateOptions{})
 	return err
 }
 func (c *client) DeleteApp(ctx context.Context, ns, name string) error {
@@ -417,6 +416,35 @@ func (c *client) ImageUpdate(ctx context.Context, ns, name, component, image, ta
 	}
 	_, err = c.dyn.Resource(appGVR).Namespace(ns).Update(ctx, u, metav1.UpdateOptions{})
 	return err
+}
+
+func copySpec(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for k, v := range input {
+		out[k] = v
+	}
+	return out
+}
+
+func applyMetaLabels(u *unstructured.Unstructured, meta map[string]string) {
+	if len(meta) == 0 {
+		return
+	}
+	labels := u.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	for k, v := range meta {
+		if v == "" {
+			delete(labels, k)
+			continue
+		}
+		labels[k] = v
+	}
+	u.SetLabels(labels)
 }
 
 func (c *client) patchSpec(ctx context.Context, ns, name string, fragment map[string]any) error {
