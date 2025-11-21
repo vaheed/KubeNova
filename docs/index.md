@@ -535,6 +535,56 @@ curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants" \
 
 will best‑effort apply the `gold` plan to `acme` (as long as a `gold` plan exists in the catalog).
 
+## Namespace model
+
+KubeNova enforces deterministic namespace names per tenant/project or tenant sandbox so every cluster can host large numbers of tenants without conflicting names:
+
+- App namespaces follow `tn-<tenant>-app-<project>` and are created by the Manager when a project is declared. Agents, Capsule, and KubeVela treat those namespaces as read-only for tenants.
+- Sandbox namespaces use `tn-<tenant>-sandbox-<name>` and are owned by tenant groups (`<tenant>-devs`). They are never reconciled by the Agent and allow tenant-level mutations.
+- Namespaces carry labels (`kubenova.tenant`, `kubenova.project`, `kubenova.namespace-type`, `kubenova.io/sandbox=true`) so telemetry and controllers can filter app vs sandbox contexts.
+
+List all app namespaces via `kubectl get ns -l kubenova.namespace-type=app` and sandboxes via `kubectl get ns -l kubenova.io/sandbox=true`.
+
+## Tenant → Project → App hierarchy
+
+The Manager API mirrors real-world workflows:
+
+1. Register a cluster → the Manager stores its kubeconfig, installs an Agent, and configures Capsule + capsule-proxy.
+2. Create a tenant (`/clusters/{c}/tenants`) → defines the tenant identity, owners, and RBAC labels.
+3. Create a project (`/clusters/{c}/tenants/{t}/projects`) → results in the Capsule Tenant namespace `tn-<tenant>-app-<project>`.
+4. Create an App (`/clusters/{c}/tenants/{t}/projects/{p}/apps`) → the App is persisted with canonical `kubenova.io/app-id` metadata, and the Agent projects it into a KubeVela Application inside the project namespace.
+
+# App.source examples
+
+Use the JSON payloads under `docs/examples/` to bootstrap apps:
+
+- [`catalog-item.json`](docs/examples/catalog-item.json) – defines a catalog entry (slug, source, version, scope). POST it to `/api/v1/catalog`.
+- [`app-create.json`](docs/examples/app-create.json) – describes a container-image App, traits, and a `SecretRef`. POST it to `/api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps`.
+- [`app-upgrade.json`](docs/examples/app-upgrade.json) – shows how to bump the catalog version and overrides when installing the same slug twice.
+- [`secret-ref.json`](docs/examples/secret-ref.json) – highlights the minimal `SecretRef` object for registry, Git, or Helm credentials.
+- [`app-helm.json`](docs/examples/app-helm.json) – example Helm (grafana) install referencing `grafana.github.io/helm-charts`.
+- [`app-oci.json`](docs/examples/app-oci.json) – OCI chart example from `registry-1.docker.io/grafana`.
+
+Include these snippets directly in your automation (curl/HTTP/CI) to stay in sync with the OpenAPI contract.
+
+## Sandbox usage guide
+
+Sandboxes are tenant-owned namespaces created via `POST /api/v1/tenants/{t}/sandbox`. A typical sandbox workflow:
+
+1. Create a namespace (`{"name":"dev"}`) and receive a sandbox-scoped kubeconfig.
+2. Use the kubeconfig via capsule-proxy; tenants have full edit access but the Manager/Agent never touch the namespace.
+3. Sandboxes can host secrets and experiments independently of app namespaces; the Agent skips reconciliation when it sees `kubenova.io/sandbox=true`.
+
+## Quickstart checklist
+
+1. Register the cluster with `capsuleProxyUrl` pointing to capsule-proxy and capture `CLUSTER_ID`.
+2. Create a tenant (`TENANT_ID`) and project (`PROJECT_ID`); the Manager creates the app namespace automatically.
+3. Create a sandbox (`POST /api/v1/tenants/{TENANT_ID}/sandbox`) and test `kubectl` against its kubeconfig.
+4. Install nginx from the catalog using `docs/examples/catalog-item.json` via `POST /api/v1/clusters/{CLUSTER_ID}/tenants/{TENANT_ID}/projects/{PROJECT_ID}/catalog/install`.
+5. Upgrade nginx with `docs/examples/app-upgrade.json` by calling the same install endpoint with a higher version and overrides.
+
+Each step is tied to the JSON examples under `docs/examples/`.
+
 **kubectl checks – quotas and limits**
 
 ```bash
