@@ -6,16 +6,27 @@
 ## Overview
 
 KubeNova is a **central control plane** for multi‑tenant Kubernetes environments.
-It integrates:
+Its core concepts are:
 
-- **Capsule** for multi‑tenancy and tenant isolation.
-- **capsule‑proxy (access proxy)** for tenant/project‑scoped `kubectl` access.
-- **KubeVela** for application delivery on top of your clusters.
+- **Cluster per zone** – every registered cluster represents a discrete zone or datacenter; the Manager never shards workloads across clusters automatically.
+- **Capsule tenants & namespaces** – Capsule enforces RBAC, quotas, and namespace ownership, ensuring tenants only reach the namespaces the Manager allows.
+- **Capsule proxy (access proxy)** – Issued kubeconfigs always target the proxy so tenants never talk directly to the Kubernetes API, and RBAC is enforced via Capsule groups and `X-KN-Roles`.
+- **KubeVela app delivery** – the Agent projects ConfigMaps into Vela `Application` CRs, labels them with canonical `kubenova.io/*` metadata, and leaves sandbox namespaces untouched.
 
 The KubeNova **Manager** exposes a single OpenAPI‑first REST surface at `/api/v1`.
-It stores clusters, tenants, projects, apps, plans, and policysets in a backing store
+It stores clusters, tenants, projects, apps, policysets, catalog items, and telemetry in a backing store
 (Postgres or in‑memory), and installs/coordinates in‑cluster **Agents** that
 talk to Capsule, capsule‑proxy, and KubeVela.
+
+Current release: **0.9.6**
+
+## Capsule + capsule-proxy requirements
+
+Every registered cluster must have Capsule installed plus a capsule-proxy endpoint:
+
+- The `ClusterRegistration` payload includes `capsuleProxyUrl` (and optional `capsuleProxyCa`), and every issued kubeconfig is rewritten to use that proxy.
+- Capsule tenants are managed per namespace, and the Manager/Agent expects tenants to own the `tn-<tenant>-*` namespaces it creates.
+- The Agent relies on Capsule CRDs/tagging to keep sandbox namespaces (`tn-<tenant>-sandbox-*`) isolated, while app namespaces remain read-only to tenants.
 
 Current release: **0.9.6**
 
@@ -143,6 +154,18 @@ helm upgrade --install agent kubenova/agent \
   --set bootstrap.capsuleVersion=0.10.6 \
   --set bootstrap.capsuleProxyVersion=0.9.13
 ```
+
+### Grafana credential secret
+
+When using Helm charts such as Grafana, keep the admin password in a Kubernetes secret and reference it from your Helm values or catalog overrides:
+
+```bash
+kubectl create secret generic grafana-admin-password \
+  --from-literal=admin-password='SuperSecret123!' \
+  -n tn-acme-app-shop
+```
+
+Read the secret value in your automation and set `values.adminPassword` before installing the chart so credentials never appear in request payloads.
 
 > See `env.example` for all supported environment variables and their meanings.
 

@@ -749,6 +749,16 @@ curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/
   | jq .
 ```
 
+Before installing Helm-based workloads such as Grafana, keep the admin password inside a Kubernetes secret:
+
+```bash
+kubectl create secret generic grafana-admin-password \
+  --from-literal=admin-password='SuperSecret123!' \
+  -n tn-acme-app-shop
+```
+
+Read the secret and set `values.adminPassword` in your automation before hitting the catalog install endpoint so the Agent injects the resolved password without persisting it in the Manager store.
+
 - `GET /api/v1/catalog` returns the catalog entries for the requested `scope` (global by default) and, when `scope=tenant`, the `tenantId` that you pass.
 - `GET /api/v1/catalog/{slug}` surfaces the stored source definition so you can preview the Helm chart, Git repo, container image, or KubeManifest that underpins the template.
 - `POST /clusters/{cluster}/tenants/{tenant}/projects/{project}/catalog/install` merges overrides into the catalog source, persists an App with a `catalogRef`, and mirrors the metadata into the project ConfigMap so the Agent can project the App into Vela.
