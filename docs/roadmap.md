@@ -332,6 +332,10 @@ Support kubectl directly, safely, without drift.
   - `kubenova.io/sandbox=true`
 - Manager displays sandbox namespaces separately (non-Vela-managed).
 
+### Implementation status
+- AppReconciler now logs and emits telemetry for `catalogVersion`, `catalogItemId`, and `catalogOverrides`, so upgrades are visible when Agents project Apps into Vela (`internal/reconcile/app.go`).
+- Manager-configured ConfigMaps carry the catalog metadata so the Agent can detect drift between installed versions and stored templates (`internal/http/server.go::ensureAppConfigMap`).
+
 ---
 
 # Phase 5 — Credentials & Registries

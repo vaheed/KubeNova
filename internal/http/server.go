@@ -124,6 +124,17 @@ func (s *APIServer) ensureAppConfigMap(ctx context.Context, clusterID, projectNS
 	if in.Spec != nil && in.Spec.Source != nil {
 		spec["source"] = in.Spec.Source
 	}
+	if in.Spec != nil {
+		if in.Spec.CatalogItemId != nil {
+			spec["catalogItemId"] = in.Spec.CatalogItemId.String()
+		}
+		if in.Spec.CatalogVersion != nil {
+			spec["catalogVersion"] = *in.Spec.CatalogVersion
+		}
+		if in.Spec.CatalogOverrides != nil {
+			spec["catalogOverrides"] = *in.Spec.CatalogOverrides
+		}
+	}
 	rawSpec, _ := json.Marshal(spec)
 	rawTraits, _ := json.Marshal(zeroOrSlice(in.Traits))
 	rawPolicies, _ := json.Marshal(zeroOrSlice(in.Policies))

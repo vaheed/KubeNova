@@ -120,6 +120,20 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconc
 		}
 	}
 
+	catalogVersion, _ := spec["catalogVersion"].(string)
+	catalogItemID, _ := spec["catalogItemId"].(string)
+	var catalogOverrides map[string]any
+	if raw, ok := spec["catalogOverrides"]; ok {
+		if m, ok := raw.(map[string]any); ok {
+			catalogOverrides = m
+		}
+	}
+	log = log.With(
+		zap.String("catalog_version", catalogVersion),
+		zap.String("catalog_item_id", catalogItemID),
+		zap.Any("catalog_overrides", catalogOverrides),
+	)
+
 	if r.newVela == nil {
 		cfg := ctrl.GetConfigOrDie()
 		r.newVela = func() vela.Client { return vela.NewFromRESTConfig(cfg) }
@@ -163,17 +177,20 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconc
 		zap.String("app", appName),
 	).Info("app projected to vela")
 	telemetry.PublishEvent(map[string]any{
-		"type":       "app",
-		"tenant":     tenant,
-		"tenantId":   tenantID,
-		"project":    project,
-		"projectId":  projectID,
-		"app":        appName,
-		"appId":      appID,
-		"name":       appName,
-		"namespace":  ns,
-		"sourceKind": sourceKind,
-		"operation":  "reconciled",
+		"type":             "app",
+		"tenant":           tenant,
+		"tenantId":         tenantID,
+		"project":          project,
+		"projectId":        projectID,
+		"app":              appName,
+		"appId":            appID,
+		"name":             appName,
+		"namespace":        ns,
+		"sourceKind":       sourceKind,
+		"catalogVersion":   catalogVersion,
+		"catalogItemId":    catalogItemID,
+		"catalogOverrides": catalogOverrides,
+		"operation":        "reconciled",
 	})
 	return reconcile.Result{}, nil
 }
