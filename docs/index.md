@@ -753,6 +753,7 @@ curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/
 - `GET /api/v1/catalog/{slug}` surfaces the stored source definition so you can preview the Helm chart, Git repo, container image, or KubeManifest that underpins the template.
 - `POST /clusters/{cluster}/tenants/{tenant}/projects/{project}/catalog/install` merges overrides into the catalog source, persists an App with a `catalogRef`, and mirrors the metadata into the project ConfigMap so the Agent can project the App into Vela.
 - The install endpoint returns `{ "status": "accepted", "appSlug": "<slug>" }` because delivery happens asynchronously through the Agent.
+- Re-running the install call with the same `slug` but a newer catalog version acts as an upgrade; the request records `catalogItemId`, `catalogVersion`, and `catalogOverrides` so the Agent and the dashboard know which template boundaries were applied.
 
 ---
 

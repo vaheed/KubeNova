@@ -10,36 +10,36 @@ import (
 )
 
 type Memory struct {
-	mu           sync.RWMutex
-	tenants      map[string]types.Tenant
-	projects     map[string]map[string]types.Project        // tenant -> name
-	apps         map[string]map[string]map[string]types.App // tenant -> project -> name
-	policysets   map[string]map[string]types.PolicySet      // tenantID -> name -> policyset
-	clusters     map[types.ID]memCluster
-	byName       map[string]types.ID
+	mu          sync.RWMutex
+	tenants     map[string]types.Tenant
+	projects    map[string]map[string]types.Project        // tenant -> name
+	apps        map[string]map[string]map[string]types.App // tenant -> project -> name
+	policysets  map[string]map[string]types.PolicySet      // tenantID -> name -> policyset
+	clusters    map[types.ID]memCluster
+	byName      map[string]types.ID
 	tenantByID  map[string]string        // id -> tenant name
 	projectByID map[string]types.Project // id -> project (tenant name + name)
 	appByID     map[string]types.App     // id -> app (tenant/project names + name)
-	sandboxes    map[string]map[string]types.Sandbox
+	sandboxes   map[string]map[string]types.Sandbox
 	sandboxByID map[string]types.Sandbox
-	catalog      map[string]types.CatalogItem
-	evts         []memEvent
+	catalog     map[string]types.CatalogItem
+	evts        []memEvent
 }
 
 func NewMemory() *Memory {
 	return &Memory{
-		tenants:      map[string]types.Tenant{},
-		projects:     map[string]map[string]types.Project{},
-		apps:         map[string]map[string]map[string]types.App{},
-		policysets:   map[string]map[string]types.PolicySet{},
-		clusters:     map[types.ID]memCluster{},
-		byName:       map[string]types.ID{},
+		tenants:     map[string]types.Tenant{},
+		projects:    map[string]map[string]types.Project{},
+		apps:        map[string]map[string]map[string]types.App{},
+		policysets:  map[string]map[string]types.PolicySet{},
+		clusters:    map[types.ID]memCluster{},
+		byName:      map[string]types.ID{},
 		tenantByID:  map[string]string{},
 		projectByID: map[string]types.Project{},
 		appByID:     map[string]types.App{},
-		sandboxes:    map[string]map[string]types.Sandbox{},
+		sandboxes:   map[string]map[string]types.Sandbox{},
 		sandboxByID: map[string]types.Sandbox{},
-		catalog:      map[string]types.CatalogItem{},
+		catalog:     map[string]types.CatalogItem{},
 	}
 }
 
@@ -128,7 +128,7 @@ func (m *Memory) CreatePolicySet(ctx context.Context, ps types.PolicySet) error 
 func (m *Memory) ListPolicySets(ctx context.Context, tenantID string) ([]types.PolicySet, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-		mp := m.policysets[tenantID]
+	mp := m.policysets[tenantID]
 	out := make([]types.PolicySet, 0, len(mp))
 	for _, ps := range mp {
 		out = append(out, ps)
@@ -301,14 +301,16 @@ func (m *Memory) CreateApp(ctx context.Context, a types.App) error {
 	if _, ok := m.apps[a.Tenant][a.Project]; !ok {
 		m.apps[a.Tenant][a.Project] = map[string]types.App{}
 	}
-	if _, ok := m.apps[a.Tenant][a.Project][a.Name]; ok {
-		return nil
+	if existing, ok := m.apps[a.Tenant][a.Project][a.Name]; ok {
+		a.ID = existing.ID
+		a.CreatedAt = existing.CreatedAt
+	} else {
+		a.CreatedAt = stamp(a.CreatedAt)
+		if a.ID == (types.ID{}) {
+			a.ID = types.NewID()
+		}
 	}
-	a.CreatedAt = stamp(a.CreatedAt)
 	m.apps[a.Tenant][a.Project][a.Name] = a
-	if a.ID == (types.ID{}) {
-		a.ID = types.NewID()
-	}
 	m.appByID[a.ID.String()] = a
 	return nil
 }
@@ -373,16 +375,22 @@ func (m *Memory) DeleteApp(ctx context.Context, tenant, project, name string) er
 func (m *Memory) CreateCatalogItem(ctx context.Context, item types.CatalogItem) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if item.ID == (types.ID{}) {
-		item.ID = types.NewID()
-	}
+	existing, exists := m.catalog[item.Slug]
 	if item.Scope == "" {
 		item.Scope = "global"
 	}
 	if item.Source == nil {
 		item.Source = map[string]any{}
 	}
-	item.CreatedAt = stamp(item.CreatedAt)
+	if exists {
+		item.ID = existing.ID
+		item.CreatedAt = existing.CreatedAt
+	} else {
+		if item.ID == (types.ID{}) {
+			item.ID = types.NewID()
+		}
+		item.CreatedAt = stamp(item.CreatedAt)
+	}
 	m.catalog[item.Slug] = item
 	return nil
 }

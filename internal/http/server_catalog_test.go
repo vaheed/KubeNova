@@ -92,6 +92,10 @@ func TestCatalogInstall(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create catalog item: %v", err)
 	}
+	item, err := st.GetCatalogItem(ctx, "nginx")
+	if err != nil {
+		t.Fatalf("lookup catalog item: %v", err)
+	}
 
 	overrides := map[string]any{
 		"containerImage": map[string]any{"tag": "1.22.0"},
@@ -141,6 +145,84 @@ func TestCatalogInstall(t *testing.T) {
 	}
 	if app.Spec.Source.ContainerImage == nil || app.Spec.Source.ContainerImage.Tag == nil || *app.Spec.Source.ContainerImage.Tag != "1.22.0" {
 		t.Fatalf("override not applied")
+	}
+	if app.Spec.CatalogItemID == nil || *app.Spec.CatalogItemID != item.ID {
+		t.Fatalf("catalog item id missing")
+	}
+	if app.Spec.CatalogVersion == nil {
+		t.Fatalf("catalog version missing")
+	}
+	if *app.Spec.CatalogVersion != version {
+		t.Fatalf("catalog version mismatch: stored=%q expected=%q", *app.Spec.CatalogVersion, version)
+	}
+	if app.Spec.CatalogOverrides == nil {
+		t.Fatal("catalog overrides missing")
+	}
+	if ciOverrides, ok := (*app.Spec.CatalogOverrides)["containerImage"].(map[string]any); !ok || ciOverrides["tag"] != "1.22.0" {
+		t.Fatalf("unexpected catalog overrides: %+v", app.Spec.CatalogOverrides)
+	}
+
+	// Upgrade: publish a new catalog version, reinstall with new overrides.
+	version2 := "1.23.0"
+	source2 := map[string]any{
+		"kind": "containerImage",
+		"containerImage": map[string]any{
+			"image": "nginx",
+			"tag":   version2,
+		},
+	}
+	if err := st.CreateCatalogItem(ctx, types.CatalogItem{
+		Slug:        "nginx",
+		Name:        "Nginx",
+		Scope:       "global",
+		Version:     &version2,
+		Source:      source2,
+		Description: ptr("web server"),
+	}); err != nil {
+		t.Fatalf("update catalog item: %v", err)
+	}
+	item2, err := st.GetCatalogItem(ctx, "nginx")
+	if err != nil {
+		t.Fatalf("lookup catalog item: %v", err)
+	}
+	if item2.ID != item.ID {
+		t.Fatalf("catalog item id must stay stable: %s vs %s", item.ID, item2.ID)
+	}
+
+	overrides2 := map[string]any{
+		"containerImage": map[string]any{"tag": "1.24.0"},
+	}
+	payload2 := CatalogInstall{Slug: "nginx", Source: &overrides2}
+	body2, _ := json.Marshal(payload2)
+	req2, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+testClusterID+"/tenants/"+tenant.ID.String()+"/projects/"+project.ID.String()+"/catalog/install", bytes.NewReader(body2))
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("install request: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusAccepted {
+		t.Fatalf("unexpected status: %s", resp2.Status)
+	}
+	apps, err = st.ListApps(ctx, tenant.Name, project.Name)
+	if err != nil {
+		t.Fatalf("list apps: %v", err)
+	}
+	if len(apps) != 1 {
+		t.Fatalf("expected 1 app, got %d", len(apps))
+	}
+	app = apps[0]
+	if app.Spec.CatalogVersion == nil {
+		t.Fatalf("catalog version missing after upgrade")
+	}
+	if *app.Spec.CatalogVersion != version2 {
+		t.Fatalf("catalog version mismatch after upgrade: stored=%q expected=%q", *app.Spec.CatalogVersion, version2)
+	}
+	if app.Spec.CatalogOverrides == nil {
+		t.Fatal("catalog overrides missing after upgrade")
+	}
+	if ciOverrides, ok := (*app.Spec.CatalogOverrides)["containerImage"].(map[string]any); !ok || ciOverrides["tag"] != "1.24.0" {
+		t.Fatalf("unexpected catalog overrides after upgrade: %+v", app.Spec.CatalogOverrides)
 	}
 }
 

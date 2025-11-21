@@ -216,7 +216,10 @@ type AppSourceVelaTemplate struct {
 
 // AppSpec defines model for AppSpec.
 type AppSpec struct {
-	Source *AppSource `json:"source,omitempty"`
+	CatalogItemId    *openapi_types.UUID     `json:"catalogItemId,omitempty"`
+	CatalogOverrides *map[string]interface{} `json:"catalogOverrides,omitempty"`
+	CatalogVersion   *string                 `json:"catalogVersion,omitempty"`
+	Source           *AppSource              `json:"source,omitempty"`
 }
 
 // AppStatus defines model for AppStatus.

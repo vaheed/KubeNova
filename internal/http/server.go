@@ -819,6 +819,10 @@ func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPCatalogInstall(w http.Res
 	if item.Version != nil {
 		spec.Source.CatalogRef.Version = item.Version
 	}
+	catalogID := openapi_types.UUID(item.ID)
+	spec.CatalogItemID = &catalogID
+	spec.CatalogVersion = item.Version
+	spec.CatalogOverrides = in.Source
 	app := kn.App{
 		ID:          kn.NewID(),
 		Tenant:      pr.Tenant,

@@ -68,21 +68,27 @@ type App struct {
 }
 
 type CatalogItem struct {
-	ID          ID                   `json:"id,omitempty"`
-	Slug        string               `json:"slug"`
-	Name        string               `json:"name"`
-	Description *string              `json:"description,omitempty"`
-	Icon        *string              `json:"icon,omitempty"`
-	Category    *string              `json:"category,omitempty"`
-	Version     *string              `json:"version,omitempty"`
-	Scope       string               `json:"scope"`
-	TenantID    *ID                  `json:"tenantId,omitempty"`
-	Source      map[string]any       `json:"source"`
-	CreatedAt   time.Time            `json:"createdAt,omitempty"`
+	ID          ID             `json:"id,omitempty"`
+	Slug        string         `json:"slug"`
+	Name        string         `json:"name"`
+	Description *string        `json:"description,omitempty"`
+	Icon        *string        `json:"icon,omitempty"`
+	Category    *string        `json:"category,omitempty"`
+	Version     *string        `json:"version,omitempty"`
+	Scope       string         `json:"scope"`
+	TenantID    *ID            `json:"tenantId,omitempty"`
+	Source      map[string]any `json:"source"`
+	CreatedAt   time.Time      `json:"createdAt,omitempty"`
 }
 
 type AppSpec struct {
 	Source *AppSource `json:"source,omitempty"`
+	// CatalogItemID identifies the catalog entry that created or upgraded this App.
+	CatalogItemID *ID `json:"catalogItemId,omitempty"`
+	// CatalogVersion records the catalog version that was applied.
+	CatalogVersion *string `json:"catalogVersion,omitempty"`
+	// CatalogOverrides stores the override payload merged into the catalog source.
+	CatalogOverrides *map[string]any `json:"catalogOverrides,omitempty"`
 }
 
 type AppSource struct {

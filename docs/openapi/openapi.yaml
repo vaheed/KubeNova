@@ -245,6 +245,13 @@ components:
       type: object
       properties:
         source: { $ref: '#/components/schemas/AppSource' }
+        catalogItemId:
+          type: string
+          format: uuid
+        catalogVersion: { type: string }
+        catalogOverrides:
+          type: object
+          additionalProperties: true
     AppSource:
       type: object
       required: [kind]

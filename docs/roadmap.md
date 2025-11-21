@@ -305,6 +305,11 @@ Support version upgrades and predictable rollouts.
   - `catalog_version`
   - `overrides`
 
+### Implementation status
+- Catalog installs persist the catalog ID, version, and overrides inside `AppSpec` so upgrades carry the metadata agents need.
+- `internal/http/server_catalog_test.go` exercises the install/upgrade loop, ensuring repeated installs keep a single App and refresh the overrides.
+- `AppSpec` and the OpenAPI contract now expose `catalogItemId`, `catalogVersion`, and `catalogOverrides` so consumers can read the stored metadata.
+
 ---
 
 # Phase 4 — Kubectl Path & Discovery
