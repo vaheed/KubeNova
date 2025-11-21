@@ -262,6 +262,13 @@ RBAC:
 - Manager creates app namespace (if missing).
 - Store `catalogRef` on App for rollback/upgrade visibility.
 
+### Implementation status
+- `db/migrations/0003_catalog_items.sql` defines the `catalog_items` schema that stores slug, scope, source JSONB, and timestamps.
+- `internal/store/store.go`, `internal/store/postgres.go`, and `internal/store/memory.go` expose `Create/List/GetCatalogItem` so handlers can persist tenant/global entries.
+- `docs/openapi/openapi.yaml` now exposes `/api/v1/catalog`, `/api/v1/catalog/{slug}`, and `/clusters/{c}/tenants/{t}/projects/{p}/catalog/install` plus the `CatalogItem`/`CatalogInstall` payloads.
+- `internal/http/server.go` merges catalog overrides into `AppSpec.Source`, stamps a `catalogRef`, and mirrors the metadata via `ensureAppConfigMap`; `internal/http/server_catalog_test.go` covers the install flow.
+- `docs/index.md` now walks through catalog listing and install commands so the documentation matches the shipped API.
+
 ---
 
 ### Sandbox Restriction

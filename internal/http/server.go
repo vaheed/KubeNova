@@ -55,7 +55,7 @@ type APIServer struct {
 	planCatalog      []TenantPlan
 	runsMu           sync.RWMutex
 	runsByID         map[string]WorkflowRun
-runsByApp        map[string][]WorkflowRun // key: tenantID|projectID|appID
+	runsByApp        map[string][]WorkflowRun // key: tenantID|projectID|appID
 }
 
 func NewAPIServer(st store.Store) *APIServer {
@@ -233,6 +233,54 @@ func appSpecToHTTP(spec *kn.AppSpec) *AppSpec {
 		return nil
 	}
 	return &out
+}
+
+func catalogItemToDTO(item kn.CatalogItem) CatalogItem {
+	dto := CatalogItem{
+		Id:          openapi_types.UUID(item.ID),
+		Slug:        item.Slug,
+		Name:        item.Name,
+		Description: item.Description,
+		Icon:        item.Icon,
+		Category:    item.Category,
+		Version:     item.Version,
+		Scope:       CatalogItemScope(item.Scope),
+		Source:      item.Source,
+	}
+	if item.TenantID != nil && *item.TenantID != (kn.ID{}) {
+		tid := openapi_types.UUID(*item.TenantID)
+		dto.TenantId = &tid
+	}
+	return dto
+}
+
+func mergeSourceMaps(base map[string]any, overrides *map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range base {
+		out[k] = v
+	}
+	if overrides != nil {
+		for k, v := range *overrides {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func catalogSourceToAppSpec(source map[string]any) *kn.AppSpec {
+	if len(source) == 0 {
+		return nil
+	}
+	payload := map[string]any{"source": source}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	var spec kn.AppSpec
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		return nil
+	}
+	return &spec
 }
 
 func uuidFromString(id string) *openapi_types.UUID {
@@ -476,7 +524,7 @@ func (s *APIServer) PutApiV1TenantsTPlan(w http.ResponseWriter, r *http.Request,
 // tenant/project and materializes their Vela traits/policies before a deploy.
 // It is best-effort: failures are surfaced as errors, but absence of policysets is allowed.
 func (s *APIServer) applyPolicySets(ctx context.Context, kubeconfig []byte, tenantID, namespace, appName string) error {
-// Resolve tenant by ID to get its name for matching.
+	// Resolve tenant by ID to get its name for matching.
 	ten, err := s.st.GetTenantByID(ctx, tenantID)
 	if err != nil {
 		return nil
@@ -644,7 +692,7 @@ func (s *APIServer) GetApiV1CatalogComponents(w http.ResponseWriter, r *http.Req
 	t := Component
 	name := "web"
 	desc := "Web service"
-	items := []CatalogItem{{Name: &name, Type: &t, Description: &desc}}
+	items := []CatalogEntity{{Name: &name, Type: &t, Description: &desc}}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(items)
 }
@@ -657,7 +705,7 @@ func (s *APIServer) GetApiV1CatalogTraits(w http.ResponseWriter, r *http.Request
 	t := Trait
 	name := "scaler"
 	desc := "Scale deployments"
-	items := []CatalogItem{{Name: &name, Type: &t, Description: &desc}}
+	items := []CatalogEntity{{Name: &name, Type: &t, Description: &desc}}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(items)
 }
@@ -670,9 +718,130 @@ func (s *APIServer) GetApiV1CatalogWorkflows(w http.ResponseWriter, r *http.Requ
 	t := Workflow
 	name := "rollout"
 	desc := "Rolling updates"
-	items := []CatalogItem{{Name: &name, Type: &t, Description: &desc}}
+	items := []CatalogEntity{{Name: &name, Type: &t, Description: &desc}}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(items)
+}
+
+// (GET /api/v1/catalog)
+func (s *APIServer) GetApiV1Catalog(w http.ResponseWriter, r *http.Request, params GetApiV1CatalogParams) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	scope := CatalogItemScopeGlobal
+	if params.Scope != nil {
+		scope = CatalogItemScope(*params.Scope)
+	}
+	tenantID := ""
+	if params.TenantId != nil {
+		tenantID = params.TenantId.String()
+	}
+	if scope == CatalogItemScopeTenant && tenantID == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "tenantId required when scope=tenant")
+		return
+	}
+	items, err := s.st.ListCatalogItems(r.Context(), string(scope), tenantID)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	out := make([]CatalogItem, 0, len(items))
+	for _, it := range items {
+		out = append(out, catalogItemToDTO(it))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// (GET /api/v1/catalog/{slug})
+func (s *APIServer) GetApiV1CatalogSlug(w http.ResponseWriter, r *http.Request, slug string) {
+	if !s.requireRoles(w, r, "admin", "ops", "tenantOwner", "projectDev", "readOnly") {
+		return
+	}
+	if strings.TrimSpace(slug) == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "slug required")
+		return
+	}
+	item, err := s.st.GetCatalogItem(r.Context(), slug)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "catalog item not found")
+		return
+	}
+	dto := catalogItemToDTO(item)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(dto)
+}
+
+// (POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/catalog/install)
+func (s *APIServer) PostApiV1ClustersCTenantsTProjectsPCatalogInstall(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
+	pr, err := s.st.GetProjectByID(r.Context(), p.String())
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "project not found")
+		return
+	}
+	if !s.requireRolesTenant(w, r, pr.Tenant, "admin", "ops", "tenantOwner", "projectDev") {
+		return
+	}
+	var in CatalogInstall
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid payload")
+		return
+	}
+	slug := strings.TrimSpace(in.Slug)
+	if slug == "" {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "slug required")
+		return
+	}
+	item, err := s.st.GetCatalogItem(r.Context(), slug)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "KN-404", "catalog item not found")
+		return
+	}
+	if item.Scope == string(CatalogItemScopeTenant) {
+		if item.TenantID == nil || item.TenantID.String() != pr.Tenant {
+			s.writeError(w, http.StatusNotFound, "KN-404", "catalog item not found")
+			return
+		}
+	}
+	source := mergeSourceMaps(item.Source, in.Source)
+	if len(source) == 0 {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "source definition required")
+		return
+	}
+	spec := catalogSourceToAppSpec(source)
+	if spec == nil || spec.Source == nil {
+		s.writeError(w, http.StatusUnprocessableEntity, "KN-422", "invalid catalog source")
+		return
+	}
+	spec.Source.CatalogRef = &kn.AppCatalogRef{
+		Name: slug,
+	}
+	if item.Version != nil {
+		spec.Source.CatalogRef.Version = item.Version
+	}
+	app := kn.App{
+		ID:          kn.NewID(),
+		Tenant:      pr.Tenant,
+		Project:     pr.Name,
+		Name:        slug,
+		Description: item.Description,
+		Spec:        spec,
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := s.st.CreateApp(r.Context(), app); err != nil {
+		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	sourceKind := ""
+	if spec.Source != nil {
+		sourceKind = string(spec.Source.Kind)
+	}
+	projectNS := clusterpkg.AppNamespaceName(pr.Tenant, pr.Name)
+	_ = s.ensureAppConfigMap(r.Context(), c.String(), projectNS, pr.Tenant, t.String(), p.String(), app.ID.String(), sourceKind, appToDTO(app))
+	resp := map[string]string{"status": "accepted", "appSlug": slug}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *APIServer) requireRoles(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
@@ -853,7 +1022,7 @@ func (s *APIServer) PostApiV1Clusters(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
-// Read back to include assigned ID/labels
+	// Read back to include assigned ID/labels
 	cl, encBack, _ := s.st.GetClusterByName(r.Context(), in.Name)
 	now := time.Now().UTC()
 	out := Cluster{Name: in.Name, CreatedAt: &now}
@@ -973,7 +1142,7 @@ func (s *APIServer) DeleteApiV1ClustersC(w http.ResponseWriter, r *http.Request,
 	if !s.requireRoles(w, r, "admin", "ops") {
 		return
 	}
-// Treat path param as cluster ID for consistency with GET and other routes
+	// Treat path param as cluster ID for consistency with GET and other routes
 	uid := c.String()
 	cl, enc, err := s.st.GetClusterByID(r.Context(), uid)
 	if err != nil {
@@ -1719,13 +1888,13 @@ func (s *APIServer) PostApiV1ClustersCTenants(w http.ResponseWriter, r *http.Req
 	if t.Labels == nil {
 		t.Labels = map[string]string{}
 	}
-// Record the primary cluster ID for this tenant for usage/kubeconfig lookups.
+	// Record the primary cluster ID for this tenant for usage/kubeconfig lookups.
 	t.Labels["kubenova.cluster"] = c.String()
 	if err := s.st.CreateTenant(r.Context(), t); err != nil {
 		s.writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
-// read back to capture ID and optionally apply a tenant plan / bootstrap Capsule
+	// read back to capture ID and optionally apply a tenant plan / bootstrap Capsule
 	if t.Name != "" {
 		if tt, e := s.st.GetTenant(r.Context(), t.Name); e == nil {
 			if uid := uuidFromString(tt.ID.String()); uid != nil {

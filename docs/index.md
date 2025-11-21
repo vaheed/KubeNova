@@ -723,6 +723,37 @@ curl -sS "$BASE/api/v1/catalog/workflows" \
 
 These endpoints return simple JSON arrays and are safe to call frequently.
 
+### 9.1) Catalog items & install
+
+```bash
+# List catalog entries
+curl -sS "$BASE/api/v1/catalog?scope=global" \
+  -H "$AUTH_HEADER" \
+  | jq .
+
+# Inspect a single catalog item
+curl -sS "$BASE/api/v1/catalog/nginx" \
+  -H "$AUTH_HEADER" \
+  | jq .
+
+# Install from the catalog
+curl -sS -X POST "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/catalog/install" \
+  -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" \
+  -d '{
+    "slug":"nginx",
+    "source": {
+      "containerImage": { "tag": "1.22.0" }
+    }
+  }' \
+  | jq .
+```
+
+- `GET /api/v1/catalog` returns the catalog entries for the requested `scope` (global by default) and, when `scope=tenant`, the `tenantId` that you pass.
+- `GET /api/v1/catalog/{slug}` surfaces the stored source definition so you can preview the Helm chart, Git repo, container image, or KubeManifest that underpins the template.
+- `POST /clusters/{cluster}/tenants/{tenant}/projects/{project}/catalog/install` merges overrides into the catalog source, persists an App with a `catalogRef`, and mirrors the metadata into the project ConfigMap so the Agent can project the App into Vela.
+- The install endpoint returns `{ "status": "accepted", "appSlug": "<slug>" }` because delivery happens asynchronously through the Agent.
+
 ---
 
 ## 10) Sandbox namespaces & kubeconfigs
