@@ -10,7 +10,6 @@ import (
 type ID = uuid.UUID
 
 type Cluster struct {
-	UID           string            `json:"uid,omitempty"`
 	ID            ID                `json:"id,omitempty"`
 	Name          string            `json:"name"`
 	DisplayName   string            `json:"displayName,omitempty"`
@@ -29,7 +28,7 @@ type Condition struct {
 }
 
 type Tenant struct {
-	UID         string            `json:"uid,omitempty"`
+	ID          ID                `json:"id,omitempty"`
 	Name        string            `json:"name"`
 	Owners      []string          `json:"owners,omitempty"` // user or group subjects
 	Labels      map[string]string `json:"labels,omitempty"`
@@ -38,7 +37,7 @@ type Tenant struct {
 }
 
 type Project struct {
-	UID         string            `json:"uid,omitempty"`
+	ID          ID                `json:"id,omitempty"`
 	Tenant      string            `json:"tenant"`
 	Name        string            `json:"name"`
 	Labels      map[string]string `json:"labels,omitempty"`
@@ -48,7 +47,7 @@ type Project struct {
 }
 
 type Sandbox struct {
-	UID       string    `json:"uid,omitempty"`
+	ID        ID        `json:"id,omitempty"`
 	Tenant    string    `json:"tenant"`
 	Name      string    `json:"name"`
 	Namespace string    `json:"namespace"`
@@ -56,7 +55,7 @@ type Sandbox struct {
 }
 
 type App struct {
-	UID         string            `json:"uid,omitempty"`
+	ID          ID                `json:"id,omitempty"`
 	Tenant      string            `json:"tenant"`
 	Project     string            `json:"project"`
 	Name        string            `json:"name"`

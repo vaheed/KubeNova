@@ -67,7 +67,7 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	}
 	var createdCluster Cluster
 	_ = json.NewDecoder(resp.Body).Decode(&createdCluster)
-	clusterID := uidStr(createdCluster.Uid)
+	clusterID := idStr(createdCluster.Id)
 	resp.Body.Close()
 	if clusterID == "" {
 		t.Fatalf("cluster uid missing")
@@ -86,10 +86,10 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	}
 	var tnt Tenant
 	_ = json.Unmarshal(bodyData, &tnt)
-	if tnt.Uid == nil {
+	if tnt.Id == nil {
 		t.Fatalf("tenant uid missing")
 	}
-	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants/"+uidStr(tnt.Uid)+"/quotas", bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants/"+idStr(tnt.Id)+"/quotas", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -100,7 +100,7 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants/"+uidStr(tnt.Uid)+"/limits", bytes.NewReader(body))
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants/"+idStr(tnt.Id)+"/limits", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -112,7 +112,7 @@ func TestPoliciesHandlersInvokeBackend(t *testing.T) {
 	resp.Body.Close()
 
 	nb, _ := json.Marshal(map[string]any{"defaultDeny": true})
-	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants/"+uidStr(tnt.Uid)+"/network-policies", bytes.NewReader(nb))
+	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/v1/clusters/"+clusterID+"/tenants/"+idStr(tnt.Id)+"/network-policies", bytes.NewReader(nb))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {

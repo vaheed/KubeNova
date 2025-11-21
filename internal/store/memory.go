@@ -14,15 +14,14 @@ type Memory struct {
 	tenants      map[string]types.Tenant
 	projects     map[string]map[string]types.Project        // tenant -> name
 	apps         map[string]map[string]map[string]types.App // tenant -> project -> name
-	policysets   map[string]map[string]types.PolicySet      // tenantUID -> name -> policyset
+	policysets   map[string]map[string]types.PolicySet      // tenantID -> name -> policyset
 	clusters     map[types.ID]memCluster
 	byName       map[string]types.ID
-	byUID        map[string]types.ID
-	tenantByUID  map[string]string        // uid -> tenant name
-	projectByUID map[string]types.Project // uid -> project (tenant name + name)
-	appByUID     map[string]types.App     // uid -> app (tenant/project names + name)
+	tenantByID  map[string]string        // id -> tenant name
+	projectByID map[string]types.Project // id -> project (tenant name + name)
+	appByID     map[string]types.App     // id -> app (tenant/project names + name)
 	sandboxes    map[string]map[string]types.Sandbox
-	sandboxByUID map[string]types.Sandbox
+	sandboxByID map[string]types.Sandbox
 	evts         []memEvent
 }
 
@@ -34,12 +33,11 @@ func NewMemory() *Memory {
 		policysets:   map[string]map[string]types.PolicySet{},
 		clusters:     map[types.ID]memCluster{},
 		byName:       map[string]types.ID{},
-		byUID:        map[string]types.ID{},
-		tenantByUID:  map[string]string{},
-		projectByUID: map[string]types.Project{},
-		appByUID:     map[string]types.App{},
+		tenantByID:  map[string]string{},
+		projectByID: map[string]types.Project{},
+		appByID:     map[string]types.App{},
 		sandboxes:    map[string]map[string]types.Sandbox{},
-		sandboxByUID: map[string]types.Sandbox{},
+		sandboxByID: map[string]types.Sandbox{},
 	}
 }
 
@@ -55,11 +53,11 @@ func (m *Memory) CreateTenant(ctx context.Context, t types.Tenant) error {
 		return nil
 	}
 	t.CreatedAt = stamp(t.CreatedAt)
-	if t.UID == "" {
-		t.UID = uuidNew()
+	if t.ID == (types.ID{}) {
+		t.ID = types.NewID()
 	}
 	m.tenants[t.Name] = t
-	m.tenantByUID[t.UID] = t.Name
+	m.tenantByID[t.ID.String()] = t.Name
 	return nil
 }
 func (m *Memory) GetTenant(ctx context.Context, name string) (types.Tenant, error) {
@@ -72,10 +70,10 @@ func (m *Memory) GetTenant(ctx context.Context, name string) (types.Tenant, erro
 	return t, nil
 }
 
-func (m *Memory) GetTenantByUID(ctx context.Context, uid string) (types.Tenant, error) {
+func (m *Memory) GetTenantByID(ctx context.Context, id string) (types.Tenant, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if name, ok := m.tenantByUID[uid]; ok {
+	if name, ok := m.tenantByID[id]; ok {
 		if t, ok2 := m.tenants[name]; ok2 {
 			return t, nil
 		}
@@ -98,8 +96,8 @@ func (m *Memory) DeleteTenant(ctx context.Context, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if t, ok := m.tenants[name]; ok {
-		delete(m.tenantByUID, t.UID)
-		delete(m.policysets, t.UID)
+		delete(m.tenantByID, t.ID.String())
+		delete(m.policysets, t.ID.String())
 	}
 	delete(m.tenants, name)
 	delete(m.projects, name)
@@ -125,10 +123,10 @@ func (m *Memory) CreatePolicySet(ctx context.Context, ps types.PolicySet) error 
 	return nil
 }
 
-func (m *Memory) ListPolicySets(ctx context.Context, tenantUID string) ([]types.PolicySet, error) {
+func (m *Memory) ListPolicySets(ctx context.Context, tenantID string) ([]types.PolicySet, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	mp := m.policysets[tenantUID]
+		mp := m.policysets[tenantID]
 	out := make([]types.PolicySet, 0, len(mp))
 	for _, ps := range mp {
 		out = append(out, ps)
@@ -136,10 +134,10 @@ func (m *Memory) ListPolicySets(ctx context.Context, tenantUID string) ([]types.
 	return out, nil
 }
 
-func (m *Memory) GetPolicySet(ctx context.Context, tenantUID, name string) (types.PolicySet, error) {
+func (m *Memory) GetPolicySet(ctx context.Context, tenantID, name string) (types.PolicySet, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if mp := m.policysets[tenantUID]; mp != nil {
+	if mp := m.policysets[tenantID]; mp != nil {
 		if ps, ok := mp[name]; ok {
 			return ps, nil
 		}
@@ -151,10 +149,10 @@ func (m *Memory) UpdatePolicySet(ctx context.Context, ps types.PolicySet) error 
 	return m.CreatePolicySet(ctx, ps)
 }
 
-func (m *Memory) DeletePolicySet(ctx context.Context, tenantUID, name string) error {
+func (m *Memory) DeletePolicySet(ctx context.Context, tenantID, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if mp := m.policysets[tenantUID]; mp != nil {
+	if mp := m.policysets[tenantID]; mp != nil {
 		delete(mp, name)
 	}
 	return nil
@@ -170,11 +168,11 @@ func (m *Memory) CreateProject(ctx context.Context, p types.Project) error {
 		return nil
 	}
 	p.CreatedAt = stamp(p.CreatedAt)
-	if p.UID == "" {
-		p.UID = uuidNew()
+	if p.ID == (types.ID{}) {
+		p.ID = types.NewID()
 	}
 	m.projects[p.Tenant][p.Name] = p
-	m.projectByUID[p.UID] = p
+	m.projectByID[p.ID.String()] = p
 	return nil
 }
 func (m *Memory) GetProject(ctx context.Context, tenant, name string) (types.Project, error) {
@@ -188,10 +186,10 @@ func (m *Memory) GetProject(ctx context.Context, tenant, name string) (types.Pro
 	return types.Project{}, ErrNotFound
 }
 
-func (m *Memory) GetProjectByUID(ctx context.Context, uid string) (types.Project, error) {
+func (m *Memory) GetProjectByID(ctx context.Context, id string) (types.Project, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if pr, ok := m.projectByUID[uid]; ok {
+	if pr, ok := m.projectByID[id]; ok {
 		return pr, nil
 	}
 	return types.Project{}, ErrNotFound
@@ -217,7 +215,7 @@ func (m *Memory) DeleteProject(ctx context.Context, tenant, name string) error {
 	defer m.mu.Unlock()
 	if mp, ok := m.projects[tenant]; ok {
 		if pr, ok2 := mp[name]; ok2 {
-			delete(m.projectByUID, pr.UID)
+			delete(m.projectByID, pr.ID.String())
 		}
 		delete(mp, name)
 	}
@@ -234,16 +232,16 @@ func (m *Memory) CreateSandbox(ctx context.Context, sb types.Sandbox) error {
 		m.sandboxes[sb.Tenant] = map[string]types.Sandbox{}
 	}
 	if existing, ok := m.sandboxes[sb.Tenant][sb.Name]; ok {
-		sb.UID = existing.UID
+		sb.ID = existing.ID
 		sb.CreatedAt = existing.CreatedAt
 	} else {
 		sb.CreatedAt = stamp(sb.CreatedAt)
-		if sb.UID == "" {
-			sb.UID = uuidNew()
+		if sb.ID == (types.ID{}) {
+			sb.ID = types.NewID()
 		}
 	}
 	m.sandboxes[sb.Tenant][sb.Name] = sb
-	m.sandboxByUID[sb.UID] = sb
+	m.sandboxByID[sb.ID.String()] = sb
 	return nil
 }
 
@@ -258,10 +256,10 @@ func (m *Memory) GetSandbox(ctx context.Context, tenant, name string) (types.San
 	return types.Sandbox{}, ErrNotFound
 }
 
-func (m *Memory) GetSandboxByUID(ctx context.Context, uid string) (types.Sandbox, error) {
+func (m *Memory) GetSandboxByID(ctx context.Context, id string) (types.Sandbox, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if sb, ok := m.sandboxByUID[uid]; ok {
+	if sb, ok := m.sandboxByID[id]; ok {
 		return sb, nil
 	}
 	return types.Sandbox{}, ErrNotFound
@@ -285,7 +283,7 @@ func (m *Memory) DeleteSandbox(ctx context.Context, tenant, name string) error {
 	defer m.mu.Unlock()
 	if mp, ok := m.sandboxes[tenant]; ok {
 		if sb, ok2 := mp[name]; ok2 {
-			delete(m.sandboxByUID, sb.UID)
+			delete(m.sandboxByID, sb.ID.String())
 		}
 		delete(mp, name)
 	}
@@ -305,11 +303,11 @@ func (m *Memory) CreateApp(ctx context.Context, a types.App) error {
 		return nil
 	}
 	a.CreatedAt = stamp(a.CreatedAt)
-	if a.UID == "" {
-		a.UID = uuidNew()
-	}
 	m.apps[a.Tenant][a.Project][a.Name] = a
-	m.appByUID[a.UID] = a
+	if a.ID == (types.ID{}) {
+		a.ID = types.NewID()
+	}
+	m.appByID[a.ID.String()] = a
 	return nil
 }
 func (m *Memory) GetApp(ctx context.Context, tenant, project, name string) (types.App, error) {
@@ -330,10 +328,10 @@ func (m *Memory) GetApp(ctx context.Context, tenant, project, name string) (type
 	return a, nil
 }
 
-func (m *Memory) GetAppByUID(ctx context.Context, uid string) (types.App, error) {
+func (m *Memory) GetAppByID(ctx context.Context, id string) (types.App, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if ap, ok := m.appByUID[uid]; ok {
+	if ap, ok := m.appByID[id]; ok {
 		return ap, nil
 	}
 	return types.App{}, ErrNotFound
@@ -362,7 +360,7 @@ func (m *Memory) DeleteApp(ctx context.Context, tenant, project, name string) er
 	if ma, ok := m.apps[tenant]; ok {
 		if mp, ok2 := ma[project]; ok2 {
 			if ap, ok3 := mp[name]; ok3 {
-				delete(m.appByUID, ap.UID)
+				delete(m.appByID, ap.ID.String())
 			}
 			delete(mp, name)
 		}
@@ -387,15 +385,11 @@ func (m *Memory) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigE
 	defer m.mu.Unlock()
 	id := types.NewID()
 	c.ID = id
-	if c.UID == "" {
-		c.UID = uuidNew()
-	}
 	m.clusters[id] = memCluster{c: c, enc: kubeconfigEnc}
-	m.byName[c.Name] = id
-	if m.byUID == nil {
-		m.byUID = map[string]types.ID{}
+	if m.byName == nil {
+		m.byName = map[string]types.ID{}
 	}
-	m.byUID[c.UID] = id
+	m.byName[strings.ToLower(c.Name)] = id
 	return id, nil
 }
 
@@ -419,14 +413,12 @@ func (m *Memory) GetClusterByName(ctx context.Context, name string) (types.Clust
 	return types.Cluster{}, "", ErrNotFound
 }
 
-func (m *Memory) GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if id, ok := m.byUID[uid]; ok {
-		mc := m.clusters[id]
-		return mc.c, mc.enc, nil
+func (m *Memory) GetClusterByID(ctx context.Context, idStr string) (types.Cluster, string, error) {
+	id, err := types.ParseID(idStr)
+	if err != nil {
+		return types.Cluster{}, "", ErrNotFound
 	}
-	return types.Cluster{}, "", ErrNotFound
+	return m.GetCluster(ctx, id)
 }
 
 func (m *Memory) DeleteCluster(ctx context.Context, id types.ID) error {
@@ -534,4 +526,3 @@ func matchesLabels(have map[string]string, want map[string]string) bool {
 }
 
 // helper for consistent UID generation (UUIDv4, lowercase)
-func uuidNew() string { return types.NewID().String() }

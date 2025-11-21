@@ -33,13 +33,13 @@ func TestProjectsAndAppsLifecycle(t *testing.T) {
 	var tnt Tenant
 	_ = json.NewDecoder(resp.Body).Decode(&tnt)
 	resp.Body.Close()
-	if tnt.Uid == nil {
+	if tnt.Id == nil {
 		t.Fatalf("tenant uid missing")
 	}
 
 	// create project
 	pb, _ := json.Marshal(Project{Name: "web"})
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+testClusterID+"/tenants/"+uidStr(tnt.Uid)+"/projects", bytes.NewReader(pb))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+testClusterID+"/tenants/"+idStr(tnt.Id)+"/projects", bytes.NewReader(pb))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -51,7 +51,7 @@ func TestProjectsAndAppsLifecycle(t *testing.T) {
 	resp.Body.Close()
 
 	// list projects
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + testClusterID + "/tenants/" + uidStr(tnt.Uid) + "/projects")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + testClusterID + "/tenants/" + idStr(tnt.Id) + "/projects")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,10 +68,10 @@ func TestProjectsAndAppsLifecycle(t *testing.T) {
 	// create app
 	ab, _ := json.Marshal(App{Name: "hello"})
 	// use project UID in path
-	if projects[0].Uid == nil {
+	if projects[0].Id == nil {
 		t.Fatalf("project uid missing")
 	}
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+testClusterID+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(projects[0].Uid)+"/apps", bytes.NewReader(ab))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+testClusterID+"/tenants/"+idStr(tnt.Id)+"/projects/"+idStr(projects[0].Id)+"/apps", bytes.NewReader(ab))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestProjectsAndAppsLifecycle(t *testing.T) {
 	resp.Body.Close()
 
 	// list apps
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + testClusterID + "/tenants/" + uidStr(tnt.Uid) + "/projects/" + uidStr(projects[0].Uid) + "/apps")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + testClusterID + "/tenants/" + idStr(tnt.Id) + "/projects/" + idStr(projects[0].Id) + "/apps")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,10 +98,10 @@ func TestProjectsAndAppsLifecycle(t *testing.T) {
 	}
 
 	// get app
-	if apps[0].Uid == nil {
+	if apps[0].Id == nil {
 		t.Fatalf("app uid missing")
 	}
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + testClusterID + "/tenants/" + uidStr(tnt.Uid) + "/projects/" + uidStr(projects[0].Uid) + "/apps/" + uidStr(apps[0].Uid))
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + testClusterID + "/tenants/" + idStr(tnt.Id) + "/projects/" + idStr(projects[0].Id) + "/apps/" + idStr(apps[0].Id))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestProjectsAndAppsLifecycle(t *testing.T) {
 	resp.Body.Close()
 
 	// delete app
-	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/clusters/"+testClusterID+"/tenants/"+uidStr(tnt.Uid)+"/projects/"+uidStr(projects[0].Uid)+"/apps/"+uidStr(apps[0].Uid), nil)
+	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/clusters/"+testClusterID+"/tenants/"+idStr(tnt.Id)+"/projects/"+idStr(projects[0].Id)+"/apps/"+idStr(apps[0].Id), nil)
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

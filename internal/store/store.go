@@ -28,7 +28,7 @@ type Store interface {
 	// Sandboxes
 	CreateSandbox(ctx context.Context, sb types.Sandbox) error
 	GetSandbox(ctx context.Context, tenant, name string) (types.Sandbox, error)
-	GetSandboxByUID(ctx context.Context, uid string) (types.Sandbox, error)
+	GetSandboxByID(ctx context.Context, id string) (types.Sandbox, error)
 	ListSandboxes(ctx context.Context, tenant string) ([]types.Sandbox, error)
 	DeleteSandbox(ctx context.Context, tenant, name string) error
 
@@ -44,8 +44,8 @@ type Store interface {
 	GetCluster(ctx context.Context, id types.ID) (types.Cluster, string, error)
 	// GetClusterByName returns cluster by name with stored kubeconfig encoding.
 	GetClusterByName(ctx context.Context, name string) (types.Cluster, string, error)
-	// GetClusterByUID returns cluster by uid with stored kubeconfig encoding.
-	GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error)
+	// GetClusterByID returns cluster by id with stored kubeconfig encoding.
+	GetClusterByID(ctx context.Context, id string) (types.Cluster, string, error)
 	// DeleteCluster removes a cluster by id.
 	DeleteCluster(ctx context.Context, id types.ID) error
 
@@ -58,15 +58,15 @@ type Store interface {
 	// Cursor is an opaque string returned by the previous call (UUID-based).
 	ListClusters(ctx context.Context, limit int, cursor string, labelSelector string) ([]types.Cluster, string, error)
 
-	// UID-based helpers for tenant/project/app resolution
-	GetTenantByUID(ctx context.Context, uid string) (types.Tenant, error)
-	GetProjectByUID(ctx context.Context, uid string) (types.Project, error)
-	GetAppByUID(ctx context.Context, uid string) (types.App, error)
+	// ID-based helpers for tenant/project/app resolution
+	GetTenantByID(ctx context.Context, id string) (types.Tenant, error)
+	GetProjectByID(ctx context.Context, id string) (types.Project, error)
+	GetAppByID(ctx context.Context, id string) (types.App, error)
 
 	// PolicySets
 	CreatePolicySet(ctx context.Context, ps types.PolicySet) error
-	ListPolicySets(ctx context.Context, tenantUID string) ([]types.PolicySet, error)
-	GetPolicySet(ctx context.Context, tenantUID, name string) (types.PolicySet, error)
+	ListPolicySets(ctx context.Context, tenantID string) ([]types.PolicySet, error)
+	GetPolicySet(ctx context.Context, tenantID, name string) (types.PolicySet, error)
 	UpdatePolicySet(ctx context.Context, ps types.PolicySet) error
 	DeletePolicySet(ctx context.Context, tenantUID, name string) error
 }

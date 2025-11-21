@@ -1,11 +1,11 @@
 # KubeNova PaaS Roadmap
 Manager → Agent → Capsule → Capsule-Proxy → KubeVela Architecture  
 One cluster per zone/datacenter.  
-Includes multi-namespace tenancy model (Pattern A + B) and “1 namespace per App”.
+Includes multi-namespace tenancy model and “1 namespace per App”.
 
 ---
 
-# Phase 0 — Tenancy Model (Pattern A + B)
+# Phase 0 — Tenancy Model 
 
 ## Goal
 Establish a safe, predictable multi-tenant model across clusters:
@@ -53,7 +53,7 @@ Manager responsibilities:
 
 ---
 
-### 0.3 RBAC Split (Pattern A + B)
+### 0.3 RBAC Split 
 Two ClusterRoles deployed per cluster:
 
 #### **A) Read-only for App namespaces**
@@ -115,13 +115,18 @@ Manager enforces all rules:
 
 ---
 
+## Implementation status
+- Namespace naming and RBAC are handled by `internal/cluster/namespaces.go`, `internal/cluster/projects.go`, and `internal/cluster/rbac.go`, which create `tn-<tenant>-app-<project>` and `tn-<tenant>-sandbox-<name>` namespaces, keep Capsule labels in sync, enforce the app vs sandbox ClusterRoles, and apply quotas/limits per namespace.
+- Capsule tenants, quotas, and kubeconfigs live under `internal/backends/capsule` and `internal/cluster/kubeconfig.go`; the HTTP surface in `internal/http/server.go` issues project (readOnly/projectDev) and sandbox (tenantOwner) kubeconfigs, writes `kubenova.io/{app,tenant,project}-id` metadata, and exposes the sandbox API that is exercised by `internal/http/server_policysets_test.go`, `internal/http/server_apps_ops_test.go`, and `internal/http/server_sandbox_test.go`.
+- The Agent (`internal/reconcile/project.go` and `internal/reconcile/app.go`) ignores namespaces labeled with `kubenova.io/sandbox=true`, keeps Capsule tenants up to date, and projects only app-configured ConfigMaps into Vela so sandbox namespaces stay isolated from managed workloads.
+
 ## Milestones
-- [ ] Namespace naming rules implemented in Manager  
-- [ ] RBAC ClusterRoles installed per cluster  
-- [ ] Manager auto-creates RoleBindings  
-- [ ] Capsule Tenant templates updated  
-- [ ] Tenant kubeconfig tested for RO(App) and RW(Sandbox)  
-- [ ] Agent updated to ignore sandbox namespaces  
+- [x] Namespace naming rules implemented in Manager  
+- [x] RBAC ClusterRoles installed per cluster  
+- [x] Manager auto-creates RoleBindings  
+- [x] Capsule Tenant templates updated  
+- [x] Tenant kubeconfig tested for RO(App) and RW(Sandbox)  
+- [x] Agent updated to ignore sandbox namespaces  
 - [ ] Full multi-tenant flow validated in Kind/multi-cluster setup  
 
 ---
@@ -179,7 +184,7 @@ Ensure Manager is the **only writer** to app namespaces across clusters.
   - Apply into app namespace
   - Never touch sandbox namespaces
 
----
+--- 
 
 ### 4. UUID Normalization Note
 Document breaking changes in:
@@ -189,12 +194,19 @@ Document breaking changes in:
 
 ---
 
+## Implementation status
+- OpenAPI + generated clients emit `id` UUIDs and the expanded `App.source` variants, keeping the HTTP schema and DTOs in sync with the new contract (`docs/openapi/openapi.yaml`, `internal/http/knapi_types.gen.go`, `internal/http/knapi_server.gen.go`).
+- Go models and stores rely on `types.ID`; Postgres/memory layers insert/query the `id` columns, including the serialized App spec payload, so UUIDs propagate throughout the persistence layer (`pkg/types/types.go`, `internal/store/postgres.go`, `internal/store/memory.go`).
+- HTTP handlers, policy set helpers, and the Agent reconciler now use the canonical IDs, pass the updated metadata labels, handle App.source decoding, and continue ignoring sandbox namespaces while projecting apps to Vela (`internal/http/server.go`, `internal/reconcile/app.go`).
+
+---
+
 ## Milestones
-- [ ] OpenAPI updated  
-- [ ] Go models updated  
-- [ ] Store migration (`uid` → `id`) complete  
-- [ ] Agent Vela renderer updated  
-- [ ] Tests use new UUID fields  
+- [x] OpenAPI updated  
+- [x] Go models updated  
+- [x] Store migration (`uid` → `id`) complete  
+- [x] Agent Vela renderer updated  
+- [x] Tests use new UUID fields  
 - [ ] Manager + Agent E2E validated  
 
 ---

@@ -103,7 +103,7 @@ func (s *Server) cleanupCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Obtain kubeconfig
-	_, enc, err := s.store.GetClusterByUID(r.Context(), cid)
+	_, enc, err := s.store.GetClusterByID(r.Context(), cid)
 	if err != nil || enc == "" {
 		httperr.Write(w, http.StatusNotFound, "KN-404", "cluster not found")
 		return
@@ -136,7 +136,7 @@ func (s *Server) paasBootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	// Ensure cluster exists and obtain kubeconfig for namespace operations.
-	cl, enc, err := s.store.GetClusterByUID(ctx, cid)
+	cl, enc, err := s.store.GetClusterByID(ctx, cid)
 	if err != nil || enc == "" {
 		httperr.Write(w, http.StatusNotFound, "KN-404", "cluster not found")
 		return
@@ -181,7 +181,7 @@ func (s *Server) paasBootstrap(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: apply bootstrap plan if configured.
 	if plan := strings.TrimSpace(os.Getenv("KUBENOVA_BOOTSTRAP_TENANT_PLAN")); plan != "" {
 		api := httpapi.NewAPIServer(s.store)
-		if _, err := api.ApplyPlanToTenant(ctx, tenStored.UID, plan); err != nil {
+		if _, err := api.ApplyPlanToTenant(ctx, tenStored.ID.String(), plan); err != nil {
 			// Log only; do not fail bootstrap if plan application fails.
 			logging.WithTrace(ctx, logging.FromContext(ctx)).Error("paas.bootstrap.plan_failed", zap.String("plan", plan), zap.Error(err))
 		}
@@ -232,11 +232,11 @@ func (s *Server) paasBootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]any{
-		"cluster":    cl.UID,
+		"cluster":    cl.ID.String(),
 		"tenant":     tenStored.Name,
-		"tenantId":   tenStored.UID,
+		"tenantId":   tenStored.ID.String(),
 		"project":    prStored.Name,
-		"projectId":  prStored.UID,
+		"projectId":  prStored.ID.String(),
 		"kubeconfig": kcfg,
 		"expiresAt":  expTime.UTC(),
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/vaheed/kubenova/internal/backends/vela"
+	"github.com/vaheed/kubenova/internal/cluster"
 	"github.com/vaheed/kubenova/internal/logging"
 	"github.com/vaheed/kubenova/internal/telemetry"
 	"go.uber.org/zap"
@@ -128,6 +129,14 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconc
 	ns := cm.Namespace
 	if ns == "" {
 		ns = "default"
+	}
+	nsObj := &corev1.Namespace{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: ns}, nsObj); err == nil {
+		if nsObj.Labels != nil {
+			if val, ok := nsObj.Labels[cluster.LabelSandbox]; ok && val == "true" {
+				return reconcile.Result{}, nil
+			}
+		}
 	}
 
 	if err := backend.EnsureApp(ctx, ns, appName, spec); err != nil {

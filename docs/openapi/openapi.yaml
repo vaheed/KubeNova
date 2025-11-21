@@ -94,7 +94,7 @@ components:
       type: object
       required: [name]
       properties:
-        uid:
+        id:
           type: string
           description: Stable unique identifier
           format: uuid
@@ -129,8 +129,9 @@ components:
       type: object
       required: [name]
       properties:
-        uid:
+        id:
           type: string
+          description: Stable unique identifier
           format: uuid
           pattern: '^[0-9a-f-]{36}$'
         name: { type: string }
@@ -154,8 +155,9 @@ components:
       type: object
       required: [name]
       properties:
-        uid:
+        id:
           type: string
+          description: Stable unique identifier
           format: uuid
           pattern: '^[0-9a-f-]{36}$'
         name: { type: string }
@@ -227,8 +229,9 @@ components:
       type: object
       required: [name]
       properties:
-        uid:
+        id:
           type: string
+          description: Stable unique identifier
           format: uuid
           pattern: '^[0-9a-f-]{36}$'
         name: { type: string }
@@ -503,7 +506,7 @@ paths:
               examples:
                 page:
                   value:
-                    - { uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
+                    - { id: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
     post:
       summary: Register a cluster using kubeconfig
       requestBody:
@@ -526,7 +529,7 @@ paths:
               schema: { $ref: '#/components/schemas/Cluster' }
               examples:
                 created:
-                  value: { uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
+                  value: { id: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
         '422':
           description: validation error
           content:
@@ -548,7 +551,7 @@ paths:
               examples:
                 cluster:
                   value:
-                    uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60"
+                    id: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60"
                     name: "kind"
                     conditions:
                       - { type: "AgentReady", status: "True", lastTransitionTime: "2025-01-01T00:01:00Z" }
@@ -668,7 +671,7 @@ paths:
               examples:
                 list:
                   value:
-                    - { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
+                    - { id: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
     post:
       summary: Create tenant
       requestBody:
@@ -687,7 +690,7 @@ paths:
               schema: { $ref: '#/components/schemas/Tenant' }
               examples:
                 created:
-                  value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
+                  value: { id: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
         '422':
           description: validation error
           content:
@@ -708,7 +711,7 @@ paths:
               schema: { $ref: '#/components/schemas/Tenant' }
               examples:
                 tenant:
-                  value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
+                  value: { id: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
         '404':
           description: not found
           content:
@@ -855,7 +858,7 @@ paths:
               schema: { type: array, items: { $ref: '#/components/schemas/Project' } }
               examples:
                 list:
-                  value: [ { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" } ]
+                  value: [ { id: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" } ]
     post:
       summary: Create project
       requestBody:
@@ -874,7 +877,7 @@ paths:
               schema: { $ref: '#/components/schemas/Project' }
               examples:
                 created:
-                  value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
+                  value: { id: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
         '422':
           description: validation error
           content:
@@ -895,7 +898,7 @@ paths:
               schema: { $ref: '#/components/schemas/Project' }
               examples:
                 project:
-                  value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
+                  value: { id: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
         '404':
           description: not found
           content:
@@ -1033,7 +1036,7 @@ paths:
               schema: { type: array, items: { $ref: '#/components/schemas/App' } }
               examples:
                 list:
-                  value: [ { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" } ]
+                  value: [ { id: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" } ]
     post:
       summary: Create app
       requestBody:
@@ -1052,7 +1055,7 @@ paths:
               schema: { $ref: '#/components/schemas/App' }
               examples:
                 created:
-                  value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
+                  value: { id: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
         '422':
           description: validation error
           content:
@@ -1073,7 +1076,7 @@ paths:
               schema: { $ref: '#/components/schemas/App' }
               examples:
                 app:
-                  value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
+                  value: { id: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
         '404':
           description: not found
           content:

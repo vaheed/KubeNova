@@ -27,7 +27,7 @@ func TestSandboxCreation(t *testing.T) {
 
 	payload := map[string]any{"name": "playground", "ttlSeconds": 60}
 	reqBody, _ := json.Marshal(payload)
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tenants/"+uidStr(tenant.Uid)+"/sandbox", bytes.NewReader(reqBody))
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tenants/"+idStr(tenant.Id)+"/sandbox", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -38,7 +38,7 @@ func TestSandboxCreation(t *testing.T) {
 		t.Fatalf("sandbox create: %s", resp.Status)
 	}
 	var out struct {
-		Uid        string `json:"uid"`
+		Id         string `json:"id"`
 		Tenant     string `json:"tenant"`
 		Name       string `json:"name"`
 		Namespace  string `json:"namespace"`
@@ -85,7 +85,7 @@ func TestSandboxDuplicate(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		payload := map[string]any{"name": "playground"}
 		reqBody, _ := json.Marshal(payload)
-		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tenants/"+uidStr(tenant.Uid)+"/sandbox", bytes.NewReader(reqBody))
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tenants/"+idStr(tenant.Id)+"/sandbox", bytes.NewReader(reqBody))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -127,7 +127,7 @@ func mustCreateTenant(t *testing.T, ts *httptest.Server, cl Cluster) Tenant {
 	t.Helper()
 	tnt := Tenant{Name: "acme"}
 	body, _ := json.Marshal(tnt)
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+uidStr(cl.Uid)+"/tenants", bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+idStr(cl.Id)+"/tenants", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

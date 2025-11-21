@@ -43,10 +43,10 @@ func TestContract_ClustersAndTenants(t *testing.T) {
 	}
 
 	// Capabilities
-	if c.Uid == nil {
+	if c.Id == nil {
 		t.Fatalf("cluster uid missing")
 	}
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(c.Uid) + "/capabilities")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + idStr(c.Id) + "/capabilities")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestContract_ClustersAndTenants(t *testing.T) {
 
 	// Cluster status (use E2E fake to ensure ready)
 	t.Setenv("KUBENOVA_E2E_FAKE", "1")
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(c.Uid))
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + idStr(c.Id))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestContract_ClustersAndTenants(t *testing.T) {
 	// Tenants create
 	tnt := Tenant{Name: "acme"}
 	tb, _ := json.Marshal(tnt)
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+uidStr(c.Uid)+"/tenants", bytes.NewReader(tb))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/clusters/"+idStr(c.Id)+"/tenants", bytes.NewReader(tb))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestContract_ClustersAndTenants(t *testing.T) {
 	resp.Body.Close()
 
 	// Tenants list
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(c.Uid) + "/tenants")
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + idStr(c.Id) + "/tenants")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,10 +101,10 @@ func TestContract_ClustersAndTenants(t *testing.T) {
 	}
 
 	// Tenants get
-	if list[0].Uid == nil {
+	if list[0].Id == nil {
 		t.Fatalf("tenant uid missing")
 	}
-	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + uidStr(c.Uid) + "/tenants/" + uidStr(list[0].Uid))
+	resp, err = http.Get(ts.URL + "/api/v1/clusters/" + idStr(c.Id) + "/tenants/" + idStr(list[0].Id))
 	if err != nil {
 		t.Fatal(err)
 	}

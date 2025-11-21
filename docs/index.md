@@ -725,6 +725,48 @@ These endpoints return simple JSON arrays and are safe to call frequently.
 
 ---
 
+## 10) Sandbox namespaces & kubeconfigs
+
+Sandbox namespaces give tenants a writable playground that KubeNova never manages through Vela.
+
+```bash
+# 10.1) Create a sandbox namespace with a proxy kubeconfig
+curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/sandbox" \
+  -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" \
+  -d '{
+    "name":"playground",
+    "ttlSeconds":3600
+  }' \
+  | jq .
+```
+
+The controller (`internal/http/server.go`) decodes the tenant, checks the `capsuleProxyUrl` recorded on the tenant’s primary cluster, calls `clusterpkg.EnsureSandboxNamespace` (which uses `internal/cluster/projects.go`, `cluster/namespaces.go`, `cluster/rbac.go`, and the Capsule tenant helpers) to create `tn-<tenant>-sandbox-<name>` with `kubenova.io/sandbox=true`, and issues a tenantOwner kubeconfig via `clusterpkg.IssueSandboxKubeconfig`. The response includes `namespace`, `kubeconfig`, `expiresAt`, and other metadata and is covered by `internal/http/server_sandbox_test.go`.
+
+```bash
+# 10.2) Use the sandbox kubeconfig
+SANDBOX_KCFG_B64=$(curl -sS -X POST "$BASE/api/v1/tenants/$TENANT_ID/sandbox" \
+  -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" \
+  -d '{"name":"playground"}' \
+  | jq -r '.kubeconfig')
+printf "%s" "$SANDBOX_KCFG_B64" | base64 -d > sandbox-kubeconfig.yaml
+KUBECONFIG=sandbox-kubeconfig.yaml kubectl get ns
+KUBECONFIG=sandbox-kubeconfig.yaml kubectl get pods -n "tn-$TENANT_NAME-sandbox-playground"
+```
+
+- Sandbox namespaces always carry `kubenova.io/sandbox=true`, `kubenova.tenant`, and `kubenova.project` labels (set by `EnsureSandboxNamespace`), the Capsule `capsule.clastix.io/tenant` label, and the `kubenova.namespace-type=sandbox` label so the Agent (`internal/reconcile/project.go`) ignores them.
+- `clusterpkg.ensureSandboxClusterRole` binds the `<tenant>-devs` group to the `kubenova-sandbox-editor` ClusterRole defined in `internal/cluster/rbac.go`, giving tenants full edit rights inside sandboxes while app namespaces stayed read-only.
+- The Agent’s AppReconciler (`internal/reconcile/app.go`) only watches ConfigMaps in non-sandbox namespaces, so Vela never mutates sandbox workloads; tenants can create their own objects freely with the sandbox kubeconfig.
+
+```
+kubectl get ns -l "kubenova.io/sandbox=true"
+kubectl describe ns tn-$TENANT_NAME-sandbox-playground
+kubectl get rolebindings -n tn-$TENANT_NAME-sandbox-playground
+```
+
+---
+
 ## 11) One-shot PaaS bootstrap (optional)
 
 Once you are comfortable with the individual steps above, you can use a single
@@ -813,32 +855,32 @@ bootstrap project (for example, `kubectl get pods -n web`) using `kubectl` or hi
 
 ---
 
-## 10) Clean up resources
+## 12) Clean up resources
 
 To remove resources created during this quickstart:
 
 **Commands**
 
 ```bash
-# 10.1) Delete the app (if still present)
+# 12.1) Delete the app (if still present)
 curl -sS -X POST \
   "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:delete" \
   -H "$AUTH_HEADER" \
   -i
 
-# 10.2) Delete the project
+# 12.2) Delete the project
 curl -sS -X DELETE \
   "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID" \
   -H "$AUTH_HEADER" \
   -i
 
-# 10.3) Delete the tenant
+# 12.3) Delete the tenant
 curl -sS -X DELETE \
   "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID" \
   -H "$AUTH_HEADER" \
   -i
 
-# 10.4) Delete the cluster
+# 12.4) Delete the cluster
 curl -sS -X DELETE \
   "$BASE/api/v1/clusters/$CLUSTER_ID" \
   -H "$AUTH_HEADER" \

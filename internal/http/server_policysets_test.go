@@ -57,7 +57,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	var cjson map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&cjson)
 	resp.Body.Close()
-	cuid := cjson["uid"].(string)
+	cuid := cjson["id"].(string)
 
 	// Create tenant
 	tb := map[string]any{"name": "acme"}
@@ -73,7 +73,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	var tjson map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&tjson)
 	resp.Body.Close()
-	ten := tjson["uid"].(string)
+	ten := tjson["id"].(string)
 
 	// PolicySet create (allowed)
 	psBody := []byte(`{"name":"baseline"}`)
@@ -145,7 +145,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	var pjson map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&pjson)
 	resp.Body.Close()
-	pr := pjson["uid"].(string)
+	pr := pjson["id"].(string)
 	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/clusters/"+cuid+"/tenants/"+ten+"/projects/"+pr+"/kubeconfig", nil)
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("X-KN-Roles", "projectDev")
@@ -183,7 +183,7 @@ func TestPolicySetsCRUDAndKubeconfigAndWorkflows(t *testing.T) {
 	var ajson map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&ajson)
 	resp.Body.Close()
-	app := ajson["uid"].(string)
+	app := ajson["id"].(string)
 
 	// Attach a PolicySet to tenant+project so deploy applies traits/policies.
 	attachBody := []byte(`{

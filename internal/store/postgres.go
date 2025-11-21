@@ -55,42 +55,42 @@ func (p *Postgres) Health(ctx context.Context) error {
 
 func (p *Postgres) CreateTenant(ctx context.Context, t types.Tenant) error {
 	t.CreatedAt = stamp(t.CreatedAt)
-	if t.UID == "" {
-		t.UID = types.NewID().String()
+	if t.ID == (types.ID{}) {
+		t.ID = types.NewID()
 	}
 	labels := mapToJSONB(t.Labels)
 	owners := t.Owners
 	_, err := p.db.Exec(ctx, `
-INSERT INTO tenants(uid, name, owners, labels, created_at)
-VALUES ($1,$2,$3,$4,$5)
+INSERT INTO tenants(id, uid, name, owners, labels, created_at)
+VALUES ($1,$2,$3,$4,$5,$6)
 ON CONFLICT (name) DO UPDATE
 SET owners = EXCLUDED.owners,
     labels = EXCLUDED.labels
-`, t.UID, t.Name, owners, labels, t.CreatedAt)
+`, t.ID.String(), t.ID.String(), t.Name, owners, labels, t.CreatedAt)
 	return err
 }
 func (p *Postgres) GetTenant(ctx context.Context, name string) (types.Tenant, error) {
 	var t types.Tenant
 	var labels map[string]string
 	err := p.db.QueryRow(ctx, `
-SELECT uid, name, owners, labels, created_at
+SELECT id, name, owners, labels, created_at
 FROM tenants
 WHERE name=$1
-`, name).Scan(&t.UID, &t.Name, &t.Owners, &labels, &t.CreatedAt)
+`, name).Scan(&t.ID, &t.Name, &t.Owners, &labels, &t.CreatedAt)
 	if err != nil {
 		return types.Tenant{}, ErrNotFound
 	}
 	t.Labels = labels
 	return t, nil
 }
-func (p *Postgres) GetTenantByUID(ctx context.Context, uid string) (types.Tenant, error) {
+func (p *Postgres) GetTenantByID(ctx context.Context, id string) (types.Tenant, error) {
 	var t types.Tenant
 	var labels map[string]string
 	err := p.db.QueryRow(ctx, `
-SELECT uid, name, owners, labels, created_at
+SELECT id, name, owners, labels, created_at
 FROM tenants
-WHERE uid=$1
-`, uid).Scan(&t.UID, &t.Name, &t.Owners, &labels, &t.CreatedAt)
+WHERE id=$1
+`, id).Scan(&t.ID, &t.Name, &t.Owners, &labels, &t.CreatedAt)
 	if err != nil {
 		return types.Tenant{}, ErrNotFound
 	}
@@ -99,7 +99,7 @@ WHERE uid=$1
 }
 func (p *Postgres) ListTenants(ctx context.Context) ([]types.Tenant, error) {
 	rows, err := p.db.Query(ctx, `
-SELECT uid, name, owners, labels, created_at
+SELECT id, name, owners, labels, created_at
 FROM tenants
 ORDER BY name
 `)
@@ -111,7 +111,7 @@ ORDER BY name
 	for rows.Next() {
 		var t types.Tenant
 		var labels map[string]string
-		if err := rows.Scan(&t.UID, &t.Name, &t.Owners, &labels, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Owners, &labels, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		t.Labels = labels
@@ -129,30 +129,30 @@ func (p *Postgres) DeleteTenant(ctx context.Context, name string) error {
 
 func (p *Postgres) CreateProject(ctx context.Context, pr types.Project) error {
 	pr.CreatedAt = stamp(pr.CreatedAt)
-	if pr.UID == "" {
-		pr.UID = types.NewID().String()
+	if pr.ID == (types.ID{}) {
+		pr.ID = types.NewID()
 	}
-	_, err := p.db.Exec(ctx, `INSERT INTO projects(uid, tenant, name) VALUES ($1,$2,$3) ON CONFLICT (tenant,name) DO NOTHING`, pr.UID, pr.Tenant, pr.Name)
+	_, err := p.db.Exec(ctx, `INSERT INTO projects(id, uid, tenant, name) VALUES ($1,$2,$3,$4) ON CONFLICT (tenant,name) DO NOTHING`, pr.ID.String(), pr.ID.String(), pr.Tenant, pr.Name)
 	return err
 }
 func (p *Postgres) GetProject(ctx context.Context, tenant, name string) (types.Project, error) {
 	var pr types.Project
-	err := p.db.QueryRow(ctx, `SELECT uid, tenant, name FROM projects WHERE tenant=$1 AND name=$2`, tenant, name).Scan(&pr.UID, &pr.Tenant, &pr.Name)
+	err := p.db.QueryRow(ctx, `SELECT id, tenant, name FROM projects WHERE tenant=$1 AND name=$2`, tenant, name).Scan(&pr.ID, &pr.Tenant, &pr.Name)
 	if err != nil {
 		return types.Project{}, ErrNotFound
 	}
 	return pr, nil
 }
-func (p *Postgres) GetProjectByUID(ctx context.Context, uid string) (types.Project, error) {
+func (p *Postgres) GetProjectByID(ctx context.Context, id string) (types.Project, error) {
 	var pr types.Project
-	err := p.db.QueryRow(ctx, `SELECT uid, tenant, name FROM projects WHERE uid=$1`, uid).Scan(&pr.UID, &pr.Tenant, &pr.Name)
+	err := p.db.QueryRow(ctx, `SELECT id, tenant, name FROM projects WHERE id=$1`, id).Scan(&pr.ID, &pr.Tenant, &pr.Name)
 	if err != nil {
 		return types.Project{}, ErrNotFound
 	}
 	return pr, nil
 }
 func (p *Postgres) ListProjects(ctx context.Context, tenant string) ([]types.Project, error) {
-	rows, err := p.db.Query(ctx, `SELECT uid, tenant, name FROM projects WHERE tenant=$1 ORDER BY name`, tenant)
+	rows, err := p.db.Query(ctx, `SELECT id, tenant, name FROM projects WHERE tenant=$1 ORDER BY name`, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (p *Postgres) ListProjects(ctx context.Context, tenant string) ([]types.Pro
 	var out []types.Project
 	for rows.Next() {
 		var pr types.Project
-		if err := rows.Scan(&pr.UID, &pr.Tenant, &pr.Name); err != nil {
+		if err := rows.Scan(&pr.ID, &pr.Tenant, &pr.Name); err != nil {
 			return nil, err
 		}
 		out = append(out, pr)
@@ -177,32 +177,32 @@ func (p *Postgres) DeleteProject(ctx context.Context, tenant, name string) error
 
 func (p *Postgres) CreateSandbox(ctx context.Context, sb types.Sandbox) error {
 	sb.CreatedAt = stamp(sb.CreatedAt)
-	if sb.UID == "" {
-		sb.UID = types.NewID().String()
+	if sb.ID == (types.ID{}) {
+		sb.ID = types.NewID()
 	}
 	_, err := p.db.Exec(ctx, `
-INSERT INTO sandboxes(uid, tenant, name, namespace, created_at)
-VALUES ($1,$2,$3,$4,$5)
+INSERT INTO sandboxes(id, uid, tenant, name, namespace, created_at)
+VALUES ($1,$2,$3,$4,$5,$6)
 ON CONFLICT (tenant,name) DO UPDATE
 SET namespace = EXCLUDED.namespace
-`, sb.UID, sb.Tenant, sb.Name, sb.Namespace, sb.CreatedAt)
+`, sb.ID.String(), sb.ID.String(), sb.Tenant, sb.Name, sb.Namespace, sb.CreatedAt)
 	return err
 }
 
 func (p *Postgres) GetSandbox(ctx context.Context, tenant, name string) (types.Sandbox, error) {
 	var sb types.Sandbox
-	err := p.db.QueryRow(ctx, `SELECT uid, tenant, name, namespace, created_at FROM sandboxes WHERE tenant=$1 AND name=$2`, tenant, name).
-		Scan(&sb.UID, &sb.Tenant, &sb.Name, &sb.Namespace, &sb.CreatedAt)
+	err := p.db.QueryRow(ctx, `SELECT id, tenant, name, namespace, created_at FROM sandboxes WHERE tenant=$1 AND name=$2`, tenant, name).
+		Scan(&sb.ID, &sb.Tenant, &sb.Name, &sb.Namespace, &sb.CreatedAt)
 	if err != nil {
 		return types.Sandbox{}, ErrNotFound
 	}
 	return sb, nil
 }
 
-func (p *Postgres) GetSandboxByUID(ctx context.Context, uid string) (types.Sandbox, error) {
+func (p *Postgres) GetSandboxByID(ctx context.Context, id string) (types.Sandbox, error) {
 	var sb types.Sandbox
-	err := p.db.QueryRow(ctx, `SELECT uid, tenant, name, namespace, created_at FROM sandboxes WHERE uid=$1`, uid).
-		Scan(&sb.UID, &sb.Tenant, &sb.Name, &sb.Namespace, &sb.CreatedAt)
+	err := p.db.QueryRow(ctx, `SELECT id, tenant, name, namespace, created_at FROM sandboxes WHERE id=$1`, id).
+		Scan(&sb.ID, &sb.Tenant, &sb.Name, &sb.Namespace, &sb.CreatedAt)
 	if err != nil {
 		return types.Sandbox{}, ErrNotFound
 	}
@@ -210,7 +210,7 @@ func (p *Postgres) GetSandboxByUID(ctx context.Context, uid string) (types.Sandb
 }
 
 func (p *Postgres) ListSandboxes(ctx context.Context, tenant string) ([]types.Sandbox, error) {
-	rows, err := p.db.Query(ctx, `SELECT uid, tenant, name, namespace, created_at FROM sandboxes WHERE tenant=$1 ORDER BY name`, tenant)
+	rows, err := p.db.Query(ctx, `SELECT id, tenant, name, namespace, created_at FROM sandboxes WHERE tenant=$1 ORDER BY name`, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (p *Postgres) ListSandboxes(ctx context.Context, tenant string) ([]types.Sa
 	out := []types.Sandbox{}
 	for rows.Next() {
 		var sb types.Sandbox
-		if err := rows.Scan(&sb.UID, &sb.Tenant, &sb.Name, &sb.Namespace, &sb.CreatedAt); err != nil {
+		if err := rows.Scan(&sb.ID, &sb.Tenant, &sb.Name, &sb.Namespace, &sb.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, sb)
@@ -233,35 +233,35 @@ func (p *Postgres) DeleteSandbox(ctx context.Context, tenant, name string) error
 
 func (p *Postgres) CreateApp(ctx context.Context, a types.App) error {
 	a.CreatedAt = stamp(a.CreatedAt)
-	if a.UID == "" {
-		a.UID = types.NewID().String()
+	if a.ID == (types.ID{}) {
+		a.ID = types.NewID()
 	}
 	spec, err := marshalAppSpecPayload(a)
 	if err != nil {
 		return err
 	}
 	_, err = p.db.Exec(ctx, `
-INSERT INTO apps(uid, tenant, project, name, spec, created_at)
-VALUES ($1,$2,$3,$4,$5,$6)
+INSERT INTO apps(id, uid, tenant, project, name, spec, created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7)
 ON CONFLICT (tenant,project,name) DO UPDATE
 SET spec = EXCLUDED.spec
-`, a.UID, a.Tenant, a.Project, a.Name, spec, a.CreatedAt)
+`, a.ID.String(), a.ID.String(), a.Tenant, a.Project, a.Name, spec, a.CreatedAt)
 	return err
 }
 func (p *Postgres) GetApp(ctx context.Context, tenant, project, name string) (types.App, error) {
 	var a types.App
 	var spec []byte
-	err := p.db.QueryRow(ctx, `SELECT uid, tenant, project, name, spec, created_at FROM apps WHERE tenant=$1 AND project=$2 AND name=$3`, tenant, project, name).Scan(&a.UID, &a.Tenant, &a.Project, &a.Name, &spec, &a.CreatedAt)
+	err := p.db.QueryRow(ctx, `SELECT id, tenant, project, name, spec, created_at FROM apps WHERE tenant=$1 AND project=$2 AND name=$3`, tenant, project, name).Scan(&a.ID, &a.Tenant, &a.Project, &a.Name, &spec, &a.CreatedAt)
 	if err != nil {
 		return types.App{}, ErrNotFound
 	}
 	_ = applyAppSpecPayload(&a, spec)
 	return a, nil
 }
-func (p *Postgres) GetAppByUID(ctx context.Context, uid string) (types.App, error) {
+func (p *Postgres) GetAppByID(ctx context.Context, id string) (types.App, error) {
 	var a types.App
 	var spec []byte
-	err := p.db.QueryRow(ctx, `SELECT uid, tenant, project, name, spec, created_at FROM apps WHERE uid=$1`, uid).Scan(&a.UID, &a.Tenant, &a.Project, &a.Name, &spec, &a.CreatedAt)
+	err := p.db.QueryRow(ctx, `SELECT id, tenant, project, name, spec, created_at FROM apps WHERE id=$1`, id).Scan(&a.ID, &a.Tenant, &a.Project, &a.Name, &spec, &a.CreatedAt)
 	if err != nil {
 		return types.App{}, ErrNotFound
 	}
@@ -269,7 +269,7 @@ func (p *Postgres) GetAppByUID(ctx context.Context, uid string) (types.App, erro
 	return a, nil
 }
 func (p *Postgres) ListApps(ctx context.Context, tenant, project string) ([]types.App, error) {
-	rows, err := p.db.Query(ctx, `SELECT uid, tenant, project, name, spec, created_at FROM apps WHERE tenant=$1 AND project=$2 ORDER BY name`, tenant, project)
+	rows, err := p.db.Query(ctx, `SELECT id, tenant, project, name, spec, created_at FROM apps WHERE tenant=$1 AND project=$2 ORDER BY name`, tenant, project)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +278,7 @@ func (p *Postgres) ListApps(ctx context.Context, tenant, project string) ([]type
 	for rows.Next() {
 		var a types.App
 		var spec []byte
-		if err := rows.Scan(&a.UID, &a.Tenant, &a.Project, &a.Name, &spec, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Tenant, &a.Project, &a.Name, &spec, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		_ = applyAppSpecPayload(&a, spec)
@@ -340,13 +340,13 @@ SET spec = EXCLUDED.spec
 	return err
 }
 
-func (p *Postgres) ListPolicySets(ctx context.Context, tenantUID string) ([]types.PolicySet, error) {
+func (p *Postgres) ListPolicySets(ctx context.Context, tenantID string) ([]types.PolicySet, error) {
 	rows, err := p.db.Query(ctx, `
 SELECT name, spec, created_at
 FROM policysets
 WHERE tenant_uid=$1
 ORDER BY name
-`, tenantUID)
+`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +354,7 @@ ORDER BY name
 	var out []types.PolicySet
 	for rows.Next() {
 		var ps types.PolicySet
-		ps.Tenant = tenantUID
+		ps.Tenant = tenantID
 		if err := rows.Scan(&ps.Name, &ps.Policies, &ps.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -363,14 +363,14 @@ ORDER BY name
 	return out, nil
 }
 
-func (p *Postgres) GetPolicySet(ctx context.Context, tenantUID, name string) (types.PolicySet, error) {
+func (p *Postgres) GetPolicySet(ctx context.Context, tenantID, name string) (types.PolicySet, error) {
 	var ps types.PolicySet
-	ps.Tenant = tenantUID
+	ps.Tenant = tenantID
 	err := p.db.QueryRow(ctx, `
 SELECT name, spec, created_at
 FROM policysets
 WHERE tenant_uid=$1 AND name=$2
-`, tenantUID, name).Scan(&ps.Name, &ps.Policies, &ps.CreatedAt)
+`, tenantID, name).Scan(&ps.Name, &ps.Policies, &ps.CreatedAt)
 	if err != nil {
 		return types.PolicySet{}, ErrNotFound
 	}
@@ -381,8 +381,8 @@ func (p *Postgres) UpdatePolicySet(ctx context.Context, ps types.PolicySet) erro
 	return p.CreatePolicySet(ctx, ps)
 }
 
-func (p *Postgres) DeletePolicySet(ctx context.Context, tenantUID, name string) error {
-	_, err := p.db.Exec(ctx, `DELETE FROM policysets WHERE tenant_uid=$1 AND name=$2`, tenantUID, name)
+func (p *Postgres) DeletePolicySet(ctx context.Context, tenantID, name string) error {
+	_, err := p.db.Exec(ctx, `DELETE FROM policysets WHERE tenant_uid=$1 AND name=$2`, tenantID, name)
 	return err
 }
 
@@ -404,11 +404,11 @@ func EnvOrMemory() (Store, func(context.Context) error, error) {
 
 // Clusters
 func (p *Postgres) CreateCluster(ctx context.Context, c types.Cluster, kubeconfigEnc string) (types.ID, error) {
-	if c.UID == "" {
-		c.UID = types.NewID().String()
+	if c.ID == (types.ID{}) {
+		c.ID = types.NewID()
 	}
 	var idStr string
-	err := p.db.QueryRow(ctx, `INSERT INTO clusters(uid, name, kubeconfig_enc, labels) VALUES ($1,$2,$3,$4) RETURNING id::text`, c.UID, c.Name, kubeconfigEnc, mapToJSONB(c.Labels)).Scan(&idStr)
+	err := p.db.QueryRow(ctx, `INSERT INTO clusters(id, uid, name, kubeconfig_enc, labels) VALUES ($1,$2,$3,$4,$5) RETURNING id::text`, c.ID.String(), c.ID.String(), c.Name, kubeconfigEnc, mapToJSONB(c.Labels)).Scan(&idStr)
 	if err != nil {
 		return types.ID{}, err
 	}
@@ -423,7 +423,7 @@ func (p *Postgres) GetCluster(ctx context.Context, id types.ID) (types.Cluster, 
 	var c types.Cluster
 	var enc string
 	var labels map[string]string
-	err := p.db.QueryRow(ctx, `SELECT uid, name, kubeconfig_enc, labels, created_at FROM clusters WHERE id=$1::uuid`, id.String()).Scan(&c.UID, &c.Name, &enc, &labels, &c.CreatedAt)
+	err := p.db.QueryRow(ctx, `SELECT name, kubeconfig_enc, labels, created_at FROM clusters WHERE id=$1::uuid`, id.String()).Scan(&c.Name, &enc, &labels, &c.CreatedAt)
 	if err != nil {
 		return types.Cluster{}, "", ErrNotFound
 	}
@@ -437,7 +437,7 @@ func (p *Postgres) GetClusterByName(ctx context.Context, name string) (types.Clu
 	var enc string
 	var labels map[string]string
 	var idStr string
-	err := p.db.QueryRow(ctx, `SELECT id::text, uid, kubeconfig_enc, labels, created_at FROM clusters WHERE name=$1`, name).Scan(&idStr, &c.UID, &enc, &labels, &c.CreatedAt)
+	err := p.db.QueryRow(ctx, `SELECT id::text, kubeconfig_enc, labels, created_at FROM clusters WHERE name=$1`, name).Scan(&idStr, &enc, &labels, &c.CreatedAt)
 	if err != nil {
 		return types.Cluster{}, "", ErrNotFound
 	}
@@ -448,20 +448,12 @@ func (p *Postgres) GetClusterByName(ctx context.Context, name string) (types.Clu
 	return c, enc, nil
 }
 
-func (p *Postgres) GetClusterByUID(ctx context.Context, uid string) (types.Cluster, string, error) {
-	var c types.Cluster
-	var enc string
-	var labels map[string]string
-	var idStr string
-	err := p.db.QueryRow(ctx, `SELECT id::text, name, kubeconfig_enc, labels, created_at FROM clusters WHERE uid=$1`, uid).Scan(&idStr, &c.Name, &enc, &labels, &c.CreatedAt)
+func (p *Postgres) GetClusterByID(ctx context.Context, id string) (types.Cluster, string, error) {
+	parsed, err := types.ParseID(id)
 	if err != nil {
 		return types.Cluster{}, "", ErrNotFound
 	}
-	id, _ := types.ParseID(idStr)
-	c.ID = id
-	c.UID = uid
-	c.Labels = labels
-	return c, enc, nil
+	return p.GetCluster(ctx, parsed)
 }
 
 func (p *Postgres) DeleteCluster(ctx context.Context, id types.ID) error {
@@ -642,7 +634,7 @@ func (p *Postgres) ListClusters(ctx context.Context, limit int, cursor string, l
 			idx++
 		}
 	}
-	q := "SELECT id::text, uid, name, labels, created_at FROM clusters WHERE " + strings.Join(where, " AND ") + " ORDER BY id ASC LIMIT $" + strconv.Itoa(idx)
+	q := "SELECT id::text, name, labels, created_at FROM clusters WHERE " + strings.Join(where, " AND ") + " ORDER BY id ASC LIMIT $" + strconv.Itoa(idx)
 	args = append(args, limit)
 	rows, err := p.db.Query(ctx, q, args...)
 	if err != nil {
@@ -654,7 +646,7 @@ func (p *Postgres) ListClusters(ctx context.Context, limit int, cursor string, l
 	for rows.Next() {
 		var c types.Cluster
 		var idStr string
-		if err := rows.Scan(&idStr, &c.UID, &c.Name, &c.Labels, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&idStr, &c.Name, &c.Labels, &c.CreatedAt); err != nil {
 			return nil, "", err
 		}
 		id, _ := types.ParseID(idStr)

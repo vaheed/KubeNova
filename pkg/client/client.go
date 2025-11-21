@@ -47,7 +47,7 @@ func (c *Client) req(ctx context.Context, method, path string, body any) (*http.
 }
 
 // --- helpers to resolve UUIDs by name for new API ---
-func (c *Client) tenantUID(ctx context.Context, name string) (string, error) {
+func (c *Client) tenantID(ctx context.Context, name string) (string, error) {
 	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants", nil)
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -55,37 +55,37 @@ func (c *Client) tenantUID(ctx context.Context, name string) (string, error) {
 	}
 	defer resp.Body.Close()
 	var arr []struct {
-		Uid  *string `json:"uid"`
+		Id   *string `json:"id"`
 		Name string  `json:"name"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&arr); err != nil {
 		return "", err
 	}
 	for _, it := range arr {
-		if it.Name == name && it.Uid != nil && *it.Uid != "" {
-			return *it.Uid, nil
+		if it.Name == name && it.Id != nil && *it.Id != "" {
+			return *it.Id, nil
 		}
 	}
 	return "", fmt.Errorf("tenant not found: %s", name)
 }
 
-func (c *Client) projectUID(ctx context.Context, tenantUID, name string) (string, error) {
-	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenantUID+"/projects", nil)
+func (c *Client) projectID(ctx context.Context, tenantID, name string) (string, error) {
+	req, _ := c.req(ctx, http.MethodGet, "/api/v1/clusters/"+c.cluster+"/tenants/"+tenantID+"/projects", nil)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	var arr []struct {
-		Uid  *string `json:"uid"`
+		Id   *string `json:"id"`
 		Name string  `json:"name"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&arr); err != nil {
 		return "", err
 	}
 	for _, it := range arr {
-		if it.Name == name && it.Uid != nil && *it.Uid != "" {
-			return *it.Uid, nil
+		if it.Name == name && it.Id != nil && *it.Id != "" {
+			return *it.Id, nil
 		}
 	}
 	return "", fmt.Errorf("project not found: %s", name)
@@ -122,7 +122,7 @@ func (c *Client) CreateTenant(ctx context.Context, t types.Tenant) (types.Tenant
 
 // Projects
 func (c *Client) CreateProject(ctx context.Context, p types.Project) (types.Project, error) {
-	tenUID, err := c.tenantUID(ctx, p.Tenant)
+	tenUID, err := c.tenantID(ctx, p.Tenant)
 	if err != nil {
 		return types.Project{}, err
 	}
@@ -137,7 +137,7 @@ func (c *Client) CreateProject(ctx context.Context, p types.Project) (types.Proj
 	return v, nil
 }
 func (c *Client) ListProjects(ctx context.Context, tenant string) ([]types.Project, error) {
-	tenUID, err := c.tenantUID(ctx, tenant)
+	tenUID, err := c.tenantID(ctx, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -154,11 +154,11 @@ func (c *Client) ListProjects(ctx context.Context, tenant string) ([]types.Proje
 
 // Apps
 func (c *Client) CreateApp(ctx context.Context, a types.App) (types.App, error) {
-	tenUID, err := c.tenantUID(ctx, a.Tenant)
+	tenUID, err := c.tenantID(ctx, a.Tenant)
 	if err != nil {
 		return types.App{}, err
 	}
-	prUID, err := c.projectUID(ctx, tenUID, a.Project)
+	prUID, err := c.projectID(ctx, tenUID, a.Project)
 	if err != nil {
 		return types.App{}, err
 	}
@@ -173,11 +173,11 @@ func (c *Client) CreateApp(ctx context.Context, a types.App) (types.App, error) 
 	return v, nil
 }
 func (c *Client) ListApps(ctx context.Context, tenant, project string) ([]types.App, error) {
-	tenUID, err := c.tenantUID(ctx, tenant)
+	tenUID, err := c.tenantID(ctx, tenant)
 	if err != nil {
 		return nil, err
 	}
-	prUID, err := c.projectUID(ctx, tenUID, project)
+	prUID, err := c.projectID(ctx, tenUID, project)
 	if err != nil {
 		return nil, err
 	}

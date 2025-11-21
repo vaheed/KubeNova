@@ -97,11 +97,13 @@ type App struct {
 	Components  *[]map[string]interface{} `json:"components,omitempty"`
 	CreatedAt   *time.Time                `json:"createdAt,omitempty"`
 	Description *string                   `json:"description,omitempty"`
-	Name        string                    `json:"name"`
-	Policies    *[]map[string]interface{} `json:"policies,omitempty"`
-	Spec        *AppSpec                  `json:"spec,omitempty"`
-	Traits      *[]map[string]interface{} `json:"traits,omitempty"`
-	Uid         *openapi_types.UUID       `json:"uid,omitempty"`
+
+	// Id Stable unique identifier
+	Id       *openapi_types.UUID       `json:"id,omitempty"`
+	Name     string                    `json:"name"`
+	Policies *[]map[string]interface{} `json:"policies,omitempty"`
+	Spec     *AppSpec                  `json:"spec,omitempty"`
+	Traits   *[]map[string]interface{} `json:"traits,omitempty"`
 }
 
 // AppCatalogRef defines model for AppCatalogRef.
@@ -229,14 +231,14 @@ type CatalogItemType string
 
 // Cluster defines model for Cluster.
 type Cluster struct {
-	Conditions  *[]Condition       `json:"conditions,omitempty"`
-	CreatedAt   *time.Time         `json:"createdAt,omitempty"`
-	DisplayName *string            `json:"displayName,omitempty"`
-	Labels      *map[string]string `json:"labels,omitempty"`
-	Name        string             `json:"name"`
+	Conditions  *[]Condition `json:"conditions,omitempty"`
+	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
+	DisplayName *string      `json:"displayName,omitempty"`
 
-	// Uid Stable unique identifier
-	Uid *openapi_types.UUID `json:"uid,omitempty"`
+	// Id Stable unique identifier
+	Id     *openapi_types.UUID `json:"id,omitempty"`
+	Labels *map[string]string  `json:"labels,omitempty"`
+	Name   string              `json:"name"`
 }
 
 // ClusterCapabilities defines model for ClusterCapabilities.
@@ -319,11 +321,13 @@ type PolicySet struct {
 
 // Project defines model for Project.
 type Project struct {
-	Annotations *map[string]string  `json:"annotations,omitempty"`
-	CreatedAt   *time.Time          `json:"createdAt,omitempty"`
-	Labels      *map[string]string  `json:"labels,omitempty"`
-	Name        string              `json:"name"`
-	Uid         *openapi_types.UUID `json:"uid,omitempty"`
+	Annotations *map[string]string `json:"annotations,omitempty"`
+	CreatedAt   *time.Time         `json:"createdAt,omitempty"`
+
+	// Id Stable unique identifier
+	Id     *openapi_types.UUID `json:"id,omitempty"`
+	Labels *map[string]string  `json:"labels,omitempty"`
+	Name   string              `json:"name"`
 }
 
 // ProjectAccess defines model for ProjectAccess.
@@ -364,13 +368,15 @@ type SecretRef struct {
 type Tenant struct {
 	Annotations *map[string]string `json:"annotations,omitempty"`
 	CreatedAt   *time.Time         `json:"createdAt,omitempty"`
-	Labels      *map[string]string `json:"labels,omitempty"`
-	Name        string             `json:"name"`
-	Owners      *[]string          `json:"owners,omitempty"`
+
+	// Id Stable unique identifier
+	Id     *openapi_types.UUID `json:"id,omitempty"`
+	Labels *map[string]string  `json:"labels,omitempty"`
+	Name   string              `json:"name"`
+	Owners *[]string           `json:"owners,omitempty"`
 
 	// Plan Optional tenant plan name (e.g. baseline, gold). When omitted on creation the server may apply a default baseline plan when available.
-	Plan *string             `json:"plan,omitempty"`
-	Uid  *openapi_types.UUID `json:"uid,omitempty"`
+	Plan *string `json:"plan,omitempty"`
 }
 
 // TenantSummary defines model for TenantSummary.
