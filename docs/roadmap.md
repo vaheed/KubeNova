@@ -363,6 +363,10 @@ Sandbox:
 - Tenants may create secrets freely in sandbox namespaces.
 - Manager never uses sandbox secrets for App deployments.
 
+### Implementation status
+- Agent now copies each `credentialsSecretRef` from `AppSpec.source` into the Vela spec (imagePullSecrets or component-level credentials) so registry, Helm, and Git secrets keep their payloads in Kubernetes rather than the Manager DB.
+- Quickstart docs (`docs/index.md`) explain how to create the docker-registry, git, and Helm secrets and reference them via the `SecretRef` object.
+
 ---
 
 # Phase 6 — Tests & Validation

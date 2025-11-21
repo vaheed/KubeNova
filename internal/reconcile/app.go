@@ -170,6 +170,7 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (reconc
 	if len(meta) == 0 {
 		meta = nil
 	}
+	applySourceSecretRefs(spec, ns)
 	if err := backend.EnsureApp(ctx, ns, appName, spec, meta); err != nil {
 		log.With(zap.Error(err)).Error("ensure app")
 		return reconcile.Result{}, nil
@@ -221,4 +222,109 @@ func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}).
 		Complete(r)
+}
+
+func applySourceSecretRefs(spec map[string]any, namespace string) {
+	if spec == nil {
+		return
+	}
+	source, _ := spec["source"].(map[string]any)
+	if source == nil {
+		return
+	}
+	if secretRef, ok := findSecretRef(source, "containerImage"); ok {
+		applyImagePullSecrets(spec, secretRef)
+	}
+	if secretRef, ok := findSecretRef(source, "helmHttp"); ok {
+		applyComponentSecretRef(spec, namespace, secretRef, isHelmComponent)
+	}
+	if secretRef, ok := findSecretRef(source, "helmOci"); ok {
+		applyComponentSecretRef(spec, namespace, secretRef, isHelmComponent)
+	}
+	if secretRef, ok := findSecretRef(source, "gitRepo"); ok {
+		applyComponentSecretRef(spec, namespace, secretRef, isGitComponent)
+	}
+}
+
+func findSecretRef(source map[string]any, key string) (map[string]any, bool) {
+	if raw, ok := source[key].(map[string]any); ok {
+		if ref, ok2 := raw["credentialsSecretRef"].(map[string]any); ok2 && ref != nil {
+			if name, _ := ref["name"].(string); strings.TrimSpace(name) != "" {
+				return ref, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func applyImagePullSecrets(spec map[string]any, ref map[string]any) {
+	name := strings.TrimSpace(getString(ref, "name"))
+	if name == "" {
+		return
+	}
+	secretEntry := map[string]string{"name": name}
+	if ns := strings.TrimSpace(getString(ref, "namespace")); ns != "" {
+		secretEntry["namespace"] = ns
+	}
+	components, ok := spec["components"].([]any)
+	if !ok {
+		return
+	}
+	for _, compRaw := range components {
+		if comp, ok := compRaw.(map[string]any); ok {
+			props := ensureMap(comp, "properties")
+			props["imagePullSecrets"] = []map[string]string{secretEntry}
+		}
+	}
+}
+
+func applyComponentSecretRef(spec map[string]any, namespace string, ref map[string]any, matches func(string) bool) {
+	name := strings.TrimSpace(getString(ref, "name"))
+	if name == "" {
+		return
+	}
+	propsSecret := map[string]any{"name": name}
+	if ns := strings.TrimSpace(getString(ref, "namespace")); ns != "" {
+		propsSecret["namespace"] = ns
+	} else if namespace != "" {
+		propsSecret["namespace"] = namespace
+	}
+	components, ok := spec["components"].([]any)
+	if !ok {
+		return
+	}
+	for _, compRaw := range components {
+		comp, ok := compRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if compType, _ := comp["type"].(string); matches(compType) {
+			props := ensureMap(comp, "properties")
+			props["credentialsSecretRef"] = propsSecret
+			break
+		}
+	}
+}
+
+func ensureMap(parent map[string]any, key string) map[string]any {
+	if parent[key] == nil {
+		parent[key] = map[string]any{}
+	}
+	if m, ok := parent[key].(map[string]any); ok {
+		return m
+	}
+	return map[string]any{}
+}
+
+func getString(m map[string]any, key string) string {
+	v, _ := m[key].(string)
+	return v
+}
+
+func isHelmComponent(t string) bool {
+	return strings.Contains(strings.ToLower(t), "helm")
+}
+
+func isGitComponent(t string) bool {
+	return strings.Contains(strings.ToLower(t), "git")
 }

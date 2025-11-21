@@ -242,6 +242,57 @@ curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/apps/orphans" \
 
 Legitimate apps are filtered out of the `/apps/orphans` response; only Applications that omit the KubeNova label or reference a missing App row are returned, which makes this a handy drift detection shortcut.
 
+## 3.3) Provide credentials via SecretRefs
+
+Private registries, Git repos, and Helm catalogs must be backed by Kubernetes secrets so the Agent can inject them into Vela workloads without storing raw credentials in the database.
+
+1. **Docker registry secrets** (for `containerImage` sources / imagePullSecrets):
+
+```bash
+kubectl create secret docker-registry registry-creds \
+  --docker-server=registry.example.com \
+  --docker-username=platform-user \
+  --docker-password=$REGISTRY_PASSWORD \
+  --docker-email=ops@example.com \
+  -n tn-<tenant>-app-<project>
+```
+
+2. **Git SSH secrets** (for `gitRepo` sources):
+
+```bash
+kubectl create secret generic git-ssh \
+  --from-file=ssh-privatekey=./id_rsa \
+  --from-file=known_hosts=./known_hosts \
+  -n tn-<tenant>-app-<project>
+```
+
+3. **Helm repo credentials** (for `helmHttp` / `helmOci` sources):
+
+```bash
+kubectl create secret generic helm-creds \
+  --type=kubernetes.io/basic-auth \
+  --from-literal=username=helm-user \
+  --from-literal=password="$HELM_PASSWORD" \
+  -n tn-<tenant>-app-<project>
+```
+
+Reference these secrets via the `credentialsSecretRef` block in your App source:
+
+```json
+"source": {
+  "kind": "containerImage",
+  "containerImage": {
+    "image": "registry.example.com/nginx:1.0.0",
+    "credentialsSecretRef": {
+      "name": "registry-creds",
+      "namespace": "tn-acme-app-shop"
+    }
+  }
+}
+```
+
+The Agent reads the `SecretRef` object (name + namespace) and injects it into `imagePullSecrets`, Helm repo auth, or Git repo auth for the rendered Vela Application, while the Manager never persists raw credentials in the database. Sandboxes may host their own secrets, but App deployments only use secrets in the app namespace to keep the platform secure.
+
 ---
 
 ## 4) Inspect cluster capabilities and bootstrap components

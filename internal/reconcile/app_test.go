@@ -140,3 +140,141 @@ func TestAppReconcilerProjectsConfigMapToVela(t *testing.T) {
 		}
 	}
 }
+
+func TestAppReconcilerInjectsSecretRefs(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	fv := &fakeVelaClient{}
+	r := &AppReconciler{
+		Client:  c,
+		newVela: func() vela.Client { return fv },
+	}
+
+	spec := map[string]any{
+		"components": []any{
+			map[string]any{
+				"name": "web",
+				"type": "webservice",
+				"properties": map[string]any{
+					"image": "nginx",
+				},
+			},
+			map[string]any{
+				"name": "helm",
+				"type": "helm",
+				"properties": map[string]any{
+					"chart": "demo",
+				},
+			},
+			map[string]any{
+				"name": "git",
+				"type": "git",
+				"properties": map[string]any{
+					"repo": "https://example.com/repo",
+				},
+			},
+		},
+		"source": map[string]any{
+			"kind": "containerImage",
+			"containerImage": map[string]any{
+				"credentialsSecretRef": map[string]any{
+					"name": "pull-secret",
+				},
+			},
+			"helmHttp": map[string]any{
+				"credentialsSecretRef": map[string]any{
+					"name":      "helm-secret",
+					"namespace": "kube-system",
+				},
+			},
+			"gitRepo": map[string]any{
+				"credentialsSecretRef": map[string]any{
+					"name": "git-secret",
+				},
+			},
+		},
+	}
+	specRaw, _ := json.Marshal(spec)
+
+	cm := &corev1.ConfigMap{}
+	cm.Name = "app-secret-spec"
+	cm.Namespace = "proj"
+	cm.Labels = map[string]string{
+		"kubenova.app":            "demo",
+		"kubenova.tenant":         "acme",
+		"kubenova.project":        "proj",
+		"kubenova.io/app-id":      "app-123",
+		"kubenova.io/tenant-id":   "tenant-123",
+		"kubenova.io/project-id":  "project-123",
+		"kubenova.io/source-kind": "containerImage",
+	}
+	cm.Data = map[string]string{
+		"spec": string(specRaw),
+	}
+	if err := c.Create(context.Background(), cm); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: cm.Namespace, Name: cm.Name}}); err != nil {
+		t.Fatal(err)
+	}
+	if !fv.ensured {
+		t.Fatalf("expected EnsureApp to be called")
+	}
+	components, _ := fv.spec["components"].([]any)
+	if len(components) != 3 {
+		t.Fatalf("expected 3 components, got %d", len(components))
+	}
+	web := components[0].(map[string]any)
+	webProps := web["properties"].(map[string]any)
+	secrets, ok := webProps["imagePullSecrets"].([]any)
+	if !ok {
+		if typed, ok2 := webProps["imagePullSecrets"].([]map[string]string); ok2 {
+			secrets = make([]any, len(typed))
+			for i, v := range typed {
+				secrets[i] = v
+			}
+		}
+	}
+	if len(secrets) != 1 {
+		t.Fatalf("imagePullSecrets missing: %v", webProps["imagePullSecrets"])
+	}
+	item := toAnyMap(secrets[0])
+	if item == nil || item["name"] != "pull-secret" {
+		t.Fatalf("unexpected pull secret: %v", secrets[0])
+	}
+
+	helm := components[1].(map[string]any)
+	helmProps := helm["properties"].(map[string]any)
+	helmSecret := toAnyMap(helmProps["credentialsSecretRef"])
+	if helmSecret == nil || helmSecret["name"] != "helm-secret" || helmSecret["namespace"] != "kube-system" {
+		t.Fatalf("unexpected helm secret: %v", helmProps["credentialsSecretRef"])
+	}
+
+	git := components[2].(map[string]any)
+	gitProps := git["properties"].(map[string]any)
+	gitSecret := toAnyMap(gitProps["credentialsSecretRef"])
+	if gitSecret == nil || gitSecret["name"] != "git-secret" || gitSecret["namespace"] != "proj" {
+		t.Fatalf("unexpected git secret: %v", gitProps["credentialsSecretRef"])
+	}
+}
+
+func toAnyMap(input any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	switch v := input.(type) {
+	case map[string]any:
+		return v
+	case map[string]string:
+		out := map[string]any{}
+		for key, val := range v {
+			out[key] = val
+		}
+		return out
+	default:
+		return nil
+	}
+}
