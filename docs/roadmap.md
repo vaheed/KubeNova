@@ -309,6 +309,7 @@ Support version upgrades and predictable rollouts.
 - Catalog installs persist the catalog ID, version, and overrides inside `AppSpec` so upgrades carry the metadata agents need.
 - `internal/http/server_catalog_test.go` exercises the install/upgrade loop, ensuring repeated installs keep a single App and refresh the overrides.
 - `AppSpec` and the OpenAPI contract now expose `catalogItemId`, `catalogVersion`, and `catalogOverrides` so consumers can read the stored metadata.
+- `GetApiV1Clusters/{c}/tenants/{t}/projects/{p}/kubeconfig` and `/tenants/{t}/kubeconfig` now emit telemetry events for every issuance/failure, including the tenant/project, role, and status, so UIs or alerting rules can show kubeconfig health alongside catalog drift.
 
 ---
 
