@@ -69,6 +69,11 @@ type Store interface {
 	GetPolicySet(ctx context.Context, tenantID, name string) (types.PolicySet, error)
 	UpdatePolicySet(ctx context.Context, ps types.PolicySet) error
 	DeletePolicySet(ctx context.Context, tenantUID, name string) error
+
+	// Catalog items (Phase 2)
+	CreateCatalogItem(ctx context.Context, item types.CatalogItem) error
+	ListCatalogItems(ctx context.Context, scope string, tenantID string) ([]types.CatalogItem, error)
+	GetCatalogItem(ctx context.Context, slug string) (types.CatalogItem, error)
 }
 
 var ErrNotFound = errors.New("not found")

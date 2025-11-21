@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/vaheed/kubenova/pkg/types"
 	"strconv"
@@ -290,6 +292,90 @@ func (p *Postgres) UpdateApp(ctx context.Context, a types.App) error { return p.
 func (p *Postgres) DeleteApp(ctx context.Context, tenant, project, name string) error {
 	_, err := p.db.Exec(ctx, `DELETE FROM apps WHERE tenant=$1 AND project=$2 AND name=$3`, tenant, project, name)
 	return err
+}
+
+func (p *Postgres) CreateCatalogItem(ctx context.Context, item types.CatalogItem) error {
+	item.CreatedAt = stamp(item.CreatedAt)
+	if item.ID == (types.ID{}) {
+		item.ID = types.NewID()
+	}
+	if item.Scope == "" {
+		item.Scope = "global"
+	}
+	src, err := json.Marshal(item.Source)
+	if err != nil {
+		return err
+	}
+	var tenantID interface{}
+	if item.TenantID != nil && *item.TenantID != (types.ID{}) {
+		tenantID = item.TenantID.String()
+	}
+	_, err = p.db.Exec(ctx, `
+INSERT INTO catalog_items(id, slug, name, description, icon, category, version, scope, tenant_id, source, created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+ON CONFLICT (slug) DO UPDATE
+SET name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    icon = EXCLUDED.icon,
+    category = EXCLUDED.category,
+    version = EXCLUDED.version,
+    scope = EXCLUDED.scope,
+    tenant_id = EXCLUDED.tenant_id,
+    source = EXCLUDED.source
+`, item.ID.String(), item.Slug, item.Name, item.Description, item.Icon, item.Category, item.Version, item.Scope, tenantID, src, item.CreatedAt)
+	return err
+}
+
+func scanCatalogItem(row pgx.Row) (types.CatalogItem, error) {
+	var item types.CatalogItem
+	var src []byte
+	var idStr string
+	var tenant sql.NullString
+	if err := row.Scan(&idStr, &item.Slug, &item.Name, &item.Description, &item.Icon, &item.Category, &item.Version, &item.Scope, &tenant, &src, &item.CreatedAt); err != nil {
+		return types.CatalogItem{}, err
+	}
+	item.ID, _ = types.ParseID(idStr)
+	if tenant.Valid {
+		if tid, err := types.ParseID(tenant.String); err == nil {
+			item.TenantID = &tid
+		}
+	}
+	if len(src) > 0 {
+		_ = json.Unmarshal(src, &item.Source)
+	}
+	if item.Source == nil {
+		item.Source = map[string]any{}
+	}
+	return item, nil
+}
+
+func (p *Postgres) ListCatalogItems(ctx context.Context, scope string, tenantID string) ([]types.CatalogItem, error) {
+	query := `SELECT id::text, slug, name, description, icon, category, version, scope, tenant_id::text, source, created_at FROM catalog_items WHERE scope = $1`
+	args := []any{scope}
+	if scope == "tenant" {
+		query += " AND tenant_id = $2"
+		args = append(args, tenantID)
+	}
+	query += " ORDER BY slug"
+	rows, err := p.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []types.CatalogItem
+	for rows.Next() {
+		item, err := scanCatalogItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (p *Postgres) GetCatalogItem(ctx context.Context, slug string) (types.CatalogItem, error) {
+	row := p.db.QueryRow(ctx, `SELECT id::text, slug, name, description, icon, category, version, scope, tenant_id::text, source, created_at FROM catalog_items WHERE slug=$1`, slug)
+	return scanCatalogItem(row)
 }
 
 type appSpecPayload struct {

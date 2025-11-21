@@ -14,6 +14,9 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// List catalog items
+	// (GET /api/v1/catalog)
+	GetApiV1Catalog(w http.ResponseWriter, r *http.Request, params GetApiV1CatalogParams)
 	// List component definitions
 	// (GET /api/v1/catalog/components)
 	GetApiV1CatalogComponents(w http.ResponseWriter, r *http.Request)
@@ -23,6 +26,9 @@ type ServerInterface interface {
 	// List workflow definitions
 	// (GET /api/v1/catalog/workflows)
 	GetApiV1CatalogWorkflows(w http.ResponseWriter, r *http.Request)
+	// Get catalog item by slug
+	// (GET /api/v1/catalog/{slug})
+	GetApiV1CatalogSlug(w http.ResponseWriter, r *http.Request, slug string)
 	// List clusters
 	// (GET /api/v1/clusters)
 	GetApiV1Clusters(w http.ResponseWriter, r *http.Request, params GetApiV1ClustersParams)
@@ -164,6 +170,9 @@ type ServerInterface interface {
 	// Suspend app
 	// (POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:suspend)
 	PostApiV1ClustersCTenantsTProjectsPAppsASuspend(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam, a AppParam)
+	// Install a catalog item into a project
+	// (POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/catalog/install)
+	PostApiV1ClustersCTenantsTProjectsPCatalogInstall(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam)
 	// Issue a short-lived kubeconfig scoped to tenant/project via proxy
 	// (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig)
 	GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam)
@@ -218,6 +227,12 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
+// List catalog items
+// (GET /api/v1/catalog)
+func (_ Unimplemented) GetApiV1Catalog(w http.ResponseWriter, r *http.Request, params GetApiV1CatalogParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List component definitions
 // (GET /api/v1/catalog/components)
 func (_ Unimplemented) GetApiV1CatalogComponents(w http.ResponseWriter, r *http.Request) {
@@ -233,6 +248,12 @@ func (_ Unimplemented) GetApiV1CatalogTraits(w http.ResponseWriter, r *http.Requ
 // List workflow definitions
 // (GET /api/v1/catalog/workflows)
 func (_ Unimplemented) GetApiV1CatalogWorkflows(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get catalog item by slug
+// (GET /api/v1/catalog/{slug})
+func (_ Unimplemented) GetApiV1CatalogSlug(w http.ResponseWriter, r *http.Request, slug string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -518,6 +539,12 @@ func (_ Unimplemented) PostApiV1ClustersCTenantsTProjectsPAppsASuspend(w http.Re
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Install a catalog item into a project
+// (POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/catalog/install)
+func (_ Unimplemented) PostApiV1ClustersCTenantsTProjectsPCatalogInstall(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Issue a short-lived kubeconfig scoped to tenant/project via proxy
 // (GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig)
 func (_ Unimplemented) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.ResponseWriter, r *http.Request, c ClusterParam, t TenantParam, p ProjectParam) {
@@ -623,6 +650,44 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// GetApiV1Catalog operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1Catalog(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV1CatalogParams
+
+	// ------------- Optional query parameter "scope" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "scope", r.URL.Query(), &params.Scope)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "tenantId" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tenantId", r.URL.Query(), &params.TenantId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tenantId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV1Catalog(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
 // GetApiV1CatalogComponents operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV1CatalogComponents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -665,6 +730,34 @@ func (siw *ServerInterfaceWrapper) GetApiV1CatalogWorkflows(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetApiV1CatalogWorkflows(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// GetApiV1CatalogSlug operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV1CatalogSlug(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "slug" -------------
+	var slug string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "slug", runtime.ParamLocationPath, chi.URLParam(r, "slug"), &slug)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV1CatalogSlug(w, r, slug)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2897,6 +2990,52 @@ func (siw *ServerInterfaceWrapper) PostApiV1ClustersCTenantsTProjectsPAppsASuspe
 	handler.ServeHTTP(w, r.WithContext(ctx))
 }
 
+// PostApiV1ClustersCTenantsTProjectsPCatalogInstall operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV1ClustersCTenantsTProjectsPCatalogInstall(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "c" -------------
+	var c ClusterParam
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "c", runtime.ParamLocationPath, chi.URLParam(r, "c"), &c)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "c", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "t" -------------
+	var t TenantParam
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "t", runtime.ParamLocationPath, chi.URLParam(r, "t"), &t)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "t", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "p" -------------
+	var p ProjectParam
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "p", runtime.ParamLocationPath, chi.URLParam(r, "p"), &p)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "p", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV1ClustersCTenantsTProjectsPCatalogInstall(w, r, c, t, p)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
 // GetApiV1ClustersCTenantsTProjectsPKubeconfig operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV1ClustersCTenantsTProjectsPKubeconfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -3456,6 +3595,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/catalog", wrapper.GetApiV1Catalog)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/catalog/components", wrapper.GetApiV1CatalogComponents)
 	})
 	r.Group(func(r chi.Router) {
@@ -3463,6 +3605,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/catalog/workflows", wrapper.GetApiV1CatalogWorkflows)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/catalog/{slug}", wrapper.GetApiV1CatalogSlug)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/clusters", wrapper.GetApiV1Clusters)
@@ -3604,6 +3749,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:suspend", wrapper.PostApiV1ClustersCTenantsTProjectsPAppsASuspend)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/clusters/{c}/tenants/{t}/projects/{p}/catalog/install", wrapper.PostApiV1ClustersCTenantsTProjectsPCatalogInstall)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig", wrapper.GetApiV1ClustersCTenantsTProjectsPKubeconfig)

@@ -224,6 +224,8 @@ Users install apps directly into their projects → Manager creates App → Agen
 ### 1. Data Model
 Table: `catalog_items`
 
+Status: implemented via `db/migrations/0003_catalog_items.sql`.
+
 Fields:
 - `id UUID PK`
 - `slug`
@@ -247,6 +249,8 @@ App.source and Catalog.source share same schema.
   - CRUD (admin, tenantOwner)
 - Install API:
   `/api/v1/clusters/{cluster}/tenants/{tenant}/projects/{project}/catalog/install`
+
+Status: documented in `docs/openapi/openapi.yaml` and exercised by `internal/http/server.go`.
 
 RBAC:
 - admin → full CRUD  

@@ -32,11 +32,17 @@ const (
 	AppStatusPhaseSuspended AppStatusPhase = "Suspended"
 )
 
-// Defines values for CatalogItemType.
+// Defines values for CatalogEntityType.
 const (
-	Component CatalogItemType = "component"
-	Trait     CatalogItemType = "trait"
-	Workflow  CatalogItemType = "workflow"
+	Component CatalogEntityType = "component"
+	Trait     CatalogEntityType = "trait"
+	Workflow  CatalogEntityType = "workflow"
+)
+
+// Defines values for CatalogItemScope.
+const (
+	CatalogItemScopeGlobal CatalogItemScope = "global"
+	CatalogItemScopeTenant CatalogItemScope = "tenant"
 )
 
 // Defines values for ConditionStatus.
@@ -67,6 +73,12 @@ const (
 	WorkflowRunStatusFailed    WorkflowRunStatus = "Failed"
 	WorkflowRunStatusRunning   WorkflowRunStatus = "Running"
 	WorkflowRunStatusSucceeded WorkflowRunStatus = "Succeeded"
+)
+
+// Defines values for GetApiV1CatalogParamsScope.
+const (
+	GetApiV1CatalogParamsScopeGlobal GetApiV1CatalogParamsScope = "global"
+	GetApiV1CatalogParamsScopeTenant GetApiV1CatalogParamsScope = "tenant"
 )
 
 // Defines values for GetApiV1ProjectsPUsageParamsRange.
@@ -218,16 +230,42 @@ type AppStatus struct {
 // AppStatusPhase defines model for AppStatus.Phase.
 type AppStatusPhase string
 
-// CatalogItem defines model for CatalogItem.
-type CatalogItem struct {
+// CatalogEntity defines model for CatalogEntity.
+type CatalogEntity struct {
 	Description *string                 `json:"description,omitempty"`
 	Name        *string                 `json:"name,omitempty"`
 	Schema      *map[string]interface{} `json:"schema,omitempty"`
-	Type        *CatalogItemType        `json:"type,omitempty"`
+	Type        *CatalogEntityType      `json:"type,omitempty"`
 }
 
-// CatalogItemType defines model for CatalogItem.Type.
-type CatalogItemType string
+// CatalogEntityType defines model for CatalogEntity.Type.
+type CatalogEntityType string
+
+// CatalogInstall defines model for CatalogInstall.
+type CatalogInstall struct {
+	Slug string `json:"slug"`
+
+	// Source Optional overrides merged into the catalog item source.
+	Source *map[string]interface{} `json:"source,omitempty"`
+}
+
+// CatalogItem defines model for CatalogItem.
+type CatalogItem struct {
+	Category    *string                `json:"category,omitempty"`
+	CreatedAt   *time.Time             `json:"createdAt,omitempty"`
+	Description *string                `json:"description,omitempty"`
+	Icon        *string                `json:"icon,omitempty"`
+	Id          openapi_types.UUID     `json:"id"`
+	Name        string                 `json:"name"`
+	Scope       CatalogItemScope       `json:"scope"`
+	Slug        string                 `json:"slug"`
+	Source      map[string]interface{} `json:"source"`
+	TenantId    *openapi_types.UUID    `json:"tenantId"`
+	Version     *string                `json:"version,omitempty"`
+}
+
+// CatalogItemScope defines model for CatalogItem.Scope.
+type CatalogItemScope string
 
 // Cluster defines model for Cluster.
 type Cluster struct {
@@ -448,6 +486,17 @@ type ProjectParam = openapi_types.UUID
 // TenantParam defines model for TenantParam.
 type TenantParam = openapi_types.UUID
 
+// GetApiV1CatalogParams defines parameters for GetApiV1Catalog.
+type GetApiV1CatalogParams struct {
+	Scope *GetApiV1CatalogParamsScope `form:"scope,omitempty" json:"scope,omitempty"`
+
+	// TenantId Required when scope=tenant.
+	TenantId *openapi_types.UUID `form:"tenantId,omitempty" json:"tenantId,omitempty"`
+}
+
+// GetApiV1CatalogParamsScope defines parameters for GetApiV1Catalog.
+type GetApiV1CatalogParamsScope string
+
 // GetApiV1ClustersParams defines parameters for GetApiV1Clusters.
 type GetApiV1ClustersParams struct {
 	Limit         *Limit         `form:"limit,omitempty" json:"limit,omitempty"`
@@ -615,6 +664,9 @@ type PostApiV1ClustersCTenantsTProjectsPAppsAWorkflowRunJSONRequestBody PostApiV
 
 // PostApiV1ClustersCTenantsTProjectsPAppsARollbackJSONRequestBody defines body for PostApiV1ClustersCTenantsTProjectsPAppsARollback for application/json ContentType.
 type PostApiV1ClustersCTenantsTProjectsPAppsARollbackJSONRequestBody PostApiV1ClustersCTenantsTProjectsPAppsARollbackJSONBody
+
+// PostApiV1ClustersCTenantsTProjectsPCatalogInstallJSONRequestBody defines body for PostApiV1ClustersCTenantsTProjectsPCatalogInstall for application/json ContentType.
+type PostApiV1ClustersCTenantsTProjectsPCatalogInstallJSONRequestBody = CatalogInstall
 
 // PutApiV1ClustersCTenantsTQuotasJSONRequestBody defines body for PutApiV1ClustersCTenantsTQuotas for application/json ContentType.
 type PutApiV1ClustersCTenantsTQuotasJSONRequestBody PutApiV1ClustersCTenantsTQuotasJSONBody

@@ -22,6 +22,7 @@ type Memory struct {
 	appByID     map[string]types.App     // id -> app (tenant/project names + name)
 	sandboxes    map[string]map[string]types.Sandbox
 	sandboxByID map[string]types.Sandbox
+	catalog      map[string]types.CatalogItem
 	evts         []memEvent
 }
 
@@ -38,6 +39,7 @@ func NewMemory() *Memory {
 		appByID:     map[string]types.App{},
 		sandboxes:    map[string]map[string]types.Sandbox{},
 		sandboxByID: map[string]types.Sandbox{},
+		catalog:      map[string]types.CatalogItem{},
 	}
 }
 
@@ -366,6 +368,51 @@ func (m *Memory) DeleteApp(ctx context.Context, tenant, project, name string) er
 		}
 	}
 	return nil
+}
+
+func (m *Memory) CreateCatalogItem(ctx context.Context, item types.CatalogItem) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if item.ID == (types.ID{}) {
+		item.ID = types.NewID()
+	}
+	if item.Scope == "" {
+		item.Scope = "global"
+	}
+	if item.Source == nil {
+		item.Source = map[string]any{}
+	}
+	item.CreatedAt = stamp(item.CreatedAt)
+	m.catalog[item.Slug] = item
+	return nil
+}
+
+func (m *Memory) ListCatalogItems(ctx context.Context, scope string, tenantID string) ([]types.CatalogItem, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []types.CatalogItem
+	for _, it := range m.catalog {
+		if it.Scope != scope {
+			continue
+		}
+		if scope == "tenant" {
+			if tenantID == "" || it.TenantID == nil || it.TenantID.String() != tenantID {
+				continue
+			}
+		}
+		out = append(out, it)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
+	return out, nil
+}
+
+func (m *Memory) GetCatalogItem(ctx context.Context, slug string) (types.CatalogItem, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if it, ok := m.catalog[slug]; ok {
+		return it, nil
+	}
+	return types.CatalogItem{}, ErrNotFound
 }
 
 // DebugDump is convenient for tests

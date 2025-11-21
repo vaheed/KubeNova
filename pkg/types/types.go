@@ -67,6 +67,20 @@ type App struct {
 	CreatedAt   time.Time         `json:"createdAt,omitempty"`
 }
 
+type CatalogItem struct {
+	ID          ID                   `json:"id,omitempty"`
+	Slug        string               `json:"slug"`
+	Name        string               `json:"name"`
+	Description *string              `json:"description,omitempty"`
+	Icon        *string              `json:"icon,omitempty"`
+	Category    *string              `json:"category,omitempty"`
+	Version     *string              `json:"version,omitempty"`
+	Scope       string               `json:"scope"`
+	TenantID    *ID                  `json:"tenantId,omitempty"`
+	Source      map[string]any       `json:"source"`
+	CreatedAt   time.Time            `json:"createdAt,omitempty"`
+}
+
 type AppSpec struct {
 	Source *AppSource `json:"source,omitempty"`
 }
