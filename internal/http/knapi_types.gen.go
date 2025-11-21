@@ -384,13 +384,15 @@ type ProjectAccessMembersRole string
 
 // Sandbox defines model for Sandbox.
 type Sandbox struct {
-	CreatedAt  *time.Time          `json:"createdAt,omitempty"`
-	ExpiresAt  *time.Time          `json:"expiresAt"`
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+
+	// Id Stable unique identifier
+	Id         *openapi_types.UUID `json:"id,omitempty"`
 	Kubeconfig *[]byte             `json:"kubeconfig,omitempty"`
 	Name       *string             `json:"name,omitempty"`
 	Namespace  *string             `json:"namespace,omitempty"`
 	Tenant     *string             `json:"tenant,omitempty"`
-	Uid        *openapi_types.UUID `json:"uid,omitempty"`
 }
 
 // SandboxCreate defines model for SandboxCreate.

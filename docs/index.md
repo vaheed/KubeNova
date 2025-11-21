@@ -144,7 +144,7 @@ curl -sS -X POST "$BASE/api/v1/clusters" \
   - persists the cluster in the store,
   - records `capsuleProxyUrl` on the cluster so every kubeconfig issued for this cluster targets capsule‑proxy, never the raw kube‑apiserver,
   - asynchronously starts installing the KubeNova agent into the target cluster (if `AGENT_IMAGE` and `MANAGER_URL_PUBLIC` are set),
-  - returns a JSON `Cluster` with a stable `uid` and any labels you provided.
+  - returns a JSON `Cluster` with a stable `id` and any labels you provided.
 
 Next, capture the cluster UID for subsequent calls.
 
@@ -152,7 +152,7 @@ Next, capture the cluster UID for subsequent calls.
 # 3.4) Resolve the cluster UID from its name
 export CLUSTER_ID=$(curl -sS "$BASE/api/v1/clusters?limit=200" \
   -H "$AUTH_HEADER" \
-  | jq -r '.[] | select(.name=="'"$CLUSTER_NAME"'") | .uid')
+  | jq -r '.[] | select(.name=="'"$CLUSTER_NAME"'") | .id')
 
 echo "$CLUSTER_ID"
 ```
@@ -314,7 +314,7 @@ TENANT_JSON=$(
 echo "$TENANT_JSON" | jq .
 
 # 5.2) Capture the tenant UID
-export TENANT_ID=$(echo "$TENANT_JSON" | jq -r .uid)
+export TENANT_ID=$(echo "$TENANT_JSON" | jq -r .id)
 echo "$TENANT_ID"
 
 # 5.3) List all tenants on the cluster
@@ -335,7 +335,7 @@ curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID" \
   - `owners` is an array of e‑mail addresses or subjects that identify tenant owners.
   - `labels` lets you tag tenants for filtering (for example, `team=platform`).
   - `plan` is optional; when provided (for example `baseline` or `gold`), that plan is applied immediately. When omitted, the manager best‑effort applies the default plan configured via `KUBENOVA_DEFAULT_TENANT_PLAN` (default `baseline`) when available.
-- The response includes a stable `uid` used in many subsequent calls; you store it in `TENANT_ID`.
+- The response includes a stable `id` used in many subsequent calls; you store it in `TENANT_ID`.
 - `GET /api/v1/clusters/{c}/tenants` lists tenants; you can later add `labelSelector` or `owner` query parameters.
 - `GET /api/v1/clusters/{c}/tenants/{t}` returns a single tenant by UID.
 - Namespaces are still created lazily when you create projects (step 7); prior to that, quotas/limits are attached to the Capsule `Tenant` itself.
@@ -496,7 +496,7 @@ PROJECT_JSON=$(
 echo "$PROJECT_JSON" | jq .
 
 # 7.2) Capture the project UID
-export PROJECT_ID=$(echo "$PROJECT_JSON" | jq -r .uid)
+export PROJECT_ID=$(echo "$PROJECT_JSON" | jq -r .id)
 echo "$PROJECT_ID"
 
 # 7.3) List projects in the tenant
@@ -513,7 +513,7 @@ curl -sS "$BASE/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT
 **What this does**
 
 - `POST /api/v1/clusters/{c}/tenants/{t}/projects` creates a project and ensures a Kubernetes namespace exists with appropriate labels (including Capsule tenant labels).
-- The response includes a project `uid`, stored in `PROJECT_ID` for later use.
+- The response includes a project `id`, stored in `PROJECT_ID` for later use.
 - `GET /api/v1/clusters/{c}/tenants/{t}/projects` and `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}` let you browse and inspect projects.
 
 You can grant access to specific users and request a project‑scoped kubeconfig:
@@ -580,7 +580,7 @@ APP_JSON=$(
 echo "$APP_JSON" | jq .
 
 # 8.2) Capture the app UID
-export APP_ID=$(echo "$APP_JSON" | jq -r .uid)
+export APP_ID=$(echo "$APP_JSON" | jq -r .id)
 echo "$APP_ID"
 
 # 8.3) List apps in the project

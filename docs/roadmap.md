@@ -134,9 +134,7 @@ Manager enforces all rules:
 # Phase 1 — App Source Model & UUID Baseline
 
 ## Goal
-Replace legacy `uid` with canonical `id` (UUIDv4) everywhere.  
-Unify all deployment methods into **App.source**.  
-Ensure Manager is the **only writer** to app namespaces across clusters.
+Solidify the canonical `id` (UUIDv4) baseline for every tenant/project/app/cluster resource, unify deployment methods into **App.source**, and keep the Manager as the **only writer** into app namespaces.
 
 ---
 
@@ -144,11 +142,10 @@ Ensure Manager is the **only writer** to app namespaces across clusters.
 
 ### 1. API Contract
 - Update `docs/openapi/openapi.yaml`:
-  - All resources emit `id` (UUID).
-  - Remove `uid` fields from App, Tenant, Project, Cluster structs.
-  - Add unified `source` object with variants:
-    - `helmHttp`
-    - `helmOci`
+    - All resources emit `id` (UUID) and no `uid` fields remain.
+    - Add unified `source` object with variants:
+      - `helmHttp`
+      - `helmOci`
     - `gitRepo`
     - `containerImage`
     - `kubeManifest`
@@ -159,7 +156,7 @@ Ensure Manager is the **only writer** to app namespaces across clusters.
 ---
 
 ### 2. Go Models & Store
-- Remove `UID` fields; expose `ID types.ID`.
+    - Remove `UID` fields; expose `ID types.ID`.
 - Update Postgres schemas:
   - Rename `uid` → `id`
   - Default: `gen_random_uuid()`
@@ -190,7 +187,7 @@ Ensure Manager is the **only writer** to app namespaces across clusters.
 Document breaking changes in:
 - `README.md`
 - `docs/index.md`
-- `docs/roadmap.md`
+- `docs/roadmap.md` (this page now reflects the stable ID-first workflow and no longer warns about pending migration).
 
 ---
 
