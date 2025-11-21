@@ -108,22 +108,21 @@ If `healthz` or `readyz` returns a non‑200 status, check the manager logs befo
 
 ## 3) Register a cluster
 
-KubeNova models clusters centrally and stores their kubeconfigs. First, base64‑encode your kubeconfig and register it together with the Capsule proxy URL for that cluster.
+KubeNova models clusters centrally and stores their kubeconfigs plus the capsule-proxy endpoint used for every tenant. Registering a managed cluster is step one.
 
 **Commands**
 
 ```bash
-# 3.1) Choose a logical name for the cluster
+# 3.1) Choose a name for the cluster (human friendly)
 export CLUSTER_NAME=${CLUSTER_NAME:-dev}
 
-# 3.2) Base64‑encode your kubeconfig (single line)
+# 3.2) Base64-encode the kubeconfig that the Manager will store
 export KUBE_B64=$(base64 < ~/.kube/config | tr -d '\n')
 
-# 3.2b) Discover capsule-proxy URL for this cluster
-# Example using a LoadBalancer Service; adjust to your environment.
+# 3.2b) Discover the capsule-proxy URL for this cluster
 export CAPSULE_PROXY_URL="https://capsule-proxy.example.com:9001"
 
-# 3.3) Register the cluster
+# 3.3) Register the cluster with the Manager
 curl -sS -X POST "$BASE/api/v1/clusters" \
   -H 'Content-Type: application/json' \
   -H "$AUTH_HEADER" \
@@ -138,18 +137,16 @@ curl -sS -X POST "$BASE/api/v1/clusters" \
 
 **What this does**
 
-- `CLUSTER_NAME` is a human‑readable name (`dev`, `prod-a`, etc.).
-- `KUBE_B64` holds your kubeconfig encoded as base64, as required by the `ClusterRegistration` schema.
-- `POST /api/v1/clusters`:
-  - persists the cluster in the store,
-  - records `capsuleProxyUrl` on the cluster so every kubeconfig issued for this cluster targets capsule‑proxy, never the raw kube‑apiserver,
-  - asynchronously starts installing the KubeNova agent into the target cluster (if `AGENT_IMAGE` and `MANAGER_URL_PUBLIC` are set),
-  - returns a JSON `Cluster` with a stable `id` and any labels you provided.
+- Persists the cluster entry plus labels in the Manager store.
+- Stores the kubeconfig and capsule-proxy metadata; all issued kubeconfigs from this point target the proxy to enforce RBAC.
+- Triggers an asynchronous Agent install (assuming `AGENT_IMAGE` + `MANAGER_URL_PUBLIC` are defined).
+- Returns the cluster `id` which you reuse for the rest of this quickstart (`CLUSTER_ID`).
 
-Next, capture the cluster UID for subsequent calls.
+If the response lacks `id`, inspect Manager logs and try again before proceeding.
+
+Next, capture the cluster UID for subsequent calls:
 
 ```bash
-# 3.4) Resolve the cluster UID from its name
 export CLUSTER_ID=$(curl -sS "$BASE/api/v1/clusters?limit=200" \
   -H "$AUTH_HEADER" \
   | jq -r '.[] | select(.name=="'"$CLUSTER_NAME"'") | .id')
@@ -157,25 +154,22 @@ export CLUSTER_ID=$(curl -sS "$BASE/api/v1/clusters?limit=200" \
 echo "$CLUSTER_ID"
 ```
 
-If `CLUSTER_ID` is empty, the cluster registration did not succeed; re‑run step 3.3 and check the manager logs.
-
-**kubectl checks – cluster and agent**
+**kubectl checks – cluster readiness**
 
 ```bash
-# All namespaces (sanity check)
+# List namespaces (sanity)
 kubectl get ns
 
-# KubeNova agent deployment and HPA in the target cluster
+# Verify Agent resources exist
 kubectl get deploy -n kubenova-system
 kubectl get hpa -n kubenova-system
 
-# Agent logs (helpful if registration or heartbeats fail)
+# Inspect Agent bootstrap/logging for failures
 kubectl logs deploy/agent -n kubenova-system --tail=10
-
-# bootstrap logs (helpful if registration or heartbeats fail)
 kubectl logs job/kubenova-bootstrap -n kubenova-system
-
 ```
+
+These checks confirm the Agent, Capsule, capsule-proxy, and controller CRDs are ready before you touch tenants or apps.
 
 ## 3.1) Basic Kubernetes checks with kubectl
 
@@ -764,6 +758,28 @@ Read the secret and set `values.adminPassword` in your automation before hitting
 - `POST /clusters/{cluster}/tenants/{tenant}/projects/{project}/catalog/install` merges overrides into the catalog source, persists an App with a `catalogRef`, and mirrors the metadata into the project ConfigMap so the Agent can project the App into Vela.
 - The install endpoint returns `{ "status": "accepted", "appSlug": "<slug>" }` because delivery happens asynchronously through the Agent.
 - Re-running the install call with the same `slug` but a newer catalog version acts as an upgrade; the request records `catalogItemId`, `catalogVersion`, and `catalogOverrides` so the Agent and the dashboard know which template boundaries were applied.
+
+### 9.2) Catalog examples
+
+Use the JSON samples under `docs/examples` to seed new catalog entries:
+
+- `docs/examples/catalog-item.json` (container image) – simple nginx template with `ports` and env overrides.
+- `docs/examples/catalog-helm.json` – Grafana Helm chart from `grafana.github.io/helm-charts`; install it via `/api/v1/catalog` so apps can reuse the slug.
+- Helm or OCI installs can still reference `values` overrides and `credentialsSecretRef` as shown in `docs/examples/app-helm.json`/`app-oci.json`.
+
+### 9.3) Workflow examples
+
+Workflows describe multi-step deployments. The Agent applies them whenever you attach PolicySets or call `/apps/{a}/workflow/run`.
+
+- `docs/examples/workflow-rollout.json` illustrates a simple deploy + rollout strategy.
+- Use `POST /api/v1/workflows` or attach the workflow through PolicySets so the Agent applies health checks and canary logic before scaling workloads.
+
+### 9.4) Traits examples
+
+Traits modify component behavior without changing the entire workload spec.
+
+- `docs/examples/trait-scaler.json` shows a scaler trait that the Agent can attach to Vela Applications when you call `/apps/{a}/traits`.
+- Combine this with workflows to adjust scaling mid-deployment (e.g., attach the scaler while a rollout is in progress to ensure pods meet resource targets).
 
 ---
 
