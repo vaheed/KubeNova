@@ -17,6 +17,12 @@ import (
 	"strconv"
 )
 
+const (
+	defaultCapsuleVersion      = "0.10.6"
+	defaultCapsuleProxyVersion = "0.9.13"
+	defaultVelaCoreVersion     = "1.10"
+)
+
 // Bootstrap addons by creating a one-shot Helm job that installs Capsule, capsule-proxy, and KubeVela if missing.
 func BootstrapHelmJob(ctx context.Context) error {
 	c := ctrl.GetConfigOrDie()
@@ -42,10 +48,14 @@ func BootstrapHelmJob(ctx context.Context) error {
 	// Auto-clean finished jobs and pods after a few minutes to reduce clutter
 	job.Spec.TTLSecondsAfterFinished = int32ptr(300)
 	// Pass through optional chart version pins from the Agent env
+	capsuleVersion := envOrDefault("CAPSULE_VERSION", defaultCapsuleVersion)
+	capsuleProxyVersion := envOrDefault("CAPSULE_PROXY_VERSION", defaultCapsuleProxyVersion)
+	velaCoreVersion := envOrDefault("VELA_CORE_VERSION", defaultVelaCoreVersion)
+
 	helmEnv := []corev1.EnvVar{
-		{Name: "CAPSULE_VERSION", Value: os.Getenv("CAPSULE_VERSION")},
-		{Name: "CAPSULE_PROXY_VERSION", Value: os.Getenv("CAPSULE_PROXY_VERSION")},
-		{Name: "VELA_CORE_VERSION", Value: os.Getenv("VELA_CORE_VERSION")},
+		{Name: "CAPSULE_VERSION", Value: capsuleVersion},
+		{Name: "CAPSULE_PROXY_VERSION", Value: capsuleProxyVersion},
+		{Name: "VELA_CORE_VERSION", Value: velaCoreVersion},
 		// Ensure non-root user can write helm cache/config/data
 		{Name: "HOME", Value: "/tmp"},
 		{Name: "HELM_CACHE_HOME", Value: "/tmp/helm/cache"},
@@ -181,6 +191,13 @@ echo "[bootstrap] complete"
 func int32ptr(i int32) *int32 { return &i }
 func boolPtr(b bool) *bool    { return &b }
 func int64ptr(i int64) *int64 { return &i }
+
+func envOrDefault(name, def string) string {
+	if v, ok := os.LookupEnv(name); ok {
+		return v
+	}
+	return def
+}
 
 // monitorBootstrapJob emits progress heartbeats and final status for the bootstrap job.
 func monitorBootstrapJob(ctx context.Context, client *kubernetes.Clientset, ns, name string) {
