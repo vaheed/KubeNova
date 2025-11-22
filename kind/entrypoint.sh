@@ -26,7 +26,7 @@ fi
 # Fix kubeconfig to use control-plane IP instead of 127.0.0.1
 # ------------------------------------------------------------------------------
 echo "[kind] Patching kubeconfig to use control-plane IP..."
-CONTROL_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' demo-control-plane)
+CONTROL_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' nova-control-plane)
 
 if [ -z "$CONTROL_IP" ]; then
   echo "[kind] ERROR: could not find control-plane IP"
