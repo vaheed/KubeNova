@@ -44,6 +44,9 @@ func main() {
 	}
 	st, closeFn = pst, pclose
 	defer closeFn(context.Background())
+	if err := st.Health(context.Background()); err != nil {
+		logging.L.Fatal("store health check", zap.Error(err))
+	}
 
 	srv := mngr.NewServer(st)
 	s := &http.Server{

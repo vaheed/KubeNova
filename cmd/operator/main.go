@@ -18,12 +18,19 @@ import (
 	"github.com/vaheed/kubenova/internal/reconcile"
 	"github.com/vaheed/kubenova/internal/telemetry"
 	"go.uber.org/zap"
+
+	capsulebackend "github.com/vaheed/kubenova/internal/backends/capsule"
+	velabackend "github.com/vaheed/kubenova/internal/backends/vela"
+	v1alpha1 "github.com/vaheed/kubenova/pkg/api/v1alpha1"
 )
 
 func main() {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
+	capsulebackend.AddToScheme(scheme)
+	velabackend.AddToScheme(scheme)
+	_ = v1alpha1.AddToScheme(scheme)
 
 	ctrl.SetLogger(crzap.New(crzap.UseDevMode(true)))
 
