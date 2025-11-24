@@ -11,19 +11,25 @@ kubectl apply -k deploy/crds
 ```
 
 ## 2) Provide Helm charts to the operator
-The operator bootstraps cert-manager, Capsule, Capsule Proxy, and KubeVela using Helm. Charts are provided under `deploy/charts/`. Build your operator image with these charts at `/charts`, or mount them and set `HELM_CHARTS_DIR`.
-
-Example (container build):
-```
-# In your Dockerfile for the operator image
-COPY deploy/charts /charts
-```
+The operator bootstraps cert-manager, Capsule, Capsule Proxy, and KubeVela using Helm.
+- Preferred: bake charts into the operator image at `/charts` (set `HELM_CHARTS_DIR=/charts`).
+  ```
+  # In the operator Dockerfile
+  COPY deploy/charts /charts
+  ENV HELM_CHARTS_DIR=/charts
+  ```
+- Remote fallback: set `HELM_USE_REMOTE=true` and the operator will install from upstream repos:
+  - cert-manager: https://charts.jetstack.io (v1.14.4)
+  - capsule: https://clastix.github.io/charts (0.5.0)
+  - capsule-proxy: https://clastix.github.io/charts (0.3.1)
+  - kubevela: https://kubevela.github.io/charts (1.9.11)
 
 ## 3) Configure and deploy the operator
 Edit `deploy/operator/deployment.yaml` to set:
 - `MANAGER_URL` to your manager service URL
 - `HELM_CHARTS_DIR` if charts are mounted elsewhere (default `/charts`)
 - image tag for the operator
+ - `HELM_USE_REMOTE=true` if you prefer pulling charts from upstream repos at runtime
 
 Then apply:
 ```

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -22,6 +23,7 @@ type Installer struct {
 	Client    client.Client
 	Scheme    *runtime.Scheme
 	ChartsDir string
+	UseRemote bool
 }
 
 // NewInstaller returns a new Installer instance.
@@ -37,6 +39,7 @@ func NewInstaller(c client.Client, scheme *runtime.Scheme) *Installer {
 		Client:    c,
 		Scheme:    scheme,
 		ChartsDir: charts,
+		UseRemote: parseBool(os.Getenv("HELM_USE_REMOTE")),
 	}
 }
 
@@ -51,7 +54,13 @@ func (i *Installer) Bootstrap(ctx context.Context, component string) error {
 	}
 
 	if i.ChartsDir != "" {
-		if err := i.runHelm(ctx, component, fmt.Sprintf("%s/%s", i.ChartsDir, component), "kubenova-system"); err != nil {
+		if err := i.runHelmLocal(ctx, component, fmt.Sprintf("%s/%s", i.ChartsDir, component), "kubenova-system"); err != nil {
+			return err
+		}
+		return i.waitForReady(ctx, component)
+	}
+	if i.UseRemote {
+		if err := i.runHelmRemote(ctx, component, "kubenova-system"); err != nil {
 			return err
 		}
 		return i.waitForReady(ctx, component)
@@ -112,8 +121,23 @@ func (i *Installer) ensurePlaceholder(ctx context.Context, component string) err
 	return i.Client.Update(ctx, cm)
 }
 
-func (i *Installer) runHelm(ctx context.Context, release, chart, namespace string) error {
+func (i *Installer) runHelmLocal(ctx context.Context, release, chart, namespace string) error {
 	cmd := exec.CommandContext(ctx, "helm", "upgrade", "--install", release, chart, "--namespace", namespace, "--create-namespace")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func (i *Installer) runHelmRemote(ctx context.Context, component, namespace string) error {
+	meta, ok := componentRepos[component]
+	if !ok {
+		return fmt.Errorf("no remote repo for component %s", component)
+	}
+	args := []string{"upgrade", "--install", component, meta.Chart, "--namespace", namespace, "--create-namespace", "--repo", meta.Repo}
+	if meta.Version != "" {
+		args = append(args, "--version", meta.Version)
+	}
+	cmd := exec.CommandContext(ctx, "helm", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -163,5 +187,27 @@ func deploymentName(component string) string {
 		return "kubenova-operator"
 	default:
 		return ""
+	}
+}
+
+type repoMeta struct {
+	Repo    string
+	Chart   string
+	Version string
+}
+
+var componentRepos = map[string]repoMeta{
+	"cert-manager":  {Repo: "https://charts.jetstack.io", Chart: "cert-manager", Version: "v1.14.4"},
+	"capsule":       {Repo: "https://clastix.github.io/charts", Chart: "capsule", Version: "0.5.0"},
+	"capsule-proxy": {Repo: "https://clastix.github.io/charts", Chart: "capsule-proxy", Version: "0.3.1"},
+	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.9.11"},
+}
+
+func parseBool(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "1", "yes", "on", "y":
+		return true
+	default:
+		return false
 	}
 }
