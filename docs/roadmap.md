@@ -47,6 +47,13 @@ This roadmap turns the RFC into concrete milestones from current skeleton to a p
 - Deliverables: Benchmarks, scale test reports, tuned connection pools, backpressure and retry policies refined.
 - Acceptance: Meets target throughput/latency; no data loss on simulated failures; documented limits and guidance.
 
+## Validation Runbook (applies to milestones 0.2+)
+- Register cluster via manager `/api/v1/clusters` (with kubeconfig) → `/bootstrap/operator`.
+- Operator installs cert-manager, Capsule, Capsule Proxy, KubeVela (charts baked at `/charts` or pulled with `HELM_USE_REMOTE=true`).
+- Check readiness: deployments in `kubenova-system` READY; Nova CRDs show `Ready` conditions; Capsule Tenant and Vela Application objects are created for Nova CRDs.
+- Status surfaces: manager cluster/tenant/project/app endpoints return status/conditions; CRDs’ status updated by reconcilers.
+- Upgrade: bump chart versions/operator image, apply manifests, watch readiness; ensure backward compatibility on API/CRD versions.
+
 ## Milestone 1.0 – Production GA
 - Scope: Final polish, backward compatibility guarantees, upgrade guides, support SLAs.
 - Deliverables: GA tag, migration guide, support policy, security review sign-off.

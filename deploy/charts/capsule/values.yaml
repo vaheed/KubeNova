@@ -1,4 +1,0 @@
-image:
-  repository: busybox
-  tag: latest
-  pullPolicy: IfNotPresent

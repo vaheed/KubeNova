@@ -42,3 +42,27 @@ kubectl -n kubenova-system get pods
 kubectl get crd novatenants.kubenova.io
 ```
 When a cluster is registered via the manager API (`/api/v1/clusters`), the manager will use the provided kubeconfig to install the operator, which in turn installs the dependencies and reconciles Nova CRDs into Capsule/Vela/Proxy resources.
+
+## 5) End-to-end validation
+Run these checks after registering a cluster and triggering operator bootstrap:
+```
+# Manager health
+curl -s http://<manager>/api/v1/readyz
+
+# Operator and deps ready
+kubectl -n kubenova-system get deploy cert-manager capsule-controller-manager capsule-proxy vela-core kubenova-operator
+
+# CRD statuses
+kubectl get novatenants,kubenova.io -A -o wide
+kubectl get novaprojects,kubenova.io -A -o wide
+kubectl get novaapps,kubenova.io -A -o wide
+
+# Capsule/Vela projections
+kubectl get tenants.capsule.clastix.io
+kubectl get application.core.oam.dev -A
+```
+All deployments should be READY and Nova CRDs should show `Ready` conditions.
+
+## Upgrade notes
+- Update chart versions in `internal/cluster/installer.go` and/or bake new charts into `/charts`, then bump the operator image tag.
+- Rolling upgrade path: apply updated operator manifest/Helm release; components are Helm-managed so `helm upgrade` will reconcile cert-manager/Capsule/Proxy/KubeVela. Monitor deployment readiness as above.

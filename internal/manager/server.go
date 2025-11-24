@@ -269,6 +269,9 @@ func (s *Server) features(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) issueToken(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops") && s.requireAuth {
+		return
+	}
 	if len(s.signingKey) == 0 {
 		writeError(w, http.StatusInternalServerError, "KN-500", "signing key not configured")
 		return
@@ -350,6 +353,9 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listClusters(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "readOnly") && s.requireAuth {
+		return
+	}
 	clusters, err := s.store.ListClusters(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
@@ -359,6 +365,9 @@ func (s *Server) listClusters(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getCluster(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "readOnly") && s.requireAuth {
+		return
+	}
 	id := chi.URLParam(r, "clusterID")
 	c, err := s.store.GetCluster(r.Context(), id)
 	if err != nil {
@@ -389,6 +398,9 @@ func (s *Server) deleteCluster(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getCapabilities(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "readOnly") && s.requireAuth {
+		return
+	}
 	id := chi.URLParam(r, "clusterID")
 	c, err := s.store.GetCluster(r.Context(), id)
 	if err != nil {
@@ -479,6 +491,9 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "readOnly") && s.requireAuth {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenants, err := s.store.ListTenants(r.Context(), clusterID)
 	if err != nil {
@@ -489,6 +504,9 @@ func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "readOnly") && s.requireAuth {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	t, err := s.store.GetTenant(r.Context(), clusterID, tenantID)
@@ -595,6 +613,9 @@ func (s *Server) updateTenantMapField(w http.ResponseWriter, r *http.Request, ap
 }
 
 func (s *Server) tenantSummary(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "readOnly") && s.requireAuth {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projects, _ := s.store.ListProjects(r.Context(), clusterID, tenantID)
@@ -612,6 +633,9 @@ func (s *Server) tenantSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tenantKubeconfig(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "tenantOwner") && s.requireAuth {
+		return
+	}
 	tenantID := chi.URLParam(r, "tenantID")
 	tenant := s.findTenant(r.Context(), tenantID)
 	if tenant == nil {
@@ -625,6 +649,9 @@ func (s *Server) tenantKubeconfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tenantUsage(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "readOnly") && s.requireAuth {
+		return
+	}
 	tenantID := chi.URLParam(r, "tenantID")
 	tenant := s.findTenant(r.Context(), tenantID)
 	if tenant == nil {
@@ -786,6 +813,9 @@ func (s *Server) updateProjectAccess(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) projectKubeconfig(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "tenantOwner", "projectDev") && s.requireAuth {
+		return
+	}
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
 	tenant := s.findTenant(r.Context(), tenantID)
@@ -800,6 +830,9 @@ func (s *Server) projectKubeconfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) projectUsage(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "readOnly") && s.requireAuth {
+		return
+	}
 	projectID := chi.URLParam(r, "projectID")
 	project := s.findProject(r.Context(), projectID)
 	if project == nil {
@@ -876,6 +909,9 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner", "readOnly") && s.requireAuth {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -888,6 +924,9 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner", "readOnly") && s.requireAuth {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -1011,6 +1050,9 @@ func (s *Server) rollbackApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) appStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner", "readOnly") && s.requireAuth {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -1028,6 +1070,9 @@ func (s *Server) appStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) appRevisions(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner", "readOnly") && s.requireAuth {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -1041,6 +1086,9 @@ func (s *Server) appRevisions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) appDiff(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner", "readOnly") && s.requireAuth {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -1066,6 +1114,9 @@ func (s *Server) appDiff(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) appLogs(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner", "readOnly") && s.requireAuth {
+		return
+	}
 	component := chi.URLParam(r, "component")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"component": component,

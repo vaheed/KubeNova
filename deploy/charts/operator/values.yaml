@@ -1,4 +1,0 @@
-image:
-  repository: ghcr.io/vaheed/kubenova/operator
-  tag: latest
-  pullPolicy: Always
