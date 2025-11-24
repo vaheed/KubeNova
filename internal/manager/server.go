@@ -349,6 +349,17 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
+	cluster.Status = "bootstrapping"
+	_ = s.store.UpdateCluster(r.Context(), cluster)
+	go func(c *types.Cluster) {
+		if err := s.installOperator(context.Background(), c); err != nil {
+			c.Status = "error"
+		} else {
+			c.Status = "connected"
+		}
+		c.UpdatedAt = time.Now().UTC()
+		_ = s.store.UpdateCluster(context.Background(), c)
+	}(cluster)
 	writeJSON(w, http.StatusCreated, sanitizeCluster(cluster))
 }
 

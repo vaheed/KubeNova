@@ -35,11 +35,18 @@ func NewInstaller(c client.Client, scheme *runtime.Scheme) *Installer {
 	if _, err := os.Stat(charts); err != nil {
 		charts = ""
 	}
+	useRemote := false
+	if v, ok := os.LookupEnv("HELM_USE_REMOTE"); ok {
+		useRemote = parseBool(v)
+	} else if charts == "" {
+		// Default to remote charts when none are baked in and no override provided.
+		useRemote = true
+	}
 	return &Installer{
 		Client:    c,
 		Scheme:    scheme,
 		ChartsDir: charts,
-		UseRemote: parseBool(os.Getenv("HELM_USE_REMOTE")),
+		UseRemote: useRemote,
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 )
 
 func TestBootstrapNoop(t *testing.T) {
+	t.Setenv("HELM_USE_REMOTE", "false")
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
