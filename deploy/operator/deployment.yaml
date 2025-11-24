@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubenova-operator
+  namespace: kubenova-system
+  labels:
+    app: kubenova-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubenova-operator
+  template:
+    metadata:
+      labels:
+        app: kubenova-operator
+    spec:
+      serviceAccountName: kubenova-operator
+      containers:
+        - name: operator
+          image: ghcr.io/kubenova/operator:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MANAGER_URL
+              value: "http://kubenova-manager.kubenova-system.svc:8080"
+            - name: HELM_CHARTS_DIR
+              value: "/charts"
+            - name: BATCH_INTERVAL_SECONDS
+              value: "10"

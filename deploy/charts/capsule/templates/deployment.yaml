@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capsule-controller-manager
+  labels:
+    app: capsule
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: capsule
+  template:
+    metadata:
+      labels:
+        app: capsule
+    spec:
+      containers:
+        - name: capsule
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["sleep", "3650"]

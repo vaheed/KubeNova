@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,10 +26,17 @@ type Installer struct {
 
 // NewInstaller returns a new Installer instance.
 func NewInstaller(c client.Client, scheme *runtime.Scheme) *Installer {
+	charts := os.Getenv("HELM_CHARTS_DIR")
+	if charts == "" {
+		charts = "/charts"
+	}
+	if _, err := os.Stat(charts); err != nil {
+		charts = ""
+	}
 	return &Installer{
 		Client:    c,
 		Scheme:    scheme,
-		ChartsDir: os.Getenv("HELM_CHARTS_DIR"),
+		ChartsDir: charts,
 	}
 }
 
@@ -46,7 +54,7 @@ func (i *Installer) Bootstrap(ctx context.Context, component string) error {
 		if err := i.runHelm(ctx, component, fmt.Sprintf("%s/%s", i.ChartsDir, component), "kubenova-system"); err != nil {
 			return err
 		}
-		return nil
+		return i.waitForReady(ctx, component)
 	}
 	// Fallback: record intent via ConfigMap so we can track bootstrap progress.
 	return i.ensurePlaceholder(ctx, component)
@@ -109,4 +117,51 @@ func (i *Installer) runHelm(ctx context.Context, release, chart, namespace strin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func (i *Installer) waitForReady(ctx context.Context, component string) error {
+	deploy := deploymentName(component)
+	if deploy == "" {
+		return nil
+	}
+	var dep appsv1.Deployment
+	key := client.ObjectKey{Name: deploy, Namespace: "kubenova-system"}
+	timeout := time.After(2 * time.Minute)
+	tick := time.Tick(5 * time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for %s ready", deploy)
+		case <-tick:
+			err := i.Client.Get(ctx, key, &dep)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return err
+			}
+			if dep.Status.AvailableReplicas > 0 {
+				return nil
+			}
+		}
+	}
+}
+
+func deploymentName(component string) string {
+	switch component {
+	case "cert-manager":
+		return "cert-manager"
+	case "capsule":
+		return "capsule-controller-manager"
+	case "capsule-proxy":
+		return "capsule-proxy"
+	case "kubevela":
+		return "vela-core"
+	case "operator":
+		return "kubenova-operator"
+	default:
+		return ""
+	}
 }

@@ -73,7 +73,7 @@ func main() {
 
 	// Bootstrap addons via a Helm job if not present; then verify readiness
 	go func() {
-		if err := reconcile.BootstrapHelmJob(ctx); err != nil {
+		if err := reconcile.BootstrapHelmJob(ctx, mgr.GetClient(), mgr.GetScheme()); err != nil {
 			logging.L.Error("bootstrap error", zap.Error(err))
 		}
 	}()

@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubenova-operator
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets", "services", "endpoints", "pods", "namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kubenova.io"]
+    resources: ["novatenants", "novatenants/status", "novaprojects", "novaprojects/status", "novaapps", "novaapps/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

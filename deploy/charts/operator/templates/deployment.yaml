@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubenova-operator
+  labels:
+    app: kubenova-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubenova-operator
+  template:
+    metadata:
+      labels:
+        app: kubenova-operator
+    spec:
+      serviceAccountName: kubenova-operator
+      containers:
+        - name: operator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["sleep", "3650"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubenova-operator
+  labels:
+    app: kubenova-operator

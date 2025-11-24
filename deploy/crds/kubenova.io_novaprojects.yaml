@@ -42,5 +42,32 @@ spec:
                     type: string
               required:
                 - tenant
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: ["type", "status", "reason", "lastTransitionTime"]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
           required:
             - spec
+      subresources:
+        status: {}

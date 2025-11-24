@@ -51,6 +51,8 @@ type NovaTenant struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec NovaTenantSpec `json:"spec,omitempty"`
+	// Status reflects reconciliation state.
+	Status NovaStatus `json:"status,omitempty"`
 }
 
 func (in *NovaTenant) DeepCopyObject() runtime.Object {
@@ -60,6 +62,7 @@ func (in *NovaTenant) DeepCopyObject() runtime.Object {
 	out := *in
 	out.ObjectMeta = *in.ObjectMeta.DeepCopy()
 	out.Spec = in.Spec.DeepCopy()
+	out.Status = in.Status.DeepCopy()
 	return &out
 }
 
@@ -109,7 +112,8 @@ type NovaProject struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec NovaProjectSpec `json:"spec,omitempty"`
+	Spec   NovaProjectSpec `json:"spec,omitempty"`
+	Status NovaStatus      `json:"status,omitempty"`
 }
 
 func (in *NovaProject) DeepCopyObject() runtime.Object {
@@ -119,6 +123,7 @@ func (in *NovaProject) DeepCopyObject() runtime.Object {
 	out := *in
 	out.ObjectMeta = *in.ObjectMeta.DeepCopy()
 	out.Spec = in.Spec.DeepCopy()
+	out.Status = in.Status.DeepCopy()
 	return &out
 }
 
@@ -176,7 +181,8 @@ type NovaApp struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec NovaAppSpec `json:"spec,omitempty"`
+	Spec   NovaAppSpec `json:"spec,omitempty"`
+	Status NovaStatus  `json:"status,omitempty"`
 }
 
 func (in *NovaApp) DeepCopyObject() runtime.Object {
@@ -186,6 +192,7 @@ func (in *NovaApp) DeepCopyObject() runtime.Object {
 	out := *in
 	out.ObjectMeta = *in.ObjectMeta.DeepCopy()
 	out.Spec = in.Spec.DeepCopy()
+	out.Status = in.Status.DeepCopy()
 	return &out
 }
 
@@ -209,6 +216,21 @@ func (in *NovaAppList) DeepCopyObject() runtime.Object {
 		}
 	}
 	return &out
+}
+
+// NovaStatus captures a phase and conditions.
+type NovaStatus struct {
+	Phase              string             `json:"phase,omitempty"`
+	Conditions         []metav1.Condition `json:"conditions,omitempty"`
+	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
+}
+
+func (s NovaStatus) DeepCopy() NovaStatus {
+	out := s
+	if s.Conditions != nil {
+		out.Conditions = append([]metav1.Condition{}, s.Conditions...)
+	}
+	return out
 }
 
 // AddToScheme registers all Nova API types.

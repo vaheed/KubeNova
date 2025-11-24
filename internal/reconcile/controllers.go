@@ -129,6 +129,7 @@ func (r *TenantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err := ensureNamespace(ctx, r.Client, appsNS); err != nil {
 		return ctrl.Result{}, err
 	}
+	_ = setStatusReady(ctx, r.Client, &tenantObj)
 	return ctrl.Result{}, nil
 }
 
@@ -194,6 +195,7 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		}
 	}
 	// Mark configmap with last reconciled timestamp for visibility
+	_ = setStatusReady(ctx, r.Client, &app)
 	return ctrl.Result{}, patchAnnotations(ctx, r.Client, &app, map[string]string{
 		"kubenova.io/last-applied": time.Now().UTC().Format(time.RFC3339),
 	})
@@ -248,4 +250,41 @@ func patchAnnotations(ctx context.Context, c client.Client, obj client.Object, a
 	}
 	obj.SetAnnotations(current)
 	return c.Update(ctx, obj)
+}
+
+func setStatusReady(ctx context.Context, c client.Client, obj client.Object) error {
+	switch o := obj.(type) {
+	case *v1alpha1.NovaTenant:
+		o.Status.Phase = "Ready"
+		o.Status.ObservedGeneration = o.Generation
+		o.Status.Conditions = []metav1.Condition{{
+			Type:               "Ready",
+			Status:             metav1.ConditionTrue,
+			Reason:             "Reconciled",
+			LastTransitionTime: metav1.Now(),
+		}}
+		return c.Status().Update(ctx, o)
+	case *v1alpha1.NovaProject:
+		o.Status.Phase = "Ready"
+		o.Status.ObservedGeneration = o.Generation
+		o.Status.Conditions = []metav1.Condition{{
+			Type:               "Ready",
+			Status:             metav1.ConditionTrue,
+			Reason:             "Reconciled",
+			LastTransitionTime: metav1.Now(),
+		}}
+		return c.Status().Update(ctx, o)
+	case *v1alpha1.NovaApp:
+		o.Status.Phase = "Ready"
+		o.Status.ObservedGeneration = o.Generation
+		o.Status.Conditions = []metav1.Condition{{
+			Type:               "Ready",
+			Status:             metav1.ConditionTrue,
+			Reason:             "Reconciled",
+			LastTransitionTime: metav1.Now(),
+		}}
+		return c.Status().Update(ctx, o)
+	default:
+		return nil
+	}
 }

@@ -314,6 +314,9 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops") {
+		return
+	}
 	var req ClusterRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "KN-400", err.Error())
@@ -370,6 +373,9 @@ func (s *Server) getCluster(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteCluster(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops") {
+		return
+	}
 	id := chi.URLParam(r, "clusterID")
 	if err := s.store.DeleteCluster(r.Context(), id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -397,6 +403,9 @@ func (s *Server) getCapabilities(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) bootstrapComponent(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops") {
+		return
+	}
 	id := chi.URLParam(r, "clusterID")
 	component := chi.URLParam(r, "component")
 	c, err := s.store.GetCluster(r.Context(), id)
@@ -432,6 +441,9 @@ func (s *Server) bootstrapComponent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops") {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	var req TenantRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -492,6 +504,9 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops") {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	if err := s.store.DeleteTenant(r.Context(), clusterID, tenantID); err != nil {
@@ -632,6 +647,9 @@ func (s *Server) tenantUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops") {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	var req ProjectRequest
@@ -727,6 +745,9 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops") {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -801,6 +822,9 @@ func (s *Server) projectUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner") {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -936,6 +960,9 @@ func (s *Server) resumeApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteAppAction(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner") {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -952,6 +979,9 @@ func (s *Server) deleteAppAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) rollbackApp(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner") {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -1117,6 +1147,9 @@ func (s *Server) getWorkflowRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateAppConfig(w http.ResponseWriter, r *http.Request, apply func(*types.App, AppRequest)) {
+	if !s.requireRole(w, r, "admin", "ops", "projectDev", "tenantOwner") {
+		return
+	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
@@ -1339,4 +1372,20 @@ func (s *Server) installOperator(ctx context.Context, c *types.Cluster) error {
 		return err
 	}
 	return nil
+}
+
+func (s *Server) requireRole(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
+	if !s.requireAuth {
+		return true
+	}
+	auth := s.authContext(r.Context())
+	for _, role := range auth.Roles {
+		for _, allowedRole := range allowed {
+			if role == allowedRole {
+				return true
+			}
+		}
+	}
+	writeError(w, http.StatusForbidden, "KN-403", "forbidden")
+	return false
 }
