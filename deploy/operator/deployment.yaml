@@ -18,12 +18,21 @@ spec:
       serviceAccountName: kubenova-operator
       containers:
         - name: operator
-          image: ghcr.io/kubenova/operator:latest
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/vaheed/kubenova/operator:latest
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
             - name: MANAGER_URL
               value: "http://kubenova-manager.kubenova-system.svc:8080"
             - name: HELM_CHARTS_DIR
               value: "/charts"
+            - name: HELM_USE_REMOTE
+              value: "true"
             - name: BATCH_INTERVAL_SECONDS
               value: "10"
