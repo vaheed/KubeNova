@@ -17,6 +17,7 @@ import (
 	capsulebackend "github.com/vaheed/kubenova/internal/backends/capsule"
 	proxybackend "github.com/vaheed/kubenova/internal/backends/proxy"
 	velabackend "github.com/vaheed/kubenova/internal/backends/vela"
+	"github.com/vaheed/kubenova/internal/cluster"
 	v1alpha1 "github.com/vaheed/kubenova/pkg/api/v1alpha1"
 	"github.com/vaheed/kubenova/pkg/types"
 )
@@ -207,8 +208,15 @@ func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// BootstrapHelmJob is a placeholder for the bootstrap job runner.
-func BootstrapHelmJob(ctx context.Context) error {
+// BootstrapHelmJob installs foundational components (cert-manager, capsule, capsule-proxy, kubevela).
+func BootstrapHelmJob(ctx context.Context, c client.Client, scheme *runtime.Scheme) error {
+	installer := cluster.NewInstaller(c, scheme)
+	components := []string{"cert-manager", "capsule", "capsule-proxy", "kubevela"}
+	for _, comp := range components {
+		if err := installer.Bootstrap(ctx, comp); err != nil {
+			return fmt.Errorf("bootstrap %s: %w", comp, err)
+		}
+	}
 	return nil
 }
 

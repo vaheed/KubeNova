@@ -8,6 +8,7 @@ type Cluster struct {
 	Name          string            `json:"name"`
 	Datacenter    string            `json:"datacenter,omitempty"`
 	Labels        map[string]string `json:"labels,omitempty"`
+	Kubeconfig    string            `json:"kubeconfig,omitempty"`
 	Status        string            `json:"status"`
 	NovaClusterID string            `json:"novaClusterId,omitempty"`
 	Capabilities  Capabilities      `json:"capabilities,omitempty"`

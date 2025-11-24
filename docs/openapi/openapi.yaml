@@ -152,6 +152,9 @@ paths:
             example:
               name: prod-a
               datacenter: eu-west
+              kubeconfig: |
+                apiVersion: v1
+                clusters: [...]
               labels:
                 region: eu-west
       responses:
@@ -1033,12 +1036,15 @@ components:
           format: date-time
     ClusterRequest:
       type: object
-      required: [name]
+      required: [name, kubeconfig]
       properties:
         name:
           type: string
         datacenter:
           type: string
+        kubeconfig:
+          type: string
+          description: Base64 or inline kubeconfig content used for bootstrap
         labels:
           type: object
           additionalProperties:

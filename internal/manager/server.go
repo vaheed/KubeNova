@@ -14,10 +14,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/vaheed/kubenova/internal/cluster"
 	"github.com/vaheed/kubenova/internal/logging"
 	"github.com/vaheed/kubenova/internal/store"
 	"github.com/vaheed/kubenova/pkg/types"
 	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -318,10 +323,15 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "KN-400", "name is required")
 		return
 	}
+	if strings.TrimSpace(req.Kubeconfig) == "" {
+		writeError(w, http.StatusBadRequest, "KN-400", "kubeconfig is required")
+		return
+	}
 	cluster := &types.Cluster{
 		Name:         strings.TrimSpace(req.Name),
 		Datacenter:   req.Datacenter,
 		Labels:       req.Labels,
+		Kubeconfig:   req.Kubeconfig,
 		Status:       "pending_bootstrap",
 		Capabilities: types.Capabilities{Capsule: true, CapsuleProxy: true, KubeVela: true},
 	}
@@ -333,7 +343,7 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, cluster)
+	writeJSON(w, http.StatusCreated, sanitizeCluster(cluster))
 }
 
 func (s *Server) listClusters(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +352,7 @@ func (s *Server) listClusters(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, clusters)
+	writeJSON(w, http.StatusOK, sanitizeClusters(clusters))
 }
 
 func (s *Server) getCluster(w http.ResponseWriter, r *http.Request) {
@@ -356,7 +366,7 @@ func (s *Server) getCluster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, c)
+	writeJSON(w, http.StatusOK, sanitizeCluster(c))
 }
 
 func (s *Server) deleteCluster(w http.ResponseWriter, r *http.Request) {
@@ -400,14 +410,24 @@ func (s *Server) bootstrapComponent(w http.ResponseWriter, r *http.Request) {
 	}
 	c.Status = "bootstrapping"
 	c.UpdatedAt = time.Now().UTC()
-	if err := s.store.UpdateCluster(r.Context(), c); err != nil && !errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
-		return
+	_ = s.store.UpdateCluster(r.Context(), c)
+
+	if component == "operator" {
+		if err := s.installOperator(r.Context(), c); err != nil {
+			c.Status = "error"
+			_ = s.store.UpdateCluster(r.Context(), c)
+			writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("operator install: %v", err))
+			return
+		}
+		c.Status = "connected"
+		c.UpdatedAt = time.Now().UTC()
+		_ = s.store.UpdateCluster(r.Context(), c)
 	}
+
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"clusterId": c.ID,
 		"component": component,
-		"status":    "accepted",
+		"status":    c.Status,
 	})
 }
 
@@ -1170,6 +1190,7 @@ type TokenResponse struct {
 type ClusterRequest struct {
 	Name       string            `json:"name"`
 	Datacenter string            `json:"datacenter"`
+	Kubeconfig string            `json:"kubeconfig"`
 	Labels     map[string]string `json:"labels"`
 }
 
@@ -1278,6 +1299,44 @@ func (s *Server) findProject(ctx context.Context, projectID string) *types.Proje
 		if p.ID == projectID {
 			return p
 		}
+	}
+	return nil
+}
+
+func sanitizeCluster(c *types.Cluster) *types.Cluster {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	cp.Kubeconfig = ""
+	return &cp
+}
+
+func sanitizeClusters(list []*types.Cluster) []*types.Cluster {
+	out := make([]*types.Cluster, 0, len(list))
+	for _, c := range list {
+		out = append(out, sanitizeCluster(c))
+	}
+	return out
+}
+
+func (s *Server) installOperator(ctx context.Context, c *types.Cluster) error {
+	if c.Kubeconfig == "" {
+		return errors.New("kubeconfig missing")
+	}
+	cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(c.Kubeconfig))
+	if err != nil {
+		return fmt.Errorf("parse kubeconfig: %w", err)
+	}
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	cli, err := ctrlclient.New(cfg, ctrlclient.Options{Scheme: scheme})
+	if err != nil {
+		return fmt.Errorf("build client: %w", err)
+	}
+	installer := cluster.NewInstaller(cli, scheme)
+	if err := installer.Bootstrap(ctx, "operator"); err != nil {
+		return err
 	}
 	return nil
 }
