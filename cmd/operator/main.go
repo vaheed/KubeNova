@@ -32,7 +32,7 @@ func main() {
 		Metrics:                metricsserver.Options{BindAddress: ":8081"},
 		HealthProbeBindAddress: ":8082",
 		LeaderElection:         true,
-		LeaderElectionID:       "kubenova-agent-leader",
+		LeaderElectionID:       "kubenova-operator-leader",
 	})
 	if err != nil {
 		logging.L.Fatal("manager", zap.Error(err))
@@ -59,7 +59,7 @@ func main() {
 	buf.Run()
 	defer buf.Stop()
 	telemetry.SetGlobal(buf)
-	buf.Enqueue("events", map[string]string{"event": "agent_started"})
+	buf.Enqueue("events", map[string]string{"event": "operator_started"})
 
 	// Single shared context for shutdown
 	ctx := ctrl.SetupSignalHandler()
@@ -71,7 +71,7 @@ func main() {
 		}
 	}()
 
-	logging.L.Info("KubeNova Agent starting manager")
+	logging.L.Info("KubeNova Operator starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		logging.L.Fatal("manager stopped", zap.Error(err))
 	}

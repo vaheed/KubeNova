@@ -105,9 +105,9 @@ jobs:
       - name: Build scan images (local Docker)
         run: |
           docker build -t manager:scan -f build/Dockerfile.manager .
-          docker build -t kubenova-agent:scan -f build/Dockerfile.agent .
+          docker build -t kubenova-operator:scan -f build/Dockerfile.operator .
           docker save manager:scan -o manager-scan.tar
-          docker save kubenova-agent:scan -o kubenova-agent-scan.tar
+          docker save kubenova-operator:scan -o kubenova-operator-scan.tar
       - name: Clean Trivy cache dir (avoid tar restore conflicts)
         run: rm -rf ~/.cache/trivy || true
       - name: Cache Trivy DB
@@ -124,10 +124,10 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
-      - name: Trivy image scan (Agent)
+      - name: Trivy image scan (operator)
         uses: aquasecurity/trivy-action@0.20.0
         with:
-          input: 'kubenova-agent-scan.tar'
+          input: 'kubenova-operator-scan.tar'
           format: 'table'
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
@@ -165,7 +165,7 @@ jobs:
           docker buildx build --platform "${PLATFORMS}" \
             -t ghcr.io/vaheed/kubenova/manager:${IMG_TAG} --push -f build/Dockerfile.manager .
           docker buildx build --platform "${PLATFORMS}" \
-            -t ghcr.io/vaheed/kubenova/agent:${IMG_TAG} --push -f build/Dockerfile.agent .
+            -t ghcr.io/vaheed/kubenova/operator:${IMG_TAG} --push -f build/Dockerfile.operator .
 
   charts_push_oci:
     runs-on: ubuntu-latest
@@ -197,7 +197,7 @@ jobs:
             helm package "$TMP" -d out
           }
           package_chart deploy/helm/manager
-          package_chart deploy/helm/agent
+          package_chart deploy/helm/operator
           ls -la out
       - name: Push charts to GHCR (OCI)
         env:

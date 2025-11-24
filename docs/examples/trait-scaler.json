@@ -1,8 +1,0 @@
-{
-  "type": "scaler",
-  "properties": {
-    "min": 2,
-    "max": 5,
-    "cpu": "500m"
-  }
-}

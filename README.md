@@ -1,341 +1,242 @@
-# KubeNova + Capsule + KubeVela
-### Multi‑Tenant Control Plane & App Delivery
+# KubeNova  
+### Unified Multi-Datacenter CaaS/PaaS Platform  
+### Manager Global — Clusters Sovereign — Tenants Isolated
 
 ---
 
-## Overview
+## 🚀 Overview
 
-KubeNova is a **central control plane** for multi‑tenant Kubernetes environments.
-Its core concepts are:
+KubeNova is a federated multi-datacenter platform providing secure CaaS/PaaS capabilities on top of Kubernetes.  
+Each datacenter runs a **completely isolated Kubernetes cluster**, while a **single global Manager** coordinates metadata, tenant lifecycle, billing, and application orchestration — without ever directly accessing the clusters.
 
-- **Cluster per zone** – every registered cluster represents a discrete zone or datacenter; the Manager never shards workloads across clusters automatically.
-- **Capsule tenants & namespaces** – Capsule enforces RBAC, quotas, and namespace ownership, ensuring tenants only reach the namespaces the Manager allows.
-- **Capsule proxy (access proxy)** – Issued kubeconfigs always target the proxy so tenants never talk directly to the Kubernetes API, and RBAC is enforced via Capsule groups and `X-KN-Roles`.
-- **KubeVela app delivery** – the Agent projects ConfigMaps into Vela `Application` CRs, labels them with canonical `kubenova.io/*` metadata, and leaves sandbox namespaces untouched.
+All cluster operations are handled by the **KubeNova Operator**, which runs inside each cluster and communicates outbound-only with the Manager via gRPC.
 
-The KubeNova **Manager** exposes a single OpenAPI‑first REST surface at `/api/v1`.
-It stores clusters, tenants, projects, apps, policysets, catalog items, and telemetry in a backing store
-(Postgres or in‑memory), and installs/coordinates in‑cluster **Agents** that
-talk to Capsule, capsule‑proxy, and KubeVela.
+KubeNova integrates the following:
 
-Current release: **0.9.6**
-
-## Capsule + capsule-proxy requirements
-
-Every registered cluster must have Capsule installed plus a capsule-proxy endpoint:
-
-- The `ClusterRegistration` payload includes `capsuleProxyUrl` (and optional `capsuleProxyCa`), and every issued kubeconfig is rewritten to use that proxy.
-- Capsule tenants are managed per namespace, and the Manager/Agent expects tenants to own the `tn-<tenant>-*` namespaces it creates.
-- The Agent relies on Capsule CRDs/tagging to keep sandbox namespaces (`tn-<tenant>-sandbox-*`) isolated, while app namespaces remain read-only to tenants.
-
-Current release: **0.9.6**
+- **KubeNova Operator** — cluster bootstrap, tenant management, Vela integration  
+- **Capsule** — multi-tenancy and namespace isolation  
+- **Capsule Proxy** — per-tenant LoadBalancer isolation  
+- **KubeVela** — application orchestration for users  
 
 ---
 
-## Architecture (High‑Level)
+## ⚖️ Core Principles
 
-- **Manager (control plane)**
-  - HTTP API at `/api/v1` (see `docs/openapi/openapi.yaml`).
-  - Persists clusters, tenants, projects, apps, policysets (`internal/store`).
-  - Installs and monitors Agents into registered clusters.
-  - Issues tenant/project‑scoped kubeconfigs that always target the access proxy.
-
-- **Agent (per cluster)**
-  - Runs controllers using `controller-runtime` (`internal/reconcile`):
-    - `ProjectReconciler`: keeps Namespaces and Capsule Tenants in sync.
-    - `AppReconciler`: projects ConfigMaps into KubeVela `Application` resources.
-  - Publishes telemetry (events/metrics/logs) back to the Manager.
-
-- **Adapters & Backends**
-  - Capsule adapter: manages Capsule Tenant CRDs and multi‑tenant namespaces.
-  - Vela backend: manages KubeVela `Application`, revisions, traits, policies.
-  - Proxy backend: issues JWT‑backed kubeconfigs for capsule‑proxy (used by Manager).
-
-Users interact with KubeNova via the Manager API (curl/HTTP) and then use the
-issued kubeconfigs with `kubectl` against capsule‑proxy for day‑to‑day work.
+- **Clusters are sovereign** — no cross-datacenter sharing.  
+- **Zero inbound connectivity** — Operators initiate outbound gRPC to Manager.  
+- **Manager never talks to Kubernetes APIs directly.**  
+- **Tenants are strictly isolated** using Capsule and namespace scoping.  
+- **KubeVela Applications are the only workload entrypoint.**  
 
 ---
 
-### Managed cluster topology
+## 🏛️ System Architecture
 
-For each registered cluster, KubeNova coordinates the following logical nodes inside the managed cluster:
+### Global System Diagram
 
-- **Kubernetes control plane** – the cluster's own API server and etcd.
-- **Tenancy stack (Capsule)** – controllers and CRDs that enforce tenant and namespace isolation.
-- **Access proxy (capsule-proxy)** – HTTP proxy that terminates kubeconfigs issued by KubeNova and enforces RBAC via Capsule groups.
-- **App delivery core (KubeVela)** – controllers and CRDs that turn App specs into running workloads.
-- **KubeNova Agent** – per-cluster controller that watches KubeNova state, reconciles Capsule tenants/projects, and projects Apps into KubeVela Applications.
+```mermaid
+flowchart LR
 
-End-to-end flow for a managed cluster:
+subgraph Manager["Global Manager (Control Plane)"]
+    API[REST API]
+    GRPC[gRPC Manager]
+    DB[(Postgres)]
+    UI[Dashboard]
+end
 
-1. The Manager registers the cluster and installs the Agent.
-2. Users call the Manager API to define clusters, tenants, projects, and apps.
-3. The Agent reconciles this intent into Capsule, capsule-proxy, and KubeVela resources in the managed cluster.
-4. Users use the issued kubeconfigs to talk to capsule-proxy, which forwards requests to the cluster API server with the correct tenant/project scope.
+subgraph DC1["Datacenter A"]
+    subgraph CL1["Kubernetes Cluster"]
+        OP1[KubeNova Operator]
+        CAPS1[Capsule]
+        PROXY1[Capsule Proxy]
+        VELA1[KubeVela]
+    end
+end
 
-The diagram below shows these nodes and control/data paths for all managed clusters:
+subgraph DC2["Datacenter B"]
+    subgraph CL2["Kubernetes Cluster"]
+        OP2[KubeNova Operator]
+        CAPS2[Capsule]
+        PROXY2[Capsule Proxy]
+        VELA2[KubeVela]
+    end
+end
 
-```text
-              +-----------------------------+
-              |        KubeNova Manager     |
-              |  - REST API /api/v1         |
-              |  - Store (Postgres/memory)  |
-              |  - Tokens, Plans, Policies  |
-              +--------------+--------------+
-                             |
-                 sync / telemetry / control
-                             |
-                (HTTPS, JWT, OpenAPI v1)
-                             |
-          +------------------+------------------+
-          |                  |                  |
-   Cluster A            Cluster B            Cluster C
- (registered)         (registered)         (registered)
-
-   +---------------- Managed Cluster (per cluster) ---------------+
-   |                                                              |
-   |  +-------------------+     +-----------------------------+   |
-   |  |  KubeNova Agent   |<--->|     KubeNova Manager        |   |
-   |  |  - Reconcile      |     |  (remote control plane)     |   |
-   |  |    Tenants/Apps   |     +-----------------------------+   |
-   |  +---------+---------+                                      |
-   |            |                                                |
-   |            | applies Capsule tenants, namespaces, apps      |
-   |            v                                                |
-   |  +------------------+      +-----------------------------+  |
-   |  |   Capsule        |      |        KubeVela             |  |
-   |  | - Tenants CRD    |      | - Application CRD           |  |
-   |  | - Namespace RBAC |      | - Traits / Policies         |  |
-   |  +---------+--------+      +---------------+-------------+  |
-   |            |                               |                |
-   |            | labels / groups               | App specs      |
-   |            v                               v                |
-   |  +------------------+      +-----------------------------+  |
-   |  |  capsule-proxy    |<----|  tenant/project kubeconfigs |  |
-   |  |  (access proxy)   |     |  issued by Manager          |  |
-   |  +---------+---------+      +-----------------------------+  |
-   |            |                                                |
-   |            v (kubectl, tenants & projects)                  |
-   |        Kubernetes API server                                |
-   +--------------------------------------------------------------+
+OP1 -->|Outbound gRPC| GRPC
+OP2 -->|Outbound gRPC| GRPC
+API --> DB
+GRPC --> DB
 ```
 
-## Installation
+---
 
-### Helm Repos
+## 🔄 Full Lifecycle Architecture
 
-Manager and Agent are shipped as Helm charts.
+### End-to-End Workflow
 
-```bash
-helm repo add kubenova-dev https://vaheed.github.io/kubenova/charts/dev
-helm repo add kubenova     https://vaheed.github.io/kubenova/charts/stable
-helm repo update
+```mermaid
+sequenceDiagram
+    participant User
+    participant Manager
+    participant Operator
+    participant Cluster
+    participant Vela
+
+    User->>Manager: Add Cluster (POST /clusters)
+    Manager->>Cluster: Deploy Operator
+    Operator-->>Manager: gRPC Connect
+
+    Manager->>Operator: Send NovaClusterConfig
+    Operator->>Cluster: Install Capsule/Proxy/KubeVela
+
+    User->>Manager: Create Tenant & User
+    Manager->>Operator: Apply NovaTenant CRD
+    Operator->>Cluster: Create Namespaces, SA, RBAC
+
+    User->>Manager: Deploy Application
+    Manager->>Operator: APPLY_YAML (KubeVela Application)
+    Operator->>Vela: Create Application CRD
+    Vela->>Cluster: Deploy Workloads
+
+    Operator-->>Manager: Hourly Usage Reports
+    Operator-->>Manager: Application Status Updates
 ```
 
-### Manager Chart (cluster‑external control plane)
+---
 
-```bash
-helm upgrade --install manager kubenova/manager \
-  -n kubenova-system --create-namespace \
-  --set image.tag=0.9.6 \
-  --set env.KUBENOVA_REQUIRE_AUTH=true \
-  --set env.MANAGER_URL_PUBLIC=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
-  --set env.AGENT_IMAGE=ghcr.io/vaheed/kubenova/agent:0.9.6
+## 🧱 Multi-Tenancy Model
+
+KubeNova uses **Capsule** for multi-tenancy and **Capsule Proxy** for LoadBalancer isolation.
+
+Each tenant receives:
+
+- A Capsule Tenant  
+- Two namespaces:  
+  - `<tenant>-owner`  
+  - `<tenant>-apps`  
+- Two ServiceAccounts: owner + readonly  
+- Two automatically generated kubeconfigs  
+- One KubeVela Project  
+- Unlimited KubeVela Applications  
+
+### Tenant Bootstrap Diagram
+
+```mermaid
+flowchart TD
+    NT[NovaTenant CRD]
+    CAPS[Capsule Tenant]
+    NS1["Namespace: <tenant>-owner"]
+    NS2["Namespace: <tenant>-apps"]
+    SA1[Owner ServiceAccount]
+    SA2[Readonly ServiceAccount]
+    KCFG1[Owner Kubeconfig]
+    KCFG2[Readonly Kubeconfig]
+
+    NT --> CAPS
+    CAPS --> NS1
+    CAPS --> NS2
+    NS1 --> SA1 --> KCFG1
+    NS2 --> SA2 --> KCFG2
 ```
 
-### Agent Chart (installed into target clusters)
+---
 
-```bash
-helm upgrade --install agent kubenova/agent \
-  -n kubenova-system \
-  --set image.tag=0.9.6 \
-  --set manager.url=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
-  --set redis.enabled=true \
-  --set bootstrap.capsuleVersion=0.10.6 \
-  --set bootstrap.capsuleProxyVersion=0.9.13
+## 🚀 Application Deployment (via KubeVela)
+
+All user applications are defined as **KubeVela Application CRDs**.
+
+### Deployment Flow
+
+```mermaid
+sequenceDiagram
+    participant Dev
+    participant Manager
+    participant Operator
+    participant Vela
+
+    Dev->>Manager: POST /users/:tenant/apps
+    Manager->>Operator: APPLY_YAML
+    Operator->>Vela: Create Application CRD
+    Vela->>Cluster: Deploy workloads
 ```
 
-### Grafana credential secret
+---
 
-When using Helm charts such as Grafana, keep the admin password in a Kubernetes secret and reference it from your Helm values or catalog overrides:
+## 📊 Usage Reporting
 
-```bash
-kubectl create secret generic grafana-admin-password \
-  --from-literal=admin-password='SuperSecret123!' \
-  -n tn-acme-app-shop
+Every hour the Operator aggregates per-tenant metrics:
+
+- CPU & Memory Requests  
+- PVC Storage Usage  
+- LoadBalancer Count  
+- Pod Count  
+- Namespace Count  
+- KubeVela Application Count  
+- Quota Violations  
+
+Usage is streamed to the Manager via gRPC.
+
+---
+
+## 🔐 Security Model
+
+- **No inbound ports exposed**  
+- **Outbound mTLS gRPC only**  
+- **Encrypted kubeconfigs stored only for bootstrap**  
+- **Capsule enforces strict boundaries**  
+- **Capsule Proxy provides tenant LB isolation**  
+- **Manager has no kubeadmin rights**  
+
+---
+
+## 🗂 Suggested Repository Layout
+
+```
+kubenova/
+├── cmd/
+│   ├── manager/
+│   └── operator/
+├── pkg/
+│   ├── api/
+│   ├── controllers/
+│   ├── grpc/
+│   ├── tenants/
+│   └── kube/
+├── config/
+│   └── crd/
+├── docs/
+│   ├── rfc/
+│   ├── adr/
+│   ├── diagrams/
+│   └── examples/
+└── README.md
 ```
 
-Read the secret value in your automation and set `values.adminPassword` before installing the chart so credentials never appear in request payloads.
+---
 
-> See `env.example` for all supported environment variables and their meanings.
+## 📚 Included Documentation
+
+This repository includes:
+
+- **Architecture RFC**  
+- **ADR Set**  
+- **Operator Controller Design**  
+- **Manager API & Workflow**  
+- **Multi-Tenant Policy & Structure**  
+- **Diagrams in Mermaid format**  
 
 ---
 
-## Images & Versions
+## 🧩 Next Steps (Optional)
 
-Charts are also published as OCI artifacts in GHCR:
+I can generate:
 
-```bash
-helm registry login ghcr.io -u <user> -p <token>
+- `/docs/` folder with RFC, ADR, diagrams  
+- GitHub Pages site  
+- VitePress documentation  
+- CRD YAML files  
+- gRPC protobuf definitions  
+- OpenAPI spec for Manager REST APIs  
 
-# Pull latest main (alias)
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version latest
+Just let me know.
 
-# Pull a specific version
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.6
-
-# Pull develop stream
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version dev
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version 0.9.6-dev
-
-# Pull a release tag alias
-helm pull oci://ghcr.io/vaheed/kubenova-charts/manager --version v0.9.6
-```
-
-Branch/tag mapping:
-
-- `develop`: chart version is suffixed with `-dev` (for example, `0.9.6-dev`). A lightweight OCI tag alias `dev` also points to the same artifact.
-- `main`: chart version is the normal semver (`0.9.6`). A lightweight OCI tag alias `latest` also points to the same artifact.
-- Release tags (`vX.Y.Z`): an additional OCI tag alias `vX.Y.Z` is applied to the same artifact.
-
----
-
-## Configuration
-
-KubeNova reads configuration from environment variables and chart values. Key settings:
-
-- **Database**
-  - `DATABASE_URL` – Postgres connection string (required for production).
-- **Auth & tokens**
-  - `KUBENOVA_REQUIRE_AUTH` – when `true`, most endpoints require a Bearer JWT.
-  - `JWT_SIGNING_KEY` – HS256 signing key used by the Manager for tokens and kubeconfigs.
-- **Proxy & URLs**
-  - `MANAGER_URL_PUBLIC` – URL used by Agents to reach the Manager.
-  - Per‑cluster Capsule proxy URL – configured at cluster registration time via `capsuleProxyUrl` and, optionally, `capsuleProxyCa` on the `ClusterRegistration` resource; all issued kubeconfigs target this URL, never the raw kube‑apiserver.
-- **Agent image & bootstrap**
-  - `AGENT_IMAGE` – container image used when the Manager auto‑installs the Agent into target clusters.
-  - `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_CORE_VERSION` – optional version pins for bootstrap.
-
-See `env.example` for full details and recommended values.
-
----
-
-## Quickstart (API + kubectl)
-
-For a complete curl walkthrough, see `docs/index.md`. At a high level:
-
-1. **Get a token**
-   - `POST /api/v1/tokens` to obtain a JWT for API calls.
-2. **Register a cluster**
-   - `POST /api/v1/clusters` with a base64‑encoded kubeconfig.
-   - Manager stores the cluster and installs the Agent.
-3. **Create tenant & project**
-   - `POST /api/v1/clusters/{c}/tenants` to create a tenant (optionally with a `plan`; when omitted, the Manager best‑effort applies the default plan configured via `KUBENOVA_DEFAULT_TENANT_PLAN`).
-   - `POST /api/v1/clusters/{c}/tenants/{t}/projects` to create a project (mapped to a Namespace).
-4. **Grant project access**
-   - `PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access` with members + roles (tenantOwner/projectDev/readOnly).
-5. **Issue kubeconfigs**
-   - Tenant/project‑scoped (via Capsule proxy):
-     - `POST /api/v1/tenants/{t}/kubeconfig` (requires `project` in the body and uses the tenant’s primary cluster and its `capsuleProxyUrl`).
-     - `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig` (explicit cluster/tenant/project path).
-6. **Use kubeconfigs with kubectl**
-   - Save the returned kubeconfig (`.kubeconfig` field) to a file and run:
-     - `KUBECONFIG=<file> kubectl get ns`
-     - `KUBECONFIG=<file> kubectl get pods -n <project-namespace>`
-
-Users now manage workloads directly with `kubectl` via capsule‑proxy, while KubeNova remains the source of truth for tenants, projects, and apps.
-
----
-
-## Apps & Delivery (Capsule + Vela)
-
-KubeNova’s Apps API lets you describe workloads that will be delivered by KubeVela in the project namespace.
-
-- **App API**
-  - `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps`
-  - `POST /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps`
-  - `GET /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}`
-  - `PUT /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}`
-  - Operations: `:deploy`, `:suspend`, `:resume`, `:rollback`, `:delete`, `status`, `revisions`, `diff`, `logs`, `traits`, `policies`, `image-update`, `workflow/run`.
-
-- **Spec model**
-  - See `App` in `docs/openapi/openapi.yaml`:
-    - `name`, `description`
-    - `components`: array of component objects (for example, web services, Helm‑based components, etc.).
-    - `traits`: array of trait objects (scaling, ingress, etc.).
-    - `policies`: array of policy objects (rollout strategies, security policies, etc.).
-
-- **Projection to KubeVela**
-  - The Manager materializes App specs into ConfigMaps in the project Namespace.
-  - The Agent’s `AppReconciler` (`internal/reconcile/app.go`) reads these ConfigMaps and uses the Vela backend (`internal/backends/vela`) to create/update KubeVela `Application` resources.
-
-The current implementation is intentionally generic; you can model WordPress, Grafana, or any other app by shaping the `components` and `traits` according to your KubeVela conventions.
-
----
-
-## Security & Roles
-
-- **Roles**
-  - `admin`, `ops`, `tenantOwner`, `projectDev`, `readOnly`.
-  - Used for API authorization and encoded in JWTs and kubeconfigs.
-
-- **Groups**
-  - KubeNova maps roles to Kubernetes groups so capsule‑proxy and RBAC can enforce access:
-    - `tenantOwner` (and `admin`/`ops` where applicable) → `tenant-admins`
-    - `projectDev` → `tenant-maintainers`
-    - `readOnly` → `tenant-viewers`
-
-- **Kubeconfigs**
-  - All kubeconfigs issued by KubeNova target the per-cluster access proxy configured via `capsuleProxyUrl` on the Cluster; they never point at the raw kube‑apiserver.
-  - Tokens embedded in kubeconfigs encode `tenant`, optional `project`, `roles`, and `groups` claims that Capsule and capsule‑proxy use for enforcement.
-
-See `docs/index.md` and `docs/openapi/openapi.yaml` for the precise behavior of `/tokens`, `/me`, and kubeconfig endpoints.
-
----
-
-## Development & Testing
-
-- **Run tests**
-  - `make test-unit` – unit tests and integration stubs.
-  - `go test ./... -count=1` – full Go test suite.
-
-- **Format & vet (recommended)**
-  - `go fmt ./...`
-  - `go vet ./...`
-
-- **Static analysis (optional)**
-  - `staticcheck ./...`
-  - `gosec ./...` – must have no HIGH findings before release.
-
-### Local kind dev cluster
-
-For a throwaway local Kubernetes cluster with MetalLB, a ready-made setup lives under `kind/`:
-
-- `kind/Dockerfile` builds an image with `kind` and `kubectl` preinstalled.
-- `kind/entrypoint.sh` creates a cluster (default name `nova`), patches the kubeconfig to use the control-plane IP, installs MetalLB and applies `kind/metallb-config.yaml`, then writes a kubeconfig to `/kubeconfig/config`.
-- `kind/kind-config.yaml` configures the kind cluster (nodes, registry mirrors, IPv4 networking).
-
-A simple way to use it for local experiments:
-
-```bash
-docker build -t kubenova-kind kind
-docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-  -v "$(pwd)/kind-kubeconfig:/kubeconfig" \
-  kubenova-kind
-
-export KUBECONFIG="$(pwd)/kind-kubeconfig/config"
-kubectl get nodes
-```
-
-You can then base64‑encode `kind-kubeconfig/config` in step 3 of `docs/index.md` to register this cluster with the KubeNova manager.
-
----
-
-## Docs & Roadmap
-
-- API contract: `docs/openapi/openapi.yaml`.
-- cURL + `kubectl` quickstart: `docs/index.md`.
-- Design/overview and mapping references: this `README.md` and other files under `docs/`.
-- Future work and platform‑level goals: tracked in issues and milestones on GitHub, and reflected in `docs/openapi/openapi.yaml` for any planned API additions.
-
-KubeNova adheres to semantic versioning; see `CHANGELOG.md` for a detailed list of changes between versions.

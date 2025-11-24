@@ -1,10 +1,10 @@
-KubeNova Agent — Helm Chart
+KubeNova Operator — Helm Chart
 
 Install
 - Add repo: `helm repo add kubenova https://vaheed.github.io/kubenova/charts/stable`
 - Install/upgrade:
 ```
-helm upgrade --install agent kubenova/agent \
+helm upgrade --install operator kubenova/operator \
   -n kubenova-system \
   --set image.tag=latest \
   --set manager.url=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
