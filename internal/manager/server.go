@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -333,11 +334,12 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "KN-400", "kubeconfig is required")
 		return
 	}
+	kubeconfig := normalizeKubeconfig(req.Kubeconfig)
 	cluster := &types.Cluster{
 		Name:         strings.TrimSpace(req.Name),
 		Datacenter:   req.Datacenter,
 		Labels:       req.Labels,
-		Kubeconfig:   req.Kubeconfig,
+		Kubeconfig:   kubeconfig,
 		Status:       "pending_bootstrap",
 		Capabilities: types.Capabilities{Capsule: true, CapsuleProxy: true, KubeVela: true},
 	}
@@ -1415,6 +1417,21 @@ func sanitizeClusters(list []*types.Cluster) []*types.Cluster {
 	return out
 }
 
+func normalizeKubeconfig(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return trimmed
+	}
+	compact := strings.ReplaceAll(strings.ReplaceAll(trimmed, "\n", ""), "\r", "")
+	if decoded, err := base64.StdEncoding.DecodeString(compact); err == nil && len(decoded) > 0 {
+		str := string(decoded)
+		if strings.Contains(str, "apiVersion") && strings.Contains(str, "clusters") {
+			return str
+		}
+	}
+	return trimmed
+}
+
 func (s *Server) installOperator(ctx context.Context, c *types.Cluster) error {
 	if c.Kubeconfig == "" {
 		return errors.New("kubeconfig missing")
@@ -1429,7 +1446,7 @@ func (s *Server) installOperator(ctx context.Context, c *types.Cluster) error {
 	if err != nil {
 		return fmt.Errorf("build client: %w", err)
 	}
-	installer := cluster.NewInstaller(cli, scheme)
+	installer := cluster.NewInstaller(cli, scheme, []byte(c.Kubeconfig))
 	if err := installer.Bootstrap(ctx, "operator"); err != nil {
 		return err
 	}

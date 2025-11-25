@@ -20,14 +20,15 @@ import (
 // It can execute Helm installs when HELM_CHARTS_DIR is provided,
 // otherwise it records placeholder ConfigMaps to mark bootstrap intent.
 type Installer struct {
-	Client    client.Client
-	Scheme    *runtime.Scheme
-	ChartsDir string
-	UseRemote bool
+	Client         client.Client
+	Scheme         *runtime.Scheme
+	ChartsDir      string
+	UseRemote      bool
+	kubeconfigData []byte
 }
 
 // NewInstaller returns a new Installer instance.
-func NewInstaller(c client.Client, scheme *runtime.Scheme) *Installer {
+func NewInstaller(c client.Client, scheme *runtime.Scheme, kubeconfig []byte) *Installer {
 	charts := os.Getenv("HELM_CHARTS_DIR")
 	if charts == "" {
 		charts = "/charts"
@@ -43,10 +44,11 @@ func NewInstaller(c client.Client, scheme *runtime.Scheme) *Installer {
 		useRemote = true
 	}
 	return &Installer{
-		Client:    c,
-		Scheme:    scheme,
-		ChartsDir: charts,
-		UseRemote: useRemote,
+		Client:         c,
+		Scheme:         scheme,
+		ChartsDir:      charts,
+		UseRemote:      useRemote,
+		kubeconfigData: kubeconfig,
 	}
 }
 
@@ -129,9 +131,12 @@ func (i *Installer) ensurePlaceholder(ctx context.Context, component string) err
 }
 
 func (i *Installer) runHelmLocal(ctx context.Context, release, chart, namespace string) error {
-	cmd := exec.CommandContext(ctx, "helm", "upgrade", "--install", release, chart, "--namespace", namespace, "--create-namespace") // #nosec G204 -- arguments are manager-defined constants
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	args := []string{"upgrade", "--install", release, chart, "--namespace", namespace, "--create-namespace"}
+	cmd, cleanup, err := i.prepareHelmCommand(ctx, args...)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	return cmd.Run()
 }
 
@@ -144,10 +149,39 @@ func (i *Installer) runHelmRemote(ctx context.Context, component, namespace stri
 	if meta.Version != "" {
 		args = append(args, "--version", meta.Version)
 	}
+	cmd, cleanup, err := i.prepareHelmCommand(ctx, args...)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	return cmd.Run()
+}
+
+func (i *Installer) prepareHelmCommand(ctx context.Context, args ...string) (*exec.Cmd, func(), error) {
 	cmd := exec.CommandContext(ctx, "helm", args...) // #nosec G204 -- arguments are manager-defined constants
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	cleanup := func() {}
+	if len(i.kubeconfigData) > 0 {
+		tmp, err := os.CreateTemp("", "kubenova-kubeconfig-*.yaml")
+		if err != nil {
+			return nil, cleanup, err
+		}
+		if _, err := tmp.Write(i.kubeconfigData); err != nil {
+			tmp.Close()
+			os.Remove(tmp.Name())
+			return nil, cleanup, err
+		}
+		if err := tmp.Close(); err != nil {
+			os.Remove(tmp.Name())
+			return nil, cleanup, err
+		}
+		cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", tmp.Name()))
+		cleanup = func() {
+			_ = os.Remove(tmp.Name())
+		}
+	}
+	return cmd, cleanup, nil
 }
 
 func (i *Installer) waitForReady(ctx context.Context, component string) error {

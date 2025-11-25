@@ -14,7 +14,7 @@ func TestBootstrapNoop(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
-	i := NewInstaller(client, scheme)
+	i := NewInstaller(client, scheme, nil)
 	if err := i.Bootstrap(context.Background(), "capsule"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
