@@ -164,6 +164,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Cluster'
+              example:
+                id: 11111111-1111-1111-1111-111111111111
+                name: dev-cluster
+                datacenter: dc1
+                labels:
+                  env: dev
+                status: bootstrapping
+                novaClusterId: nova-dev
+                capabilities:
+                  capsule: true
+                  capsuleProxy: true
+                  kubeVela: true
+                createdAt: 2024-01-01T00:00:00Z
+                updatedAt: 2024-01-01T00:00:00Z
         '409':
           $ref: '#/components/responses/Error'
         '400':
@@ -250,6 +264,21 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Tenant'
+              example:
+                - id: 22222222-2222-2222-2222-222222222222
+                  clusterId: 11111111-1111-1111-1111-111111111111
+                  name: acme
+                  owners: [alice@example.com]
+                  plan: gold
+                  ownerNamespace: acme-owner
+                  appsNamespace: acme-apps
+                  quotas:
+                    cpu: "4"
+                  limits:
+                    pods: "20"
+                  networkPolicies: [default-deny-egress]
+                  createdAt: 2024-01-01T00:05:00Z
+                  updatedAt: 2024-01-01T00:05:00Z
     post:
       security: [{ bearerAuth: [] }]
       summary: Create tenant
@@ -265,6 +294,8 @@ paths:
               plan: baseline
               labels:
                 tier: gold
+              quotas:
+                cpu: "4"
       responses:
         '201':
           description: Tenant created
@@ -272,6 +303,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Tenant'
+              example:
+                id: 22222222-2222-2222-2222-222222222222
+                clusterId: 11111111-1111-1111-1111-111111111111
+                name: acme
+                owners: [alice@example.com]
+                plan: gold
+                ownerNamespace: acme-owner
+                appsNamespace: acme-apps
+                quotas:
+                  cpu: "4"
+                limits:
+                  pods: "20"
+                networkPolicies: [default-deny-egress]
+                createdAt: 2024-01-01T00:05:00Z
+                updatedAt: 2024-01-01T00:05:00Z
         '409':
           $ref: '#/components/responses/Error'
         '404':
@@ -415,6 +461,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TenantSummary'
+              example:
+                tenantId: 22222222-2222-2222-2222-222222222222
+                clusterId: 11111111-1111-1111-1111-111111111111
+                projects: 1
+                apps: 1
+                namespaces: 2
+                loadBalancers: 0
+                quotaViolations: 0
   /api/v1/tenants/{tenantID}/kubeconfig:
     parameters:
       - $ref: '#/components/parameters/TenantID'
@@ -446,6 +500,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Usage'
+              example:
+                cpuRequests: "4"
+                memoryRequests: "8Gi"
+                pvcStorage: "50Gi"
+                loadBalancers: 1
+                pods: 4
+                namespaces: 2
+                apps: 1
+                quotaViolations: 0
+                lastReportedAt: 2024-01-01T01:00:00Z
         '404':
           $ref: '#/components/responses/Error'
   /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects:
@@ -464,6 +528,17 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Project'
+              example:
+                - id: 33333333-3333-3333-3333-333333333333
+                  clusterId: 11111111-1111-1111-1111-111111111111
+                  tenantId: 22222222-2222-2222-2222-222222222222
+                  name: payments
+                  description: Handles payment flows
+                  labels:
+                    env: dev
+                  access: [alice@example.com]
+                  createdAt: 2024-01-01T00:10:00Z
+                  updatedAt: 2024-01-01T00:10:00Z
     post:
       security: [{ bearerAuth: [] }]
       summary: Create project
@@ -483,6 +558,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Project'
+              example:
+                id: 33333333-3333-3333-3333-333333333333
+                clusterId: 11111111-1111-1111-1111-111111111111
+                tenantId: 22222222-2222-2222-2222-222222222222
+                name: payments
+                description: Handles payment flows
+                access: []
+                createdAt: 2024-01-01T00:10:00Z
+                updatedAt: 2024-01-01T00:10:00Z
         '409':
           $ref: '#/components/responses/Error'
         '404':
@@ -586,6 +670,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Usage'
+              example:
+                cpuRequests: "2"
+                memoryRequests: "4Gi"
+                pvcStorage: "10Gi"
+                loadBalancers: 0
+                pods: 2
+                namespaces: 1
+                apps: 1
+                quotaViolations: 0
+                lastReportedAt: 2024-01-01T01:00:00Z
         '404':
           $ref: '#/components/responses/Error'
   /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps:
@@ -605,6 +699,30 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/App'
+              example:
+                - id: 44444444-4444-4444-4444-444444444444
+                  clusterId: 11111111-1111-1111-1111-111111111111
+                  tenantId: 22222222-2222-2222-2222-222222222222
+                  projectId: 33333333-3333-3333-3333-333333333333
+                  name: api
+                  description: API service
+                  component: web
+                  image: ghcr.io/vaheed/api:latest
+                  spec:
+                    type: webservice
+                    properties:
+                      image: ghcr.io/vaheed/api:latest
+                      port: 8080
+                  traits:
+                    - type: scaler
+                      properties:
+                        min: 1
+                        max: 3
+                  revision: 1
+                  status: pending
+                  suspended: false
+                  createdAt: 2024-01-01T00:15:00Z
+                  updatedAt: 2024-01-01T00:15:00Z
     post:
       security: [{ bearerAuth: [] }]
       summary: Create application
@@ -620,7 +738,14 @@ paths:
               image: ghcr.io/acme/web:1.0.0
               spec:
                 type: webservice
-                port: 8080
+                properties:
+                  image: ghcr.io/acme/web:1.0.0
+                  port: 8080
+              traits:
+                - type: scaler
+                  properties:
+                    min: 1
+                    max: 3
       responses:
         '201':
           description: Application created
@@ -628,6 +753,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/App'
+              example:
+                id: 44444444-4444-4444-4444-444444444444
+                clusterId: 11111111-1111-1111-1111-111111111111
+                tenantId: 22222222-2222-2222-2222-222222222222
+                projectId: 33333333-3333-3333-3333-333333333333
+                name: api
+                description: API service
+                component: web
+                image: ghcr.io/vaheed/api:latest
+                spec:
+                  type: webservice
+                  properties:
+                    image: ghcr.io/vaheed/api:latest
+                    port: 8080
+                traits:
+                  - type: scaler
+                    properties:
+                      min: 1
+                      max: 3
+                revision: 1
+                status: pending
+                suspended: false
+                createdAt: 2024-01-01T00:15:00Z
+                updatedAt: 2024-01-01T00:15:00Z
         '409':
           $ref: '#/components/responses/Error'
         '404':
@@ -648,6 +797,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/App'
+              example:
+                id: 44444444-4444-4444-4444-444444444444
+                clusterId: 11111111-1111-1111-1111-111111111111
+                tenantId: 22222222-2222-2222-2222-222222222222
+                projectId: 33333333-3333-3333-3333-333333333333
+                name: api
+                description: API service
+                component: web
+                image: ghcr.io/vaheed/api:v2
+                spec:
+                  type: webservice
+                  properties:
+                    image: ghcr.io/vaheed/api:v2
+                    port: 8080
+                traits:
+                  - type: scaler
+                    properties:
+                      min: 1
+                      max: 3
+                revision: 2
+                status: Deployed
+                suspended: false
+                createdAt: 2024-01-01T00:15:00Z
+                updatedAt: 2024-01-01T00:25:00Z
         '404':
           $ref: '#/components/responses/Error'
     put:
@@ -659,6 +832,13 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AppRequest'
+            example:
+              description: API service v2
+              spec:
+                type: webservice
+                properties:
+                  image: ghcr.io/vaheed/api:v2
+                  port: 8080
       responses:
         '200':
           description: Updated app
@@ -666,6 +846,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/App'
+              example:
+                id: 44444444-4444-4444-4444-444444444444
+                clusterId: 11111111-1111-1111-1111-111111111111
+                tenantId: 22222222-2222-2222-2222-222222222222
+                projectId: 33333333-3333-3333-3333-333333333333
+                name: api
+                description: API service v2
+                component: web
+                image: ghcr.io/vaheed/api:v2
+                spec:
+                  type: webservice
+                  properties:
+                    image: ghcr.io/vaheed/api:v2
+                    port: 8080
+                traits:
+                  - type: scaler
+                    properties:
+                      min: 1
+                      max: 3
+                revision: 2
+                status: Deployed
+                suspended: false
+                createdAt: 2024-01-01T00:15:00Z
+                updatedAt: 2024-01-01T00:25:00Z
   "/api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}:deploy":
     post:
       security: [{ bearerAuth: [] }]
@@ -796,6 +1000,21 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AppRevision'
+              example:
+                - number: 1
+                  spec:
+                    type: webservice
+                    properties:
+                      image: ghcr.io/vaheed/api:latest
+                      port: 8080
+                  createdAt: 2024-01-01T00:15:00Z
+                - number: 2
+                  spec:
+                    type: webservice
+                    properties:
+                      image: ghcr.io/vaheed/api:v2
+                      port: 8080
+                  createdAt: 2024-01-01T00:25:00Z
   /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/diff/{revA}/{revB}:
     parameters:
       - $ref: '#/components/parameters/ClusterID'
@@ -923,6 +1142,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkflowRun'
+              example:
+                id: 55555555-5555-5555-5555-555555555555
+                appId: 44444444-4444-4444-4444-444444444444
+                status: Running
+                inputs:
+                  action: smoke-test
+                startedAt: 2024-01-01T00:30:00Z
   /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/workflow/runs:
     parameters:
       - $ref: '#/components/parameters/ClusterID'
@@ -941,6 +1167,13 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/WorkflowRun'
+              example:
+                - id: 55555555-5555-5555-5555-555555555555
+                  appId: 44444444-4444-4444-4444-444444444444
+                  status: Running
+                  inputs:
+                    action: smoke-test
+                  startedAt: 2024-01-01T00:30:00Z
   /api/v1/apps/runs/{runID}:
     parameters:
       - in: path
@@ -958,6 +1191,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkflowRun'
+              example:
+                id: 55555555-5555-5555-5555-555555555555
+                appId: 44444444-4444-4444-4444-444444444444
+                status: Running
+                inputs:
+                  action: smoke-test
+                startedAt: 2024-01-01T00:30:00Z
         '404':
           $ref: '#/components/responses/Error'
 components:

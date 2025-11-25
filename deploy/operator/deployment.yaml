@@ -16,10 +16,24 @@ spec:
         app: kubenova-operator
     spec:
       serviceAccountName: kubenova-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: operator
           image: ghcr.io/vaheed/kubenova/operator:latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
           resources:
             requests:
               cpu: 100m
@@ -36,3 +50,9 @@ spec:
               value: "true"
             - name: BATCH_INTERVAL_SECONDS
               value: "10"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

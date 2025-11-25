@@ -129,7 +129,7 @@ func (i *Installer) ensurePlaceholder(ctx context.Context, component string) err
 }
 
 func (i *Installer) runHelmLocal(ctx context.Context, release, chart, namespace string) error {
-	cmd := exec.CommandContext(ctx, "helm", "upgrade", "--install", release, chart, "--namespace", namespace, "--create-namespace")
+	cmd := exec.CommandContext(ctx, "helm", "upgrade", "--install", release, chart, "--namespace", namespace, "--create-namespace") // #nosec G204 -- arguments are manager-defined constants
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -144,7 +144,7 @@ func (i *Installer) runHelmRemote(ctx context.Context, component, namespace stri
 	if meta.Version != "" {
 		args = append(args, "--version", meta.Version)
 	}
-	cmd := exec.CommandContext(ctx, "helm", args...)
+	cmd := exec.CommandContext(ctx, "helm", args...) // #nosec G204 -- arguments are manager-defined constants
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
