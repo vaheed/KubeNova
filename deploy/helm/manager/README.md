@@ -9,7 +9,7 @@ helm upgrade --install manager kubenova/manager \
   --set image.tag=latest \
   --set env.KUBENOVA_REQUIRE_AUTH=true \
   --set env.MANAGER_URL_PUBLIC=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
-  --set env.AGENT_IMAGE=ghcr.io/vaheed/kubenova/agent:latest
+  --set env.AGENT_IMAGE=ghcr.io/vaheed/kubenova/kubenova-agent:latest
 ```
 
 JWT Signing Key

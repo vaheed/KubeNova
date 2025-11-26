@@ -20,7 +20,10 @@ func init() {
 // It uses zap's production configuration for consistent structured output.
 func Init() {
 	once.Do(func() {
-		logger, err := zap.NewProduction()
+		cfg := zap.NewProductionConfig()
+		cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+		cfg.Sampling = nil
+		logger, err := cfg.Build()
 		if err != nil {
 			panic(err)
 		}

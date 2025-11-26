@@ -1,6 +1,6 @@
 image:
-  repository: ghcr.io/vaheed/kubenova/operator
-  tag: latest
+  repository: ghcr.io/vaheed/kubenova/kubenova-operator
+  tag: dev
   pullPolicy: IfNotPresent
 
 resources:

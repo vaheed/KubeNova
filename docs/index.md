@@ -66,7 +66,7 @@ The kubeconfig must stay base64-encoded so the payload preserves the embedded
 `clusters[].cluster.server`, certificates, and tokens. After the manager
 decodes the kubeconfig it:
 
-1. Provisions the `ghcr.io/vaheed/kubenova-operator` deployment into the
+1. Provisions the `ghcr.io/vaheed/kubenova/kubenova-operator` deployment into the
    registered cluster.
 2. The operator immediately runs the bootstrap job that installs
    cert-manager, Capsule, Capsule Proxy, and KubeVela (using Helm),
@@ -120,11 +120,11 @@ curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/project
     "name": "api",
     "description": "API service",
     "component": "web",
-    "image": "ghcr.io/vaheed/kubenova-manager:latest",
+    "image": "ghcr.io/vaheed/kubenova/kubenova-manager:dev",
     "spec": {
       "type":"webservice",
       "properties":{
-        "image":"ghcr.io/vaheed/kubenova-manager:latest",
+        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:dev",
         "port":8080
       }
     },
@@ -154,7 +154,7 @@ curl -s -X PUT "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects
     "spec": {
       "type":"webservice",
       "properties":{
-        "image":"ghcr.io/vaheed/kubenova-manager:v2",
+        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:dev",
         "port":8080
       }
     }

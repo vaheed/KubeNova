@@ -705,11 +705,11 @@ paths:
                   name: api
                   description: API service
                   component: web
-                  image: ghcr.io/vaheed/kubenova-manager:latest
+                  image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                   spec:
                     type: webservice
                     properties:
-                      image: ghcr.io/vaheed/kubenova-manager:latest
+                      image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                       port: 8080
                   traits:
                     - type: scaler
@@ -759,11 +759,11 @@ paths:
                 name: api
                 description: API service
                 component: web
-                image: ghcr.io/vaheed/kubenova-manager:latest
+                image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                 spec:
                   type: webservice
                   properties:
-                    image: ghcr.io/vaheed/kubenova-manager:latest
+                    image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                     port: 8080
                 traits:
                   - type: scaler
@@ -803,11 +803,11 @@ paths:
                 name: api
                 description: API service
                 component: web
-                image: ghcr.io/vaheed/kubenova-manager:v2
+                image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                 spec:
                   type: webservice
                   properties:
-                    image: ghcr.io/vaheed/kubenova-manager:v2
+                    image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                     port: 8080
                 traits:
                   - type: scaler
@@ -835,7 +835,7 @@ paths:
               spec:
                 type: webservice
                 properties:
-                  image: ghcr.io/vaheed/kubenova-manager:v2
+                  image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                   port: 8080
       responses:
         '200':
@@ -852,11 +852,11 @@ paths:
                 name: api
                 description: API service v2
                 component: web
-                image: ghcr.io/vaheed/kubenova-manager:v2
+                image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                 spec:
                   type: webservice
                   properties:
-                    image: ghcr.io/vaheed/kubenova-manager:v2
+                    image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                     port: 8080
                 traits:
                   - type: scaler
@@ -1003,14 +1003,14 @@ paths:
                   spec:
                     type: webservice
                     properties:
-                      image: ghcr.io/vaheed/kubenova-manager:latest
+                      image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                       port: 8080
                   createdAt: 2024-01-01T00:15:00Z
                 - number: 2
                   spec:
                     type: webservice
                     properties:
-                      image: ghcr.io/vaheed/kubenova-manager:v2
+                      image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
                       port: 8080
                   createdAt: 2024-01-01T00:25:00Z
   /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/diff/{revA}/{revB}:

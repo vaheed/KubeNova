@@ -52,6 +52,7 @@ const (
 	envBootstrapKubeVela     = "BOOTSTRAP_KUBEVELA"
 	envBootstrapVelaux       = "BOOTSTRAP_VELAUX"
 	envBootstrapFluxCD       = "BOOTSTRAP_FLUXCD"
+	envReconcileInterval     = "COMPONENT_RECONCILE_SECONDS"
 )
 
 // NewInstaller returns a new Installer instance.
@@ -93,10 +94,28 @@ func (i *Installer) Bootstrap(ctx context.Context, component string) error {
 		logging.L.Info("bootstrap_component_skipped", zap.String("component", component))
 		return nil
 	}
+	return i.bootstrapAndSummarize(ctx, component)
+}
+
+// Reconcile ensures the desired state for a component; when disabled it uninstalls.
+func (i *Installer) Reconcile(ctx context.Context, component string) error {
+	if i.shouldBootstrap(component) {
+		return i.bootstrapAndSummarize(ctx, component)
+	}
+	if err := i.uninstall(ctx, component); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (i *Installer) bootstrapAndSummarize(ctx context.Context, component string) error {
+	start := time.Now()
+	meta := i.componentMeta(component)
 	if component == "velaux" || component == "fluxcd" {
 		if err := i.enableVelaAddon(ctx, component); err != nil {
 			return err
 		}
+		i.logSummary(component, meta, start, "enabled")
 		return i.waitForComponent(ctx, component)
 	}
 	// Ensure namespace
@@ -117,7 +136,11 @@ func (i *Installer) Bootstrap(ctx context.Context, component string) error {
 		return i.waitForComponent(ctx, component)
 	}
 	// Fallback: record intent via ConfigMap so we can track bootstrap progress.
-	return i.ensurePlaceholder(ctx, component)
+	if err := i.ensurePlaceholder(ctx, component); err != nil {
+		return err
+	}
+	i.logSummary(component, meta, start, "placeholder")
+	return nil
 }
 
 // RenderManifest returns a placeholder manifest for the requested component.
@@ -528,4 +551,73 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", tmp.Name()))
 	return cmd.Run()
+}
+
+func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
+	kcfg, err := i.kubeconfigBytes()
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp("", "kubenova-kubeconfig-*.yaml")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(kcfg); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	args := []string{"addon", "disable", addon, "--yes"}
+	// #nosec G204 -- command and args are controlled internally for trusted addons
+	cmd := exec.CommandContext(ctx, "vela", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", tmp.Name()))
+	return cmd.Run()
+}
+
+func (i *Installer) uninstall(ctx context.Context, component string) error {
+	start := time.Now()
+	meta := i.componentMeta(component)
+	var err error
+	if component == "velaux" || component == "fluxcd" {
+		err = i.disableVelaAddon(ctx, component)
+	} else {
+		err = i.runHelmUninstall(ctx, component)
+	}
+	if err != nil {
+		logging.L.Error("bootstrap_component_uninstall_failed", zap.String("component", component), zap.Error(err))
+		return err
+	}
+	i.logSummary(component, meta, start, "uninstalled")
+	return nil
+}
+
+func (i *Installer) runHelmUninstall(ctx context.Context, release string) error {
+	args := []string{"uninstall", release, "--namespace", "kubenova-system"}
+	cmd, cleanup, err := i.prepareHelmCommand(ctx, args...)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	return cmd.Run()
+}
+
+func (i *Installer) logSummary(component string, meta *repoMeta, start time.Time, action string) {
+	elapsed := time.Since(start)
+	repo := ""
+	version := ""
+	if meta != nil {
+		repo = meta.Repo
+		version = meta.Version
+	}
+	logging.L.Info("bootstrap_component_summary",
+		zap.String("component", component),
+		zap.String("action", action),
+		zap.String("repo", repo),
+		zap.String("version", version),
+		zap.Duration("duration", elapsed),
+	)
 }

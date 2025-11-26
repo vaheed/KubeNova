@@ -6,7 +6,7 @@ This checklist exercises the manager/operator bootstrap and upgrade paths for ce
 - Docker + docker-compose, kind (provided via `docker-compose.dev.yml`).
 - Built images:
   - Manager: `docker compose -f docker-compose.dev.yml build manager`
-  - Operator: `docker build -t ghcr.io/vaheed/kubenova/operator:latest -f build/Dockerfile.operator .` and `kind load docker-image ... --name nova`
+- Operator: `docker build -t ghcr.io/vaheed/kubenova/kubenova-operator:latest -f build/Dockerfile.operator .` and `kind load docker-image ... --name nova`
 - Env overrides (optional): set in `.env`
   - `CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `FLUXCD_VERSION`
   - `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` if needed for Helm.

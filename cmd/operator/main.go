@@ -77,6 +77,12 @@ func main() {
 		if err := reconcile.BootstrapHelmJob(ctx, mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme()); err != nil {
 			logging.L.Error("bootstrap error", zap.Error(err))
 		}
+		interval := time.Duration(getEnvInt("COMPONENT_RECONCILE_SECONDS", 300)) * time.Second
+		go func() {
+			if err := reconcile.PeriodicComponentReconciler(ctx, mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), interval); err != nil && ctx.Err() == nil {
+				logging.L.Error("component_reconcile_loop_failed", zap.Error(err))
+			}
+		}()
 		return nil
 	})); err != nil {
 		logging.L.Fatal("bootstrap runnable", zap.Error(err))
