@@ -163,9 +163,9 @@ jobs:
           fi
           echo "Pushing platforms: ${PLATFORMS} tag: ${IMG_TAG}"
           docker buildx build --platform "${PLATFORMS}" \
-            -t ghcr.io/vaheed/kubenova/manager:${IMG_TAG} --push -f build/Dockerfile.manager .
+            -t ghcr.io/vaheed/kubenova/kubenova-manager:${IMG_TAG} --push -f build/Dockerfile.manager .
           docker buildx build --platform "${PLATFORMS}" \
-            -t ghcr.io/vaheed/kubenova/operator:${IMG_TAG} --push -f build/Dockerfile.operator .
+            -t ghcr.io/vaheed/kubenova/kubenova-operator:${IMG_TAG} --push -f build/Dockerfile.operator .
 
   charts_push_oci:
     runs-on: ubuntu-latest
@@ -205,7 +205,7 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          REPO="oci://ghcr.io/${OWNER}/kubenova-charts"
+          REPO="oci://ghcr.io/${OWNER}/kubenova/charts"
           for f in out/*.tgz; do echo pushing "$f"; helm push "$f" "$REPO"; done
       - name: Setup ORAS CLI
         uses: oras-project/setup-oras@v1
@@ -220,8 +220,8 @@ jobs:
           for f in out/*.tgz; do
             name=$(helm show chart "$f" | awk -F': ' '/^name:/{print $2; exit}')
             ver=$(helm show chart "$f" | awk -F': ' '/^version:/{print $2; exit}')
-            src="ghcr.io/${OWNER}/kubenova-charts/${name}:${ver}"
-            if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova-charts/${name}:dev"; else dst="ghcr.io/${OWNER}/kubenova-charts/${name}:latest"; fi
+            src="ghcr.io/${OWNER}/kubenova/charts/${name}:${ver}"
+            if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova/charts/${name}:dev"; else dst="ghcr.io/${OWNER}/kubenova/charts/${name}:latest"; fi
             echo "Tagging $src -> $dst"
             oras copy "$src" "$dst"
           done
@@ -236,8 +236,8 @@ jobs:
           for f in out/*.tgz; do
             name=$(helm show chart "$f" | awk -F': ' '/^name:/{print $2; exit}')
             ver=$(helm show chart "$f" | awk -F': ' '/^version:/{print $2; exit}')
-            src="ghcr.io/${OWNER}/kubenova-charts/${name}:${ver}"
-            dst="ghcr.io/${OWNER}/kubenova-charts/${name}:${TAG}"
+            src="ghcr.io/${OWNER}/kubenova/charts/${name}:${ver}"
+            dst="ghcr.io/${OWNER}/kubenova/charts/${name}:${TAG}"
             echo "Tagging $src -> $dst"
             oras copy "$src" "$dst"
           done
