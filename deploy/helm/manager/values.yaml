@@ -5,7 +5,6 @@ image:
 
 env:
   KUBENOVA_REQUIRE_AUTH: "true"
-  AGENT_IMAGE: ghcr.io/vaheed/kubenova/kubenova-agent:dev
   MANAGER_URL_PUBLIC: http://kubenova-manager.kubenova-system.svc.cluster.local:8080
 
 # JWT signing key configuration
