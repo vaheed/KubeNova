@@ -12,6 +12,7 @@ helm upgrade --install operator kubenova/operator \
   --set bootstrap.capsuleVersion=0.10.6 \
   --set bootstrap.capsuleProxyVersion=0.9.13
 ```
+The chart bundles the NovaTenant/NovaProject/NovaApp CRDs under `crds/` so no extra `kubectl apply -k deploy/crds` step is required.
 
 Values
 - `image.repository` (string) – container registry repo
@@ -26,4 +27,3 @@ Values
 - `bootstrap.capsuleVersion` (string)
 - `bootstrap.capsuleProxyVersion` (string)
 - `bootstrap.velaCoreVersion` (string)
-

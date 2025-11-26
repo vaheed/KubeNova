@@ -152,9 +152,7 @@ paths:
             example:
               name: prod-a
               datacenter: eu-west
-              kubeconfig: |
-                apiVersion: v1
-                clusters: [...]
+              kubeconfig: YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIGNsdXN0ZXI6CiAgICBzZXJ2ZXI6IGh0dHBzOi8vMS4yLjMuNDo2NDQzCiAgICBpbnNlY3VyZS1za2lwLXRscy12ZXJpZnk6IHRydWUKICBuYW1lOiBkZXYKY29udGV4dHM6Ci0gY29udGV4dDoKICAgIGNsdXN0ZXI6IGRldgogICAgdXNlcjogZGV2CiAgbmFtZTogZGV2CmN1cnJlbnQtY29udGV4dDogZGV2CnVzZXJzOgotIG5hbWU6IGRldgogIHVzZXI6CiAgICB0b2tlbjogcGxhY2Vob2xkZXIK
               labels:
                 region: eu-west
       responses:
@@ -707,11 +705,11 @@ paths:
                   name: api
                   description: API service
                   component: web
-                  image: ghcr.io/vaheed/api:latest
+                  image: ghcr.io/vaheed/kubenova-manager:latest
                   spec:
                     type: webservice
                     properties:
-                      image: ghcr.io/vaheed/api:latest
+                      image: ghcr.io/vaheed/kubenova-manager:latest
                       port: 8080
                   traits:
                     - type: scaler
@@ -761,11 +759,11 @@ paths:
                 name: api
                 description: API service
                 component: web
-                image: ghcr.io/vaheed/api:latest
+                image: ghcr.io/vaheed/kubenova-manager:latest
                 spec:
                   type: webservice
                   properties:
-                    image: ghcr.io/vaheed/api:latest
+                    image: ghcr.io/vaheed/kubenova-manager:latest
                     port: 8080
                 traits:
                   - type: scaler
@@ -805,11 +803,11 @@ paths:
                 name: api
                 description: API service
                 component: web
-                image: ghcr.io/vaheed/api:v2
+                image: ghcr.io/vaheed/kubenova-manager:v2
                 spec:
                   type: webservice
                   properties:
-                    image: ghcr.io/vaheed/api:v2
+                    image: ghcr.io/vaheed/kubenova-manager:v2
                     port: 8080
                 traits:
                   - type: scaler
@@ -837,7 +835,7 @@ paths:
               spec:
                 type: webservice
                 properties:
-                  image: ghcr.io/vaheed/api:v2
+                  image: ghcr.io/vaheed/kubenova-manager:v2
                   port: 8080
       responses:
         '200':
@@ -854,11 +852,11 @@ paths:
                 name: api
                 description: API service v2
                 component: web
-                image: ghcr.io/vaheed/api:v2
+                image: ghcr.io/vaheed/kubenova-manager:v2
                 spec:
                   type: webservice
                   properties:
-                    image: ghcr.io/vaheed/api:v2
+                    image: ghcr.io/vaheed/kubenova-manager:v2
                     port: 8080
                 traits:
                   - type: scaler
@@ -1005,14 +1003,14 @@ paths:
                   spec:
                     type: webservice
                     properties:
-                      image: ghcr.io/vaheed/api:latest
+                      image: ghcr.io/vaheed/kubenova-manager:latest
                       port: 8080
                   createdAt: 2024-01-01T00:15:00Z
                 - number: 2
                   spec:
                     type: webservice
                     properties:
-                      image: ghcr.io/vaheed/api:v2
+                      image: ghcr.io/vaheed/kubenova-manager:v2
                       port: 8080
                   createdAt: 2024-01-01T00:25:00Z
   /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/diff/{revA}/{revB}:
@@ -1284,7 +1282,7 @@ components:
           type: string
         kubeconfig:
           type: string
-          description: Base64 or inline kubeconfig content used for bootstrap
+          description: Base64-encoded kubeconfig payload (inline YAML is accepted for compatibility but is deprecated)
         labels:
           type: object
           additionalProperties:

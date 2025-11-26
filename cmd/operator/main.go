@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -12,6 +13,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/vaheed/kubenova/internal/logging"
@@ -68,15 +70,20 @@ func main() {
 	telemetry.SetGlobal(buf)
 	buf.Enqueue("events", map[string]string{"event": "operator_started"})
 
-	// Single shared context for shutdown
-	ctx := ctrl.SetupSignalHandler()
-
-	// Bootstrap addons via a Helm job if not present; then verify readiness
-	go func() {
-		if err := reconcile.BootstrapHelmJob(ctx, mgr.GetClient(), mgr.GetScheme()); err != nil {
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		if !mgr.GetCache().WaitForCacheSync(ctx) {
+			return fmt.Errorf("manager cache failed to sync")
+		}
+		if err := reconcile.BootstrapHelmJob(ctx, mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme()); err != nil {
 			logging.L.Error("bootstrap error", zap.Error(err))
 		}
-	}()
+		return nil
+	})); err != nil {
+		logging.L.Fatal("bootstrap runnable", zap.Error(err))
+	}
+
+	// Single shared context for shutdown
+	ctx := ctrl.SetupSignalHandler()
 
 	logging.L.Info("KubeNova Operator starting manager")
 	if err := mgr.Start(ctx); err != nil {

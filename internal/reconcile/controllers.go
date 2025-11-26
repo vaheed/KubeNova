@@ -18,8 +18,10 @@ import (
 	proxybackend "github.com/vaheed/kubenova/internal/backends/proxy"
 	velabackend "github.com/vaheed/kubenova/internal/backends/vela"
 	"github.com/vaheed/kubenova/internal/cluster"
+	"github.com/vaheed/kubenova/internal/logging"
 	v1alpha1 "github.com/vaheed/kubenova/pkg/api/v1alpha1"
 	"github.com/vaheed/kubenova/pkg/types"
+	"go.uber.org/zap"
 )
 
 // ProjectReconciler watches NovaProjects and ensures namespaces exist.
@@ -211,13 +213,15 @@ func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // BootstrapHelmJob installs foundational components (cert-manager, capsule, capsule-proxy, kubevela).
-func BootstrapHelmJob(ctx context.Context, c client.Client, scheme *runtime.Scheme) error {
-	installer := cluster.NewInstaller(c, scheme, nil)
-	components := []string{"cert-manager", "capsule", "capsule-proxy", "kubevela"}
+func BootstrapHelmJob(ctx context.Context, c client.Client, reader client.Reader, scheme *runtime.Scheme) error {
+	installer := cluster.NewInstaller(c, scheme, nil, reader, false)
+	components := []string{"cert-manager", "capsule", "capsule-proxy", "kubevela", "velaux", "fluxcd"}
 	for _, comp := range components {
+		logging.L.Info("bootstrap_component_start", zap.String("component", comp))
 		if err := installer.Bootstrap(ctx, comp); err != nil {
 			return fmt.Errorf("bootstrap %s: %w", comp, err)
 		}
+		logging.L.Info("bootstrap_component_ready", zap.String("component", comp))
 	}
 	return nil
 }

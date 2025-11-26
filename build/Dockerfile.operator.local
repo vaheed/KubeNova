@@ -1,0 +1,5 @@
+FROM gcr.io/distroless/base-debian12
+WORKDIR /
+COPY .bin/operator /operator
+USER 65532:65532
+ENTRYPOINT ["/operator"]

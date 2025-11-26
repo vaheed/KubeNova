@@ -74,6 +74,12 @@ decodes the kubeconfig it:
 
 No additional manual install steps are required for those dependencies.
 
+Check registration state (mirrors the e2e test) by listing clusters:
+```bash
+curl -s "$KN_HOST/api/v1/clusters" \
+  -H "Authorization: Bearer $KN_TOKEN"
+```
+
 ## 4) Create a tenant (owners, plan, quotas)
 ```bash
 CLUSTER_ID="<cluster-id>"
@@ -148,7 +154,7 @@ curl -s -X PUT "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects
     "spec": {
       "type":"webservice",
       "properties":{
-        "image":"ghcr.io/vaheed/api:v2",
+        "image":"ghcr.io/vaheed/kubenova-manager:v2",
         "port":8080
       }
     }

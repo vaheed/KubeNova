@@ -355,6 +355,10 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 	_ = s.store.UpdateCluster(r.Context(), cluster)
 	go func(c *types.Cluster) {
 		if err := s.installOperator(context.Background(), c); err != nil {
+			logging.L.Error("operator_install_failed",
+				zap.String("cluster_id", c.ID),
+				zap.Error(err),
+			)
 			c.Status = "error"
 		} else {
 			c.Status = "connected"
@@ -1446,7 +1450,7 @@ func (s *Server) installOperator(ctx context.Context, c *types.Cluster) error {
 	if err != nil {
 		return fmt.Errorf("build client: %w", err)
 	}
-	installer := cluster.NewInstaller(cli, scheme, []byte(c.Kubeconfig))
+	installer := cluster.NewInstaller(cli, scheme, []byte(c.Kubeconfig), nil, false)
 	if err := installer.Bootstrap(ctx, "operator"); err != nil {
 		return err
 	}

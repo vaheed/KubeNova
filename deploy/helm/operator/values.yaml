@@ -1,7 +1,15 @@
 image:
   repository: ghcr.io/vaheed/kubenova/operator
-  tag: dev
-  pullPolicy: Always
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 
 redis:
   enabled: true
