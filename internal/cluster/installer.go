@@ -437,7 +437,8 @@ func (i *Installer) shouldBootstrap(component string) bool {
 	case "kubevela":
 		return parseBoolWithDefault(envBootstrapKubeVela, true)
 	case "velaux":
-		return parseBoolWithDefault(envBootstrapVelaux, false)
+		logging.L.Info("bootstrap_component_skipped", zap.String("component", component), zap.String("reason", "velaux requires vela CLI addon enable"))
+		return false
 	case "fluxcd":
 		return parseBoolWithDefault(envBootstrapFluxCD, true)
 	default:
