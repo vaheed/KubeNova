@@ -41,5 +41,6 @@ Scope: Entire repository.
 ## Helpful Commands
 - Unit: `make test-unit`
 - Docs: `make docs-build`
+- Upgrade/Bootstrap validation: see `docs/testing/upgrade-playbook.md` for end-to-end steps (compose up, register cluster, verify cert-manager/capsule/capsule-proxy/KubeVela/VelaUX/FluxCD, load balancer check for capsule-proxy, certificate renewal).
 
 By committing, an agent asserts the checklist has been followed.
