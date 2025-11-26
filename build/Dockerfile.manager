@@ -1,12 +1,3 @@
-ARG HELM_VERSION=v3.16.2
-
-FROM alpine:3.20 AS helm
-ARG HELM_VERSION
-RUN apk add --no-cache curl tar
-RUN curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz -o /tmp/helm.tgz \
-    && tar -C /tmp -zxvf /tmp/helm.tgz linux-amd64/helm \
-    && mv /tmp/linux-amd64/helm /helm
-
 FROM golang:1.24 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -17,8 +8,6 @@ RUN CGO_ENABLED=0 go build -o /out/manager ./cmd/manager
 FROM gcr.io/distroless/base-debian12
 WORKDIR /
 COPY --from=builder /out/manager /manager
-COPY --from=builder /src/deploy/helm/operator /charts/operator
-COPY --from=helm /helm /usr/local/bin/helm
 EXPOSE 8080
 USER 65532:65532
 ENTRYPOINT ["/manager"]
