@@ -41,6 +41,7 @@ const (
 	envCapsuleVersion        = "CAPSULE_VERSION"
 	envCapsuleProxyVersion   = "CAPSULE_PROXY_VERSION"
 	envVelaVersion           = "VELA_VERSION"
+	envFluxVersion           = "FLUXCD_VERSION"
 )
 
 // NewInstaller returns a new Installer instance.
@@ -315,7 +316,7 @@ func (i *Installer) waitForReady(ctx context.Context, component string) error {
 	var dep appsv1.Deployment
 	key := client.ObjectKey{Name: deploy, Namespace: "kubenova-system"}
 	reader := i.statusReader()
-	timeout := time.After(2 * time.Minute)
+	timeout := time.After(5 * time.Minute)
 	tick := time.Tick(5 * time.Second)
 	for {
 		select {
@@ -370,12 +371,18 @@ func (i *Installer) versionOverride(component, fallback string) string {
 		if v := os.Getenv(envVelaVersion); v != "" {
 			return v
 		}
+	case "fluxcd":
+		if v := os.Getenv(envFluxVersion); v != "" {
+			return v
+		}
 	}
 	return fallback
 }
 
 func (i *Installer) componentSetFlags(component string) []string {
 	switch component {
+	case "cert-manager":
+		return []string{"--set", "installCRDs=true"}
 	case "capsule-proxy":
 		return []string{"--set", "service.type=LoadBalancer"}
 	default:
@@ -392,7 +399,11 @@ func deploymentName(component string) string {
 	case "capsule-proxy":
 		return "capsule-proxy"
 	case "kubevela":
-		return "vela-core"
+		return "kubevela-vela-core"
+	case "velaux":
+		return "velaux"
+	case "fluxcd":
+		return "helm-controller"
 	case "operator":
 		return "kubenova-operator"
 	default:
