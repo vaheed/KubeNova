@@ -42,6 +42,15 @@ const (
 	envCapsuleProxyVersion   = "CAPSULE_PROXY_VERSION"
 	envVelaVersion           = "VELA_VERSION"
 	envFluxVersion           = "FLUXCD_VERSION"
+	envVelauxVersion         = "VELAUX_VERSION"
+	envVelauxRepo            = "VELAUX_REPO"
+	envFluxRepo              = "FLUXCD_REPO"
+	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
+	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
+	envBootstrapCapsuleProxy = "BOOTSTRAP_CAPSULE_PROXY"
+	envBootstrapKubeVela     = "BOOTSTRAP_KUBEVELA"
+	envBootstrapVelaux       = "BOOTSTRAP_VELAUX"
+	envBootstrapFluxCD       = "BOOTSTRAP_FLUXCD"
 )
 
 // NewInstaller returns a new Installer instance.
@@ -78,6 +87,10 @@ func NewInstaller(c client.Client, scheme *runtime.Scheme, kubeconfig []byte, re
 func (i *Installer) Bootstrap(ctx context.Context, component string) error {
 	if i.Client == nil {
 		return fmt.Errorf("bootstrap: client is nil")
+	}
+	if !i.shouldBootstrap(component) {
+		logging.L.Info("bootstrap_component_skipped", zap.String("component", component))
+		return nil
 	}
 	// Ensure namespace
 	if err := i.ensureNamespace(ctx, "kubenova-system"); err != nil {
@@ -171,8 +184,8 @@ func (i *Installer) runHelmLocal(ctx context.Context, release, chart, namespace 
 }
 
 func (i *Installer) runHelmRemote(ctx context.Context, component, namespace string) error {
-	meta, ok := componentRepos[component]
-	if !ok {
+	meta := i.componentMeta(component)
+	if meta == nil {
 		return fmt.Errorf("no remote repo for component %s", component)
 	}
 	args := []string{"upgrade", "--install", component, meta.Chart, "--namespace", namespace, "--create-namespace", "--repo", meta.Repo}
@@ -371,6 +384,11 @@ func (i *Installer) versionOverride(component, fallback string) string {
 		if v := os.Getenv(envVelaVersion); v != "" {
 			return v
 		}
+		if component == "velaux" {
+			if v := os.Getenv(envVelauxVersion); v != "" {
+				return v
+			}
+		}
 	case "fluxcd":
 		if v := os.Getenv(envFluxVersion); v != "" {
 			return v
@@ -387,6 +405,43 @@ func (i *Installer) componentSetFlags(component string) []string {
 		return []string{"--set", "service.type=LoadBalancer"}
 	default:
 		return nil
+	}
+}
+
+func (i *Installer) componentMeta(component string) *repoMeta {
+	meta, ok := componentRepos[component]
+	if !ok {
+		return nil
+	}
+	switch component {
+	case "velaux":
+		if repo := os.Getenv(envVelauxRepo); repo != "" {
+			meta.Repo = repo
+		}
+	case "fluxcd":
+		if repo := os.Getenv(envFluxRepo); repo != "" {
+			meta.Repo = repo
+		}
+	}
+	return &meta
+}
+
+func (i *Installer) shouldBootstrap(component string) bool {
+	switch component {
+	case "cert-manager":
+		return parseBoolWithDefault(envBootstrapCertManager, true)
+	case "capsule":
+		return parseBoolWithDefault(envBootstrapCapsule, true)
+	case "capsule-proxy":
+		return parseBoolWithDefault(envBootstrapCapsuleProxy, true)
+	case "kubevela":
+		return parseBoolWithDefault(envBootstrapKubeVela, true)
+	case "velaux":
+		return parseBoolWithDefault(envBootstrapVelaux, false)
+	case "fluxcd":
+		return parseBoolWithDefault(envBootstrapFluxCD, true)
+	default:
+		return true
 	}
 }
 
@@ -422,7 +477,7 @@ var componentRepos = map[string]repoMeta{
 	"capsule":       {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule", Version: "0.5.3"},
 	"capsule-proxy": {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule-proxy", Version: "0.9.13"},
 	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.9.11"},
-	"velaux":        {Repo: "https://kubevela.github.io/charts", Chart: "velaux", Version: "1.9.11"},
+	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.9.5"},
 	"fluxcd":        {Repo: "https://fluxcd-community.github.io/helm-charts", Chart: "flux2", Version: "2.12.2"},
 }
 
@@ -433,4 +488,12 @@ func parseBool(v string) bool {
 	default:
 		return false
 	}
+}
+
+func parseBoolWithDefault(envKey string, def bool) bool {
+	raw := os.Getenv(envKey)
+	if raw == "" {
+		return def
+	}
+	return parseBool(raw)
 }

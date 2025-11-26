@@ -10,6 +10,7 @@ This checklist exercises the manager/operator bootstrap and upgrade paths for ce
 - Env overrides (optional): set in `.env`
   - `CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `FLUXCD_VERSION`
   - `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` if needed for Helm.
+  - Component toggles/repo overrides: `BOOTSTRAP_*` flags, `VELAUX_VERSION`, `VELAUX_REPO`, `FLUXCD_REPO`
 
 ## Fresh start
 ```bash
