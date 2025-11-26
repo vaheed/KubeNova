@@ -1,4 +1,5 @@
 ARG HELM_VERSION=v3.15.2
+ARG VELA_CLI_VERSION=1.9.11
 
 FROM alpine:3.20 AS helm
 ARG HELM_VERSION
@@ -6,6 +7,13 @@ RUN apk add --no-cache curl tar
 RUN curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz -o /tmp/helm.tgz \
     && tar -C /tmp -zxvf /tmp/helm.tgz linux-amd64/helm \
     && mv /tmp/linux-amd64/helm /helm
+
+FROM alpine:3.20 AS vela
+ARG VELA_CLI_VERSION
+RUN apk add --no-cache curl tar
+RUN curl -fsSL https://github.com/kubevela/kubevela/releases/download/v${VELA_CLI_VERSION}/vela-v${VELA_CLI_VERSION}-linux-amd64.tar.gz -o /tmp/vela.tgz \
+    && tar -C /tmp -zxvf /tmp/vela.tgz vela-v${VELA_CLI_VERSION}-linux-amd64/vela \
+    && mv /tmp/vela-v${VELA_CLI_VERSION}-linux-amd64/vela /vela
 
 FROM golang:1.24 AS builder
 WORKDIR /src
@@ -18,5 +26,6 @@ FROM gcr.io/distroless/base-debian12
 WORKDIR /
 COPY --from=builder /out/operator /operator
 COPY --from=helm /helm /usr/local/bin/helm
+COPY --from=vela /vela /usr/local/bin/vela
 USER 65532:65532
 ENTRYPOINT ["/operator"]

@@ -35,15 +35,15 @@ curl -s http://localhost:8080/api/v1/clusters
 docker exec kubenova-kind-1 kubectl --kubeconfig /kubeconfig/config -n kubenova-system get deployments
 docker exec kubenova-kind-1 kubectl --kubeconfig /kubeconfig/config -n kubenova-system get secrets | grep sh.helm
 ```
-Expected deployments (Ready): `cert-manager`, `cert-manager-cainjector`, `cert-manager-webhook`, `capsule-controller-manager`, `capsule-proxy`, `vela-core`, `fluxcd`, `kubenova-operator`.
+Expected deployments (Ready): `cert-manager`, `cert-manager-cainjector`, `cert-manager-webhook`, `capsule-controller-manager`, `capsule-proxy`, `vela-core`, `fluxcd` (controllers), `kubenova-operator`.
 
 capsule-proxy must be `Service type=LoadBalancer`:
 ```bash
 docker exec kubenova-kind-1 kubectl --kubeconfig /kubeconfig/config -n kubenova-system get svc capsule-proxy -o jsonpath='{.spec.type}'
 ```
 
-### VelaUX install (CLI-only)
-VelaUX is not installed via Helm. Run it from a node with `vela` and kubeconfig:
+### VelaUX install (via vela CLI)
+Operator image includes the `vela` CLI; bootstrap triggers `vela addon enable velaux` (can be disabled with `BOOTSTRAP_VELAUX=false`). To run manually from any node with kubeconfig:
 ```bash
 vela addon enable velaux
 kubectl -n vela-system get deployments  # wait for velaux to be Ready

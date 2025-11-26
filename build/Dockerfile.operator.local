@@ -1,5 +1,15 @@
+ARG VELA_CLI_VERSION=1.9.11
+
+FROM alpine:3.20 AS vela
+ARG VELA_CLI_VERSION
+RUN apk add --no-cache curl tar
+RUN curl -fsSL https://github.com/kubevela/kubevela/releases/download/v${VELA_CLI_VERSION}/vela-v${VELA_CLI_VERSION}-linux-amd64.tar.gz -o /tmp/vela.tgz \
+    && tar -C /tmp -zxvf /tmp/vela.tgz vela-v${VELA_CLI_VERSION}-linux-amd64/vela \
+    && mv /tmp/vela-v${VELA_CLI_VERSION}-linux-amd64/vela /vela
+
 FROM gcr.io/distroless/base-debian12
 WORKDIR /
 COPY .bin/operator /operator
+COPY --from=vela /vela /usr/local/bin/vela
 USER 65532:65532
 ENTRYPOINT ["/operator"]

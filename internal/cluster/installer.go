@@ -45,6 +45,7 @@ const (
 	envVelauxVersion         = "VELAUX_VERSION"
 	envVelauxRepo            = "VELAUX_REPO"
 	envFluxRepo              = "FLUXCD_REPO"
+	envVelaCLIVersion        = "VELA_CLI_VERSION"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
 	envBootstrapCapsuleProxy = "BOOTSTRAP_CAPSULE_PROXY"
@@ -91,6 +92,12 @@ func (i *Installer) Bootstrap(ctx context.Context, component string) error {
 	if !i.shouldBootstrap(component) {
 		logging.L.Info("bootstrap_component_skipped", zap.String("component", component))
 		return nil
+	}
+	if component == "velaux" || component == "fluxcd" {
+		if err := i.enableVelaAddon(ctx, component); err != nil {
+			return err
+		}
+		return i.waitForComponent(ctx, component)
 	}
 	// Ensure namespace
 	if err := i.ensureNamespace(ctx, "kubenova-system"); err != nil {
@@ -437,8 +444,7 @@ func (i *Installer) shouldBootstrap(component string) bool {
 	case "kubevela":
 		return parseBoolWithDefault(envBootstrapKubeVela, true)
 	case "velaux":
-		logging.L.Info("bootstrap_component_skipped", zap.String("component", component), zap.String("reason", "velaux requires vela CLI addon enable"))
-		return false
+		return parseBoolWithDefault(envBootstrapVelaux, true)
 	case "fluxcd":
 		return parseBoolWithDefault(envBootstrapFluxCD, true)
 	default:
@@ -497,4 +503,29 @@ func parseBoolWithDefault(envKey string, def bool) bool {
 		return def
 	}
 	return parseBool(raw)
+}
+
+func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
+	kcfg, err := i.kubeconfigBytes()
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp("", "kubenova-kubeconfig-*.yaml")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(kcfg); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	args := []string{"addon", "enable", addon, "--yes"}
+	// #nosec G204 -- command and args are controlled internally for trusted addons
+	cmd := exec.CommandContext(ctx, "vela", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", tmp.Name()))
+	return cmd.Run()
 }
