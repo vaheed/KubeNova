@@ -12,8 +12,8 @@ FROM alpine:3.20 AS vela
 ARG VELA_CLI_VERSION
 RUN apk add --no-cache curl tar
 RUN curl -fsSL https://github.com/kubevela/kubevela/releases/download/v${VELA_CLI_VERSION}/vela-v${VELA_CLI_VERSION}-linux-amd64.tar.gz -o /tmp/vela.tgz \
-    && tar -C /tmp -zxvf /tmp/vela.tgz vela-v${VELA_CLI_VERSION}-linux-amd64/vela \
-    && mv /tmp/vela-v${VELA_CLI_VERSION}-linux-amd64/vela /vela
+    && tar -C /tmp -zxvf /tmp/vela.tgz linux-amd64/vela \
+    && mv /tmp/linux-amd64/vela /vela
 
 FROM golang:1.24 AS builder
 WORKDIR /src
