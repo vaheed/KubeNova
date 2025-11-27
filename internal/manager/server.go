@@ -29,11 +29,12 @@ import (
 )
 
 const (
-	version               = "0.0.1"
-	authContextKey        = contextKey("auth")
-	defaultTokenTTL       = 60 * time.Minute
-	maxBodyBytes    int64 = 1 << 20 // 1MB
-	otelServiceName       = "kubenova-manager"
+	version                   = "0.0.1"
+	authContextKey            = contextKey("auth")
+	defaultTokenTTL           = 60 * time.Minute
+	maxBodyBytes        int64 = 1 << 20 // 1MB
+	otelServiceName           = "kubenova-manager"
+	defaultCapsuleProxy       = "https://proxy.kubenova.local"
 )
 
 type contextKey string
@@ -345,12 +346,13 @@ func (s *Server) createCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	kubeconfig := normalizeKubeconfig(req.Kubeconfig)
 	cluster := &types.Cluster{
-		Name:         strings.TrimSpace(req.Name),
-		Datacenter:   req.Datacenter,
-		Labels:       req.Labels,
-		Kubeconfig:   kubeconfig,
-		Status:       "pending_bootstrap",
-		Capabilities: types.Capabilities{Capsule: true, CapsuleProxy: true, KubeVela: true},
+		Name:                 strings.TrimSpace(req.Name),
+		Datacenter:           req.Datacenter,
+		Labels:               req.Labels,
+		Kubeconfig:           kubeconfig,
+		CapsuleProxyEndpoint: strings.TrimSpace(req.CapsuleProxyEndpoint),
+		Status:               "pending_bootstrap",
+		Capabilities:         types.Capabilities{Capsule: true, CapsuleProxy: true, KubeVela: true},
 	}
 	if err := s.store.CreateCluster(r.Context(), cluster); err != nil {
 		if errors.Is(err, store.ErrConflict) {
@@ -668,9 +670,10 @@ func (s *Server) tenantKubeconfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "KN-404", "tenant not found")
 		return
 	}
+	base := s.clusterProxyBase(r.Context(), tenant.ClusterID)
 	writeJSON(w, http.StatusOK, map[string]string{
-		"owner":    fmt.Sprintf("https://proxy.kubenova.local/%s/owner", tenant.Name),
-		"readonly": fmt.Sprintf("https://proxy.kubenova.local/%s/readonly", tenant.Name),
+		"owner":    fmt.Sprintf("%s/%s/owner", base, tenant.Name),
+		"readonly": fmt.Sprintf("%s/%s/readonly", base, tenant.Name),
 	})
 }
 
@@ -849,9 +852,10 @@ func (s *Server) projectKubeconfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "KN-404", "tenant not found")
 		return
 	}
+	base := s.clusterProxyBase(r.Context(), tenant.ClusterID)
 	writeJSON(w, http.StatusOK, map[string]string{
 		"projectId":  projectID,
-		"kubeconfig": fmt.Sprintf("https://proxy.kubenova.local/%s/%s", tenant.Name, projectID),
+		"kubeconfig": fmt.Sprintf("%s/%s/%s", base, tenant.Name, projectID),
 	})
 }
 
@@ -1298,10 +1302,11 @@ type TokenResponse struct {
 }
 
 type ClusterRequest struct {
-	Name       string            `json:"name"`
-	Datacenter string            `json:"datacenter"`
-	Kubeconfig string            `json:"kubeconfig"`
-	Labels     map[string]string `json:"labels"`
+	Name                 string            `json:"name"`
+	Datacenter           string            `json:"datacenter"`
+	Kubeconfig           string            `json:"kubeconfig"`
+	Labels               map[string]string `json:"labels"`
+	CapsuleProxyEndpoint string            `json:"capsuleProxyEndpoint"`
 }
 
 type TenantRequest struct {
@@ -1411,6 +1416,21 @@ func (s *Server) findProject(ctx context.Context, projectID string) *types.Proje
 		}
 	}
 	return nil
+}
+
+func (s *Server) clusterProxyBase(ctx context.Context, clusterID string) string {
+	base := strings.TrimRight(defaultCapsuleProxy, "/")
+	if clusterID == "" {
+		return base
+	}
+	c, err := s.store.GetCluster(ctx, clusterID)
+	if err != nil || c == nil {
+		return base
+	}
+	if v := strings.TrimRight(strings.TrimSpace(c.CapsuleProxyEndpoint), "/"); v != "" {
+		return v
+	}
+	return base
 }
 
 func sanitizeCluster(c *types.Cluster) *types.Cluster {

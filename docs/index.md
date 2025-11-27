@@ -23,6 +23,9 @@ All examples use the v1 HTTP API defined in `docs/openapi/openapi.yaml` (v0.0.2)
   export KN_HOST=http://localhost:8080
   export KN_TOKEN="" # fill after step 1
   ```
+- The manager uses `MANAGER_URL` from its `.env` when installing the in-cluster
+  operator. Point it at the address the cluster can reach (for local Docker, often
+  `http://host.docker.internal:8080` or the host IP).
 - If auth is enabled, set `KUBENOVA_REQUIRE_AUTH=true` and `JWT_SIGNING_KEY` on the manager.
 
 ---
@@ -50,6 +53,7 @@ curl -s "$KN_HOST/api/v1/features"
 CLUSTER_NAME="dev-cluster"
 KUBECONFIG_FILE="kind/config"   # any kubeconfig with server / cert data
 KUBECONFIG_B64=$(base64 -w0 "$KUBECONFIG_FILE")
+CAPSULE_PROXY_ENDPOINT="https://proxy.dev.example.com"   # per-cluster Capsule Proxy URL
 
 curl -s -X POST "$KN_HOST/api/v1/clusters" \
   -H "Authorization: Bearer $KN_TOKEN" \
@@ -58,7 +62,8 @@ curl -s -X POST "$KN_HOST/api/v1/clusters" \
     \"name\": \"$CLUSTER_NAME\",
     \"datacenter\": \"dc1\",
     \"labels\": {\"env\": \"dev\"},
-    \"kubeconfig\": \"$KUBECONFIG_B64\"
+    \"kubeconfig\": \"$KUBECONFIG_B64\",
+    \"capsuleProxyEndpoint\": \"$CAPSULE_PROXY_ENDPOINT\"
   }"
 # capture the .id from the response into CLUSTER_ID
 ```
@@ -71,6 +76,10 @@ decodes the kubeconfig it:
 2. The operator immediately runs the bootstrap job that installs
    cert-manager, Capsule, Capsule Proxy, and KubeVela (using Helm),
    verifies they become Ready, and keeps the cluster status updated.
+
+The provided `capsuleProxyEndpoint` is stored with the cluster and used when
+returning tenant and project kubeconfig download URLs, so each cluster can
+advertise its own Capsule Proxy base address.
 
 No additional manual install steps are required for those dependencies.
 

@@ -45,6 +45,7 @@ const (
 	envVelauxVersion         = "VELAUX_VERSION"
 	envVelauxRepo            = "VELAUX_REPO"
 	envFluxRepo              = "FLUXCD_REPO"
+	envOperatorRepo          = "OPERATOR_REPO"
 	envVelaCLIVersion        = "VELA_CLI_VERSION"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
@@ -53,6 +54,7 @@ const (
 	envBootstrapVelaux       = "BOOTSTRAP_VELAUX"
 	envBootstrapFluxCD       = "BOOTSTRAP_FLUXCD"
 	envReconcileInterval     = "COMPONENT_RECONCILE_SECONDS"
+	envManagerURL            = "MANAGER_URL"
 )
 
 // NewInstaller returns a new Installer instance.
@@ -218,7 +220,19 @@ func (i *Installer) runHelmRemote(ctx context.Context, component, namespace stri
 	if meta == nil {
 		return fmt.Errorf("no remote repo for component %s", component)
 	}
-	args := []string{"upgrade", "--install", component, meta.Chart, "--namespace", namespace, "--create-namespace", "--repo", meta.Repo}
+	chartRef := meta.Chart
+	repo := meta.Repo
+	// Allow OCI registries that do not expose an index.
+	if strings.HasPrefix(meta.Chart, "oci://") {
+		repo = ""
+	} else if strings.HasPrefix(meta.Repo, "oci://") {
+		repo = ""
+		chartRef = strings.TrimSuffix(meta.Repo, "/") + "/" + strings.TrimPrefix(meta.Chart, "/")
+	}
+	args := []string{"upgrade", "--install", component, chartRef, "--namespace", namespace, "--create-namespace"}
+	if repo != "" {
+		args = append(args, "--repo", repo)
+	}
 	if version := i.versionOverride(component, meta.Version); version != "" {
 		args = append(args, "--version", version)
 	}
@@ -433,6 +447,11 @@ func (i *Installer) componentSetFlags(component string) []string {
 		return []string{"--set", "installCRDs=true"}
 	case "capsule-proxy":
 		return []string{"--set", "service.type=LoadBalancer"}
+	case "operator":
+		if url := strings.TrimSpace(os.Getenv(envManagerURL)); url != "" {
+			return []string{"--set", fmt.Sprintf("manager.url=%s", url)}
+		}
+		return nil
 	default:
 		return nil
 	}
@@ -450,6 +469,10 @@ func (i *Installer) componentMeta(component string) *repoMeta {
 		}
 	case "fluxcd":
 		if repo := os.Getenv(envFluxRepo); repo != "" {
+			meta.Repo = repo
+		}
+	case "operator":
+		if repo := os.Getenv(envOperatorRepo); repo != "" {
 			meta.Repo = repo
 		}
 	}
@@ -509,6 +532,7 @@ var componentRepos = map[string]repoMeta{
 	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.9.11"},
 	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.9.5"},
 	"fluxcd":        {Repo: "https://fluxcd-community.github.io/helm-charts", Chart: "flux2", Version: "2.12.2"},
+	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "0.0.1"},
 }
 
 func parseBool(v string) bool {

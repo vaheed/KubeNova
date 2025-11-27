@@ -11,9 +11,11 @@ type Cluster struct {
 	Kubeconfig    string            `json:"kubeconfig,omitempty"`
 	Status        string            `json:"status"`
 	NovaClusterID string            `json:"novaClusterId,omitempty"`
-	Capabilities  Capabilities      `json:"capabilities,omitempty"`
-	CreatedAt     time.Time         `json:"createdAt"`
-	UpdatedAt     time.Time         `json:"updatedAt"`
+	// CapsuleProxyEndpoint is the base URL for the cluster-specific Capsule Proxy instance.
+	CapsuleProxyEndpoint string       `json:"capsuleProxyEndpoint,omitempty"`
+	Capabilities         Capabilities `json:"capabilities,omitempty"`
+	CreatedAt            time.Time    `json:"createdAt"`
+	UpdatedAt            time.Time    `json:"updatedAt"`
 }
 
 // Capabilities captures optional cluster feature flags returned to clients.

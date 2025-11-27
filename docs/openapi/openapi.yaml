@@ -134,6 +134,7 @@ paths:
                   name: prod-a
                   datacenter: eu-west
                   status: pending_bootstrap
+                  capsuleProxyEndpoint: https://proxy.prod.example.com
                   capabilities:
                     capsule: true
                     capsuleProxy: true
@@ -152,6 +153,7 @@ paths:
             example:
               name: prod-a
               datacenter: eu-west
+              capsuleProxyEndpoint: https://proxy.prod.example.com
               kubeconfig: YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIGNsdXN0ZXI6CiAgICBzZXJ2ZXI6IGh0dHBzOi8vMS4yLjMuNDo2NDQzCiAgICBpbnNlY3VyZS1za2lwLXRscy12ZXJpZnk6IHRydWUKICBuYW1lOiBkZXYKY29udGV4dHM6Ci0gY29udGV4dDoKICAgIGNsdXN0ZXI6IGRldgogICAgdXNlcjogZGV2CiAgbmFtZTogZGV2CmN1cnJlbnQtY29udGV4dDogZGV2CnVzZXJzOgotIG5hbWU6IGRldgogIHVzZXI6CiAgICB0b2tlbjogcGxhY2Vob2xkZXIK
               labels:
                 region: eu-west
@@ -166,6 +168,7 @@ paths:
                 id: 11111111-1111-1111-1111-111111111111
                 name: dev-cluster
                 datacenter: dc1
+                capsuleProxyEndpoint: https://proxy.dev.example.com
                 labels:
                   env: dev
                 status: bootstrapping
@@ -481,8 +484,8 @@ paths:
               schema:
                 type: object
               example:
-                owner: https://proxy.kubenova.local/acme/owner
-                readonly: https://proxy.kubenova.local/acme/readonly
+                owner: https://proxy.dev.example.com/acme/owner
+                readonly: https://proxy.dev.example.com/acme/readonly
         '404':
           $ref: '#/components/responses/Error'
   /api/v1/tenants/{tenantID}/usage:
@@ -652,7 +655,7 @@ paths:
                 type: object
               example:
                 projectId: 1111-2222
-                kubeconfig: https://proxy.kubenova.local/acme/1111-2222
+                kubeconfig: https://proxy.dev.example.com/acme/1111-2222
         '404':
           $ref: '#/components/responses/Error'
   /api/v1/projects/{projectID}/usage:
@@ -1287,6 +1290,9 @@ components:
           type: object
           additionalProperties:
             type: string
+        capsuleProxyEndpoint:
+          type: string
+          description: Base URL for the cluster's Capsule Proxy (per-cluster)
     Capabilities:
       type: object
       properties:
