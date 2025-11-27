@@ -2,7 +2,9 @@
 # - AVD-KSV-0050: clusterrole/clusterrolebinding management required for Helm installs
 # - AVD-KSV-0114: webhook config management required for cert-manager/velacore charts
 # - AVD-KSV-056: service/endpoints/networkpolicy management needed for Helm-installed components
+# - AVD-KSV-0046: operator needs broad permissions to install cert-manager/Capsule/Vela via Helm
 AVD-KSV-0050
 AVD-KSV-0114
 AVD-KSV-056
 KSV056
+AVD-KSV-0046

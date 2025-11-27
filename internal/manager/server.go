@@ -1322,6 +1322,7 @@ type TokenResponse struct {
 
 type TelemetryEvent struct {
 	Stream    string `json:"stream"`
+	Event     string `json:"event"`
 	Component string `json:"component"`
 	Status    string `json:"status"`
 	Error     string `json:"error"`
