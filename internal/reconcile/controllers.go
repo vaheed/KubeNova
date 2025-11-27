@@ -19,6 +19,7 @@ import (
 	velabackend "github.com/vaheed/kubenova/internal/backends/vela"
 	"github.com/vaheed/kubenova/internal/cluster"
 	"github.com/vaheed/kubenova/internal/logging"
+	"github.com/vaheed/kubenova/internal/telemetry"
 	v1alpha1 "github.com/vaheed/kubenova/pkg/api/v1alpha1"
 	"github.com/vaheed/kubenova/pkg/types"
 	"go.uber.org/zap"
@@ -220,6 +221,11 @@ func BootstrapHelmJob(ctx context.Context, c client.Client, reader client.Reader
 		logging.L.Info("bootstrap_component_start", zap.String("component", comp))
 		if err := installer.Reconcile(ctx, comp); err != nil {
 			logging.L.Error("bootstrap_component_error", zap.String("component", comp), zap.Error(err))
+			telemetry.Emit("component_install", map[string]string{
+				"component": comp,
+				"status":    "error",
+				"error":     err.Error(),
+			})
 		}
 	}
 	return nil
@@ -240,6 +246,11 @@ func PeriodicComponentReconciler(ctx context.Context, c client.Client, reader cl
 				logging.L.Info("reconcile_component_start", zap.String("component", comp))
 				if err := installer.Reconcile(ctx, comp); err != nil {
 					logging.L.Error("reconcile_component_error", zap.String("component", comp), zap.Error(err))
+					telemetry.Emit("component_install", map[string]string{
+						"component": comp,
+						"status":    "error",
+						"error":     err.Error(),
+					})
 					continue
 				}
 				logging.L.Info("reconcile_component_done", zap.String("component", comp), zap.Duration("duration", time.Since(start)))

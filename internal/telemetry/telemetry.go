@@ -20,6 +20,11 @@ type Buffer interface {
 	Stop()
 }
 
+// Emit sends a telemetry event to the configured buffer.
+func Emit(stream string, payload map[string]string) {
+	globalBuffer.Enqueue(stream, payload)
+}
+
 // SetGlobal overrides the process-wide telemetry buffer.
 func SetGlobal(buf Buffer) {
 	if buf != nil {
