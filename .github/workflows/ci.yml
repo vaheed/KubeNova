@@ -132,7 +132,7 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
-          args: --skip-files usr/local/bin/vela
+          skip-files: /usr/local/bin/vela
 
 
 
