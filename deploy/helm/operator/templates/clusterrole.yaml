@@ -27,6 +27,12 @@ rules:
       - validatingwebhookconfigurations
       - mutatingwebhookconfigurations
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - deployments/scale
+      - replicasets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["core.oam.dev"]
     resources:
       - componentdefinitions
