@@ -207,6 +207,7 @@ func (i *Installer) waitForComponent(ctx context.Context, component string) erro
 
 func (i *Installer) runHelmLocal(ctx context.Context, release, chart, namespace string) error {
 	args := []string{"upgrade", "--install", release, chart, "--namespace", namespace, "--create-namespace"}
+	args = append(args, i.componentSetFlags(release)...)
 	cmd, cleanup, err := i.prepareHelmCommand(ctx, args...)
 	if err != nil {
 		return err
