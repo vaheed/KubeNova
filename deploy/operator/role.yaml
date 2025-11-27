@@ -17,6 +17,12 @@ rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "clusterroles"]
+    verbs: ["escalate"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings", "clusterrolebindings"]
+    verbs: ["bind"]
   - apiGroups: ["apiregistration.k8s.io"]
     resources: ["apiservices"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -30,6 +36,11 @@ rules:
       - deployments
       - deployments/scale
       - replicasets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["core.oam.dev"]
     resources:
