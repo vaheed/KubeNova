@@ -19,6 +19,8 @@ import (
 	"github.com/vaheed/kubenova/internal/logging"
 	"github.com/vaheed/kubenova/internal/store"
 	"github.com/vaheed/kubenova/pkg/types"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -31,6 +33,7 @@ const (
 	authContextKey        = contextKey("auth")
 	defaultTokenTTL       = 60 * time.Minute
 	maxBodyBytes    int64 = 1 << 20 // 1MB
+	otelServiceName       = "kubenova-manager"
 )
 
 type contextKey string
@@ -57,6 +60,7 @@ func (s *Server) Router() http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	r.Use(otelhttp.NewMiddleware(otelServiceName))
 	r.Use(s.logMiddleware)
 
 	r.Route("/api/v1", func(api chi.Router) {
@@ -174,13 +178,18 @@ func (s *Server) logMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
-		logging.L.Info("http_request",
+		fields := []zap.Field{
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 			zap.Int("status", ww.Status()),
 			zap.Duration("duration", time.Since(start)),
 			zap.String("request_id", middleware.GetReqID(r.Context())),
-		)
+		}
+		spanCtx := trace.SpanContextFromContext(r.Context())
+		if spanCtx.IsValid() {
+			fields = append(fields, zap.String("trace_id", spanCtx.TraceID().String()))
+		}
+		logging.L.Info("http_request", fields...)
 	})
 }
 

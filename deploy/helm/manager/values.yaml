@@ -6,6 +6,12 @@ image:
 env:
   KUBENOVA_REQUIRE_AUTH: "true"
   MANAGER_URL_PUBLIC: http://kubenova-manager.kubenova-system.svc.cluster.local:8080
+otel:
+  endpoint: ""
+  insecure: true
+  environment: ""
+  version: ""
+  resourceAttributes: ""
 
 # JWT signing key configuration
 # If 'jwt.existingSecret' is set, the deployment reads JWT_SIGNING_KEY from that secret.

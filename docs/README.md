@@ -140,9 +140,9 @@ New features
 - See interactive examples in `docs/index.md` (Section 5 and 6).
 
 ## Observability
-- Logs: structured JSON with `request_id`, `tenant`, `cluster`, `adapter`.
+- Logs: structured JSON with `request_id`, `tenant`, `cluster`, `adapter`, and `trace_id` when OTLP is enabled.
 - Metrics: `kubenova_reconcile_seconds`, `kubenova_events_total`, `kubenova_adapter_errors_total`.
-- Traces: OpenTelemetry.
+- Traces: OpenTelemetry/OTLP; set `OTEL_EXPORTER_OTLP_ENDPOINT` (+ `OTEL_EXPORTER_OTLP_INSECURE`) to stream spans to SigNoz or any collector. See `docs/examples/signoz.md` for SigNoz setup.
 
 ## Failure Modes
 - CRD mismatch → capability flags; return 422 for incompatible intents.

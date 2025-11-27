@@ -20,6 +20,12 @@ manager:
   url: http://kubenova-manager.kubenova.svc.cluster.local:8080
   batchIntervalSeconds: 10
   batchMaxItems: 100
+otel:
+  endpoint: ""
+  insecure: true
+  environment: ""
+  version: ""
+  resourceAttributes: ""
 
 bootstrap:
   capsuleVersion: 0.10.6

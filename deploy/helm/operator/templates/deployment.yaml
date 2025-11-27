@@ -46,6 +46,26 @@ spec:
               value: "true"
             - name: BATCH_INTERVAL_SECONDS
               value: {{ .Values.manager.batchIntervalSeconds | quote }}
+            {{- with .Values.otel }}
+            {{- if .endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "{{ .endpoint }}"
+            {{- end }}
+            - name: OTEL_EXPORTER_OTLP_INSECURE
+              value: "{{ ternary "true" "false" .insecure }}"
+            {{- if .environment }}
+            - name: KUBENOVA_ENV
+              value: "{{ .environment }}"
+            {{- end }}
+            {{- if .version }}
+            - name: KUBENOVA_VERSION
+              value: "{{ .version }}"
+            {{- end }}
+            {{- if .resourceAttributes }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "{{ .resourceAttributes }}"
+            {{- end }}
+            {{- end }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp

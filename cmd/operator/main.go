@@ -17,6 +17,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/vaheed/kubenova/internal/logging"
+	"github.com/vaheed/kubenova/internal/observability"
 	"github.com/vaheed/kubenova/internal/reconcile"
 	"github.com/vaheed/kubenova/internal/telemetry"
 	"go.uber.org/zap"
@@ -27,6 +28,21 @@ import (
 )
 
 func main() {
+	shutdownTrace := func(context.Context) error { return nil }
+	if closer, err := observability.SetupOTel(context.Background(), observability.Config{
+		ServiceName:    "kubenova-operator",
+		ServiceVersion: os.Getenv("KUBENOVA_VERSION"),
+		Environment:    os.Getenv("KUBENOVA_ENV"),
+	}); err != nil {
+		logging.L.Warn("otel_setup_failed", zap.Error(err))
+	} else {
+		shutdownTrace = closer
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = shutdownTrace(ctx)
+		}()
+	}
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))

@@ -27,3 +27,8 @@ Values
 - `bootstrap.capsuleVersion` (string)
 - `bootstrap.capsuleProxyVersion` (string)
 - `bootstrap.velaCoreVersion` (string)
+- `otel.endpoint` (string) – OTLP gRPC endpoint (e.g., SigNoz collector)
+- `otel.insecure` (bool) – set true for `http://` endpoints
+- `otel.environment` (string) – value for `deployment.environment` in traces
+- `otel.version` (string) – overrides reported service version
+- `otel.resourceAttributes` (string) – comma-separated OTEL_RESOURCE_ATTRIBUTES
