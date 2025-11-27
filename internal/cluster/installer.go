@@ -569,11 +569,20 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		return err
 	}
 	args := []string{"addon", "enable", addon, "--yes"}
+	home, err := os.MkdirTemp("", "kubenova-vela-home-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(home)
 	// #nosec G204 -- command and args are controlled internally for trusted addons
 	cmd := exec.CommandContext(ctx, "vela", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", tmp.Name()))
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("KUBECONFIG=%s", tmp.Name()),
+		fmt.Sprintf("VELA_HOME=%s", home),
+		fmt.Sprintf("HOME=%s", home),
+	)
 	return cmd.Run()
 }
 
@@ -594,11 +603,20 @@ func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
 		return err
 	}
 	args := []string{"addon", "disable", addon, "--yes"}
+	home, err := os.MkdirTemp("", "kubenova-vela-home-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(home)
 	// #nosec G204 -- command and args are controlled internally for trusted addons
 	cmd := exec.CommandContext(ctx, "vela", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", tmp.Name()))
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("KUBECONFIG=%s", tmp.Name()),
+		fmt.Sprintf("VELA_HOME=%s", home),
+		fmt.Sprintf("HOME=%s", home),
+	)
 	return cmd.Run()
 }
 
