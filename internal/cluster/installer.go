@@ -530,8 +530,8 @@ var componentRepos = map[string]repoMeta{
 	"cert-manager":  {Repo: "https://charts.jetstack.io", Chart: "cert-manager", Version: "v1.14.4"},
 	"capsule":       {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule", Version: "0.5.3"},
 	"capsule-proxy": {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule-proxy", Version: "0.9.13"},
-	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.9.11"},
-	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.9.5"},
+	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.10.4"},
+	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.10.6"},
 	"fluxcd":        {Repo: "https://fluxcd-community.github.io/helm-charts", Chart: "flux2", Version: "2.12.2"},
 	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "0.0.1"},
 }
