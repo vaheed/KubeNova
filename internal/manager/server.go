@@ -69,6 +69,7 @@ func (s *Server) Router() http.Handler {
 		api.Get("/readyz", s.readyz)
 		api.Get("/version", s.version)
 		api.Get("/features", s.features)
+		api.Post("/telemetry/events", s.telemetryEvent)
 
 		api.Post("/tokens", s.issueToken)
 		api.With(s.authMiddleware).Get("/me", s.me)
@@ -151,6 +152,8 @@ func (s *Server) Router() http.Handler {
 				r.Get("/", s.getWorkflowRun)
 			})
 		})
+
+		api.Post("/telemetry/events", s.telemetryEvent)
 	})
 
 	return r
@@ -1289,6 +1292,22 @@ func (s *Server) authContext(ctx context.Context) *AuthContext {
 	return &AuthContext{Subject: "anonymous", Roles: []string{}}
 }
 
+func (s *Server) telemetryEvent(w http.ResponseWriter, r *http.Request) {
+	var ev TelemetryEvent
+	if err := decodeJSON(r, &ev); err != nil {
+		writeError(w, http.StatusBadRequest, "KN-400", err.Error())
+		return
+	}
+	logging.L.Info("telemetry_event_received",
+		zap.String("stream", ev.Stream),
+		zap.String("component", ev.Component),
+		zap.String("status", ev.Status),
+		zap.String("error", ev.Error),
+		zap.String("cluster_id", ev.ClusterID),
+	)
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "received"})
+}
+
 // Request DTOs
 type TokenRequest struct {
 	Subject    string   `json:"subject"`
@@ -1299,6 +1318,14 @@ type TokenRequest struct {
 type TokenResponse struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type TelemetryEvent struct {
+	Stream    string `json:"stream"`
+	Component string `json:"component"`
+	Status    string `json:"status"`
+	Error     string `json:"error"`
+	ClusterID string `json:"clusterId"`
 }
 
 type ClusterRequest struct {

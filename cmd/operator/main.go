@@ -80,7 +80,7 @@ func main() {
 	// Heartbeat to manager for smoke observability
 	telemetry.Stopper = telemetry.StartHeartbeat(nil, os.Getenv("MANAGER_URL"), time.Duration(getEnvInt("BATCH_INTERVAL_SECONDS", 10))*time.Second)
 	// Start redis buffer if available
-	buf := telemetry.NewRedisBuffer()
+	buf := telemetry.NewRedisBuffer(os.Getenv("MANAGER_URL"))
 	buf.Run()
 	defer buf.Stop()
 	telemetry.SetGlobal(buf)

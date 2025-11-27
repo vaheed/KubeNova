@@ -1,7 +1,11 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/vaheed/kubenova/internal/logging"
@@ -62,15 +66,21 @@ func StartHeartbeat(ctx context.Context, managerURL string, interval time.Durati
 
 // RedisBuffer is a stubbed buffer that keeps events in memory.
 type RedisBuffer struct {
-	events chan map[string]string
-	stop   chan struct{}
+	events     chan map[string]string
+	stop       chan struct{}
+	managerURL string
+	client     *http.Client
 }
 
 // NewRedisBuffer returns a buffer that stores messages in memory.
-func NewRedisBuffer() *RedisBuffer {
+func NewRedisBuffer(managerURL string) *RedisBuffer {
 	return &RedisBuffer{
-		events: make(chan map[string]string, 256),
-		stop:   make(chan struct{}),
+		events:     make(chan map[string]string, 256),
+		stop:       make(chan struct{}),
+		managerURL: strings.TrimRight(managerURL, "/"),
+		client: &http.Client{
+			Timeout: 5 * time.Second,
+		},
 	}
 }
 
@@ -81,6 +91,7 @@ func (b *RedisBuffer) Run() {
 			select {
 			case ev := <-b.events:
 				logging.L.Info("telemetry_event", zap.Any("payload", ev))
+				b.forward(ev)
 			case <-b.stop:
 				return
 			}
@@ -103,6 +114,33 @@ func (b *RedisBuffer) Enqueue(stream string, payload map[string]string) {
 	case b.events <- payload:
 	default:
 		logging.L.Warn("telemetry buffer full, dropping event")
+	}
+}
+
+func (b *RedisBuffer) forward(ev map[string]string) {
+	if b.managerURL == "" {
+		return
+	}
+	body, err := json.Marshal(ev)
+	if err != nil {
+		logging.L.Warn("telemetry_forward_encode_failed", zap.Error(err))
+		return
+	}
+	url := b.managerURL + "/api/v1/telemetry/events"
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		logging.L.Warn("telemetry_forward_request_failed", zap.Error(err))
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := b.client.Do(req)
+	if err != nil {
+		logging.L.Warn("telemetry_forward_failed", zap.String("url", url), zap.Error(err))
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		logging.L.Warn("telemetry_forward_non2xx", zap.String("url", url), zap.Int("status", resp.StatusCode))
 	}
 }
 
