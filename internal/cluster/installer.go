@@ -528,7 +528,7 @@ type repoMeta struct {
 
 var componentRepos = map[string]repoMeta{
 	"cert-manager":  {Repo: "https://charts.jetstack.io", Chart: "cert-manager", Version: "v1.14.4"},
-	"capsule":       {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule", Version: "0.5.3"},
+	"capsule":       {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule", Version: "0.10.6"},
 	"capsule-proxy": {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule-proxy", Version: "0.9.13"},
 	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.10.4"},
 	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.10.6"},
