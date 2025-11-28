@@ -18,11 +18,11 @@ git clone https://github.com/SigNoz/signoz.git
 cd signoz/deploy/docker
 docker compose -f docker-compose.yaml up -d
 ```
-- Helm examples:
+- Helm examples (release images are tagged with a leading `v`):
 ```bash
 helm upgrade --install manager deploy/helm/manager \
   -n kubenova-system --create-namespace \
-  --set image.tag=0.1.1 \
+  --set image.tag=v0.1.1 \
   --set otel.endpoint=http://signoz-otel-collector:4317 \
   --set otel.insecure=true \
   --set otel.environment=staging \
@@ -30,7 +30,7 @@ helm upgrade --install manager deploy/helm/manager \
 
 helm upgrade --install operator deploy/helm/operator \
   -n kubenova-system \
-  --set image.tag=0.1.1 \
+  --set image.tag=v0.1.1 \
   --set manager.url=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
   --set otel.endpoint=http://signoz-otel-collector:4317 \
   --set otel.insecure=true \

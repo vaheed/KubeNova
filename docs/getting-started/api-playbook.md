@@ -71,11 +71,11 @@ APP=$(curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/p
     "name": "api",
     "description": "API service",
     "component": "web",
-    "image": "ghcr.io/vaheed/kubenova/kubenova-manager:0.1.1",
+    "image": "ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.1",
     "spec": {
       "type":"webservice",
       "properties":{
-        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:0.1.1",
+        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.1",
         "port":8080
       }
     },
@@ -104,7 +104,7 @@ curl -s -X PUT "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects
     "spec": {
       "type":"webservice",
       "properties":{
-        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:0.1.1",
+        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.1",
         "port":8080
       }
     }
