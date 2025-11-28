@@ -1,242 +1,46 @@
-# KubeNova  
-### Unified Multi-Datacenter CaaS/PaaS Platform  
-### Manager Global — Clusters Sovereign — Tenants Isolated
+# KubeNova 0.1.1
+Unified multi-datacenter CaaS/PaaS control plane. Manager runs centrally, clusters stay sovereign, operators connect outbound-only, and Capsule/KubeVela provide multi-tenancy and application delivery.
 
----
+- API contract: `docs/openapi/openapi.yaml` (`/api/v1`, structured errors `KN-*`, optional JWT/RBAC)
+- Charts: `deploy/helm/{manager,operator}` (version `0.1.1`)
+- Docs: VitePress under `docs/` with architecture, operations, and quickstarts
 
-## 🚀 Overview
+## Quick start (docker-compose)
+```bash
+cp env.example .env                # edit DATABASE_URL, auth, telemetry
+docker compose -f docker-compose.dev.yml up -d db manager
+curl -s http://localhost:8080/api/v1/readyz
+```
+- Auth disabled by default (`KUBENOVA_REQUIRE_AUTH=false` in env.example); set `X-KN-Roles: admin` for admin routes. Enable auth + `JWT_SIGNING_KEY` for anything beyond dev.
+- Rebuild/stop: `docker compose -f docker-compose.dev.yml build` / `down`.
 
-KubeNova is a federated multi-datacenter platform providing secure CaaS/PaaS capabilities on top of Kubernetes.  
-Each datacenter runs a **completely isolated Kubernetes cluster**, while a **single global Manager** coordinates metadata, tenant lifecycle, billing, and application orchestration — without ever directly accessing the clusters.
+## Live API walkthrough
+Use the [API lifecycle walkthrough](docs/getting-started/api-playbook.md) for curl examples covering clusters → tenants → projects → apps → workflows → usage.
 
-All cluster operations are handled by the **KubeNova Operator**, which runs inside each cluster and communicates outbound-only with the Manager via gRPC.
+## kind-based E2E tests
+```bash
+docker network create --subnet 10.250.0.0/16 kind-ipv4 || true
+./kind/e2e.sh        # creates cluster, installs MetalLB, writes kind/config
+# start manager (see quick start), then:
+RUN_LIVE_E2E=1 \
+KUBENOVA_E2E_BASE_URL=http://localhost:8080 \
+KUBENOVA_E2E_KUBECONFIG=kind/config \
+go test -tags=integration ./internal/manager -run LiveAPIE2E -count=1 -v
+```
+Details in `docs/operations/kind-e2e.md`.
 
-KubeNova integrates the following:
-
-- **KubeNova Operator** — cluster bootstrap, tenant management, Vela integration  
-- **Capsule** — multi-tenancy and namespace isolation  
-- **Capsule Proxy** — per-tenant LoadBalancer isolation  
-- **KubeVela** — application orchestration for users  
-
----
-
-## ⚖️ Core Principles
-
-- **Clusters are sovereign** — no cross-datacenter sharing.  
-- **Zero inbound connectivity** — Operators initiate outbound gRPC to Manager.  
-- **Manager never talks to Kubernetes APIs directly.**  
-- **Tenants are strictly isolated** using Capsule and namespace scoping.  
-- **KubeVela Applications are the only workload entrypoint.**  
-
----
-
-## 🏛️ System Architecture
-
-### Global System Diagram
-
-```mermaid
-flowchart LR
-
-subgraph Manager["Global Manager (Control Plane)"]
-    API[REST API]
-    GRPC[gRPC Manager]
-    DB[(Postgres)]
-    UI[Dashboard]
-end
-
-subgraph DC1["Datacenter A"]
-    subgraph CL1["Kubernetes Cluster"]
-        OP1[KubeNova Operator]
-        CAPS1[Capsule]
-        PROXY1[Capsule Proxy]
-        VELA1[KubeVela]
-    end
-end
-
-subgraph DC2["Datacenter B"]
-    subgraph CL2["Kubernetes Cluster"]
-        OP2[KubeNova Operator]
-        CAPS2[Capsule]
-        PROXY2[Capsule Proxy]
-        VELA2[KubeVela]
-    end
-end
-
-OP1 -->|Outbound gRPC| GRPC
-OP2 -->|Outbound gRPC| GRPC
-API --> DB
-GRPC --> DB
+## Docs (VitePress)
+```bash
+npm install
+npm run docs:dev     # live preview
+npm run docs:build   # static site in docs/.vitepress/dist
 ```
 
----
+## Configuration
+- `env.example` is canonical; manager fails fast if `DATABASE_URL` is missing.
+- Key env vars: `KUBENOVA_REQUIRE_AUTH`, `JWT_SIGNING_KEY`, `MANAGER_URL`, `PROXY_API_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, component version toggles (`CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `FLUXCD_VERSION`, `VELAUX_VERSION`, `VELA_CLI_VERSION`), `BOOTSTRAP_*` switches.
+- Compose and Helm intentionally avoid inline defaults—keep `.env` up to date.
 
-## 🔄 Full Lifecycle Architecture
-
-### End-to-End Workflow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Manager
-    participant Operator
-    participant Cluster
-    participant Vela
-
-    User->>Manager: Add Cluster (POST /clusters)
-    Manager->>Cluster: Deploy Operator
-    Operator-->>Manager: gRPC Connect
-
-    Manager->>Operator: Send NovaClusterConfig
-    Operator->>Cluster: Install Capsule/Proxy/KubeVela
-
-    User->>Manager: Create Tenant & User
-    Manager->>Operator: Apply NovaTenant CRD
-    Operator->>Cluster: Create Namespaces, SA, RBAC
-
-    User->>Manager: Deploy Application
-    Manager->>Operator: APPLY_YAML (KubeVela Application)
-    Operator->>Vela: Create Application CRD
-    Vela->>Cluster: Deploy Workloads
-
-    Operator-->>Manager: Hourly Usage Reports
-    Operator-->>Manager: Application Status Updates
-```
-
----
-
-## 🧱 Multi-Tenancy Model
-
-KubeNova uses **Capsule** for multi-tenancy and **Capsule Proxy** for LoadBalancer isolation.
-
-Each tenant receives:
-
-- A Capsule Tenant  
-- Two namespaces:  
-  - `<tenant>-owner`  
-  - `<tenant>-apps`  
-- Two ServiceAccounts: owner + readonly  
-- Two automatically generated kubeconfigs  
-- One KubeVela Project  
-- Unlimited KubeVela Applications  
-
-### Tenant Bootstrap Diagram
-
-```mermaid
-flowchart TD
-    NT[NovaTenant CRD]
-    CAPS[Capsule Tenant]
-    NS1["Namespace: <tenant>-owner"]
-    NS2["Namespace: <tenant>-apps"]
-    SA1[Owner ServiceAccount]
-    SA2[Readonly ServiceAccount]
-    KCFG1[Owner Kubeconfig]
-    KCFG2[Readonly Kubeconfig]
-
-    NT --> CAPS
-    CAPS --> NS1
-    CAPS --> NS2
-    NS1 --> SA1 --> KCFG1
-    NS2 --> SA2 --> KCFG2
-```
-
----
-
-## 🚀 Application Deployment (via KubeVela)
-
-All user applications are defined as **KubeVela Application CRDs**.
-
-### Deployment Flow
-
-```mermaid
-sequenceDiagram
-    participant Dev
-    participant Manager
-    participant Operator
-    participant Vela
-
-    Dev->>Manager: POST /users/:tenant/apps
-    Manager->>Operator: APPLY_YAML
-    Operator->>Vela: Create Application CRD
-    Vela->>Cluster: Deploy workloads
-```
-
----
-
-## 📊 Usage Reporting
-
-Every hour the Operator aggregates per-tenant metrics:
-
-- CPU & Memory Requests  
-- PVC Storage Usage  
-- LoadBalancer Count  
-- Pod Count  
-- Namespace Count  
-- KubeVela Application Count  
-- Quota Violations  
-
-Usage is streamed to the Manager via gRPC.
-
----
-
-## 🔐 Security Model
-
-- **No inbound ports exposed**  
-- **Outbound mTLS gRPC only**  
-- **Encrypted kubeconfigs stored only for bootstrap**  
-- **Capsule enforces strict boundaries**  
-- **Capsule Proxy provides tenant LB isolation**  
-- **Manager has no kubeadmin rights**  
-
----
-
-## 🗂 Suggested Repository Layout
-
-```
-kubenova/
-├── cmd/
-│   ├── manager/
-│   └── operator/
-├── pkg/
-│   ├── api/
-│   ├── controllers/
-│   ├── grpc/
-│   ├── tenants/
-│   └── kube/
-├── config/
-│   └── crd/
-├── docs/
-│   ├── rfc/
-│   ├── adr/
-│   ├── diagrams/
-│   └── examples/
-└── README.md
-```
-
----
-
-## 📚 Included Documentation
-
-This repository includes:
-
-- **Architecture RFC**  
-- **ADR Set**  
-- **Operator Controller Design**  
-- **Manager API & Workflow**  
-- **Multi-Tenant Policy & Structure**  
-- **Diagrams in Mermaid format**  
-
----
-
-## 🧩 Next Steps (Optional)
-
-I can generate:
-
-- `/docs/` folder with RFC, ADR, diagrams  
-- GitHub Pages site  
-- VitePress documentation  
-- CRD YAML files  
-- gRPC protobuf definitions  
-- OpenAPI spec for Manager REST APIs  
-
-Just let me know.
-
+## Roadmap & changes
+- Roadmap: `ROADMAP.md` or `docs/roadmap.md` (0.1.1 baseline, live API E2E, docs refresh).
+- Changelog: `CHANGELOG.md` (current release 0.1.1).

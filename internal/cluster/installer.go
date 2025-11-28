@@ -533,7 +533,7 @@ var componentRepos = map[string]repoMeta{
 	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.10.4"},
 	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.10.6"},
 	"fluxcd":        {Repo: "https://fluxcd-community.github.io/helm-charts", Chart: "flux2", Version: "2.12.2"},
-	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "0.0.1"},
+	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "0.1.1"},
 }
 
 func parseBool(v string) bool {

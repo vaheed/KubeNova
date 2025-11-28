@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: KubeNova API
-  version: 0.0.2
+  version: 0.1.1
   description: |
-    Stable v0.0.1 surface for the KubeNova Manager. All responses use structured errors
+    Stable v0.1.1 surface for the KubeNova Manager. All responses use structured errors
     with `code` and `message` fields (KN-###).
 servers:
   - url: http://localhost:8080
@@ -54,7 +54,7 @@ paths:
                   version:
                     type: string
               example:
-                version: 0.0.1
+                version: 0.1.1
   /api/v1/features:
     get:
       summary: Feature flags

@@ -1,7 +1,5 @@
-## 0.1.1
+## 0.1.1 – Cleaned baseline
 
-- Align container image and chart publishing with `ghcr.io/vaheed/kubenova/*` and `ghcr.io/vaheed/kubenova/charts/*`.
-- Bundle `vela` CLI in the operator and reconcile velaux/fluxcd via addon enable/disable with periodic re-upgrades.
-- Add uninstall path and per-component summary logs; logging now defaults to debug level.
-- Remove unused agent image configuration from the manager chart; add capsule proxy public URL env placeholder.
-- Harden CI workflows (Trivy, gosec, multi-arch buildx) and ensure chart pushes target the correct OCI repo.
+- Repository hygiene: removed generated artifacts, standardized docs to VitePress, added kind helper script, and clarified single-source env handling.
+- Documentation: new quickstart, API lifecycle walkthrough, operations (observability, upgrades, kind E2E), refreshed README, and roadmap.
+- Version alignment: bumped charts/OpenAPI/manager version to 0.1.1 and introduced live integration test scaffolding against a running manager + kind cluster.

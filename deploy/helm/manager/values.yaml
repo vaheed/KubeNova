@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/vaheed/kubenova/kubenova-manager
-  tag: dev
+  tag: 0.1.1
   pullPolicy: IfNotPresent
 
 env:

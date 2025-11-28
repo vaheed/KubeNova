@@ -1,8 +1,4 @@
----
-title: Roadmap
----
-
-# Roadmap (0.1.1 baseline)
+# KubeNova Roadmap (0.1.1 baseline)
 
 ## Completed / Available
 - Core manager HTTP API (`/api/v1`) with structured errors, optional JWT/RBAC, and OpenAPI 0.1.1.
@@ -24,5 +20,5 @@ title: Roadmap
 - Multi-cluster upgrade playbooks, failure-mode drills (proxy loss, network partitions), and performance testing.
 
 ## Testing focus
-- Live API integration against kind (see [kind E2E setup](operations/kind-e2e.md) and `internal/manager/live_api_e2e_test.go`).
+- Live API integration against kind (see `docs/operations/kind-e2e.md` and `internal/manager/live_api_e2e_test.go`).
 - Operator bootstrap/upgrade validation via `/bootstrap/{component}` actions and upgrade runbook.
