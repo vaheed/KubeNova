@@ -1,16 +1,1231 @@
 openapi: 3.1.0
 info:
   title: KubeNova API
-  version: 0.9.6
+  version: 0.1.1
   description: |
-    Single KubeNova REST API surface for multi-cluster tenancy and app delivery.
-    Notes:
-    - JWT (HS256) is required for most endpoints.
-    - No vendor resource kinds or URLs are exposed.
+    Stable v0.1.1 surface for the KubeNova Manager. All responses use structured errors
+    with `code` and `message` fields (KN-###).
 servers:
   - url: http://localhost:8080
-security:
-  - bearerAuth: []
+paths:
+  /api/v1/healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+              example:
+                status: ok
+  /api/v1/readyz:
+    get:
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Store reachable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+              example:
+                status: ready
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/version:
+    get:
+      summary: API version
+      responses:
+        '200':
+          description: Current version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+              example:
+                version: 0.1.1
+  /api/v1/features:
+    get:
+      summary: Feature flags
+      responses:
+        '200':
+          description: Enabled features
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                auth: true
+                components: [capsule, capsule-proxy, kubevela]
+  /api/v1/telemetry/events:
+    post:
+      summary: Ingest operator telemetry event
+      description: Used by the in-cluster operator to report component install/reconcile failures.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryEvent'
+            example:
+              stream: component_install
+              component: cert-manager
+              status: error
+              error: "exit status 1"
+              clusterId: 7ae0a156-92cd-40fe-ba4a-fbab55ee9d22
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: received
+  /api/v1/tokens:
+    post:
+      summary: Issue JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+            example:
+              subject: admin@example.com
+              roles: [admin]
+              ttlMinutes: 60
+      responses:
+        '201':
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                expiresAt: 2024-01-01T00:00:00Z
+        '500':
+          $ref: '#/components/responses/Error'
+  /api/v1/me:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Inspect current identity
+      responses:
+        '200':
+          description: Claims
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    type: string
+                  roles:
+                    type: array
+                    items:
+                      type: string
+              example:
+                subject: admin@example.com
+                roles: [admin]
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List clusters
+      responses:
+        '200':
+          description: Cluster collection
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Cluster'
+              example:
+                - id: 2c7b6b18-1f1b-4e4c-8af1-111111111111
+                  name: prod-a
+                  datacenter: eu-west
+                  status: pending_bootstrap
+                  capsuleProxyEndpoint: https://proxy.prod.example.com
+                  capabilities:
+                    capsule: true
+                    capsuleProxy: true
+                    kubeVela: true
+                  createdAt: 2024-01-01T00:00:00Z
+                  updatedAt: 2024-01-01T00:00:00Z
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Register cluster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterRequest'
+            example:
+              name: prod-a
+              datacenter: eu-west
+              capsuleProxyEndpoint: https://proxy.prod.example.com
+              kubeconfig: YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIGNsdXN0ZXI6CiAgICBzZXJ2ZXI6IGh0dHBzOi8vMS4yLjMuNDo2NDQzCiAgICBpbnNlY3VyZS1za2lwLXRscy12ZXJpZnk6IHRydWUKICBuYW1lOiBkZXYKY29udGV4dHM6Ci0gY29udGV4dDoKICAgIGNsdXN0ZXI6IGRldgogICAgdXNlcjogZGV2CiAgbmFtZTogZGV2CmN1cnJlbnQtY29udGV4dDogZGV2CnVzZXJzOgotIG5hbWU6IGRldgogIHVzZXI6CiAgICB0b2tlbjogcGxhY2Vob2xkZXIK
+              labels:
+                region: eu-west
+      responses:
+        '201':
+          description: Registered cluster
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+              example:
+                id: 11111111-1111-1111-1111-111111111111
+                name: dev-cluster
+                datacenter: dc1
+                capsuleProxyEndpoint: https://proxy.dev.example.com
+                labels:
+                  env: dev
+                status: bootstrapping
+                novaClusterId: nova-dev
+                capabilities:
+                  capsule: true
+                  capsuleProxy: true
+                  kubeVela: true
+                createdAt: 2024-01-01T00:00:00Z
+                updatedAt: 2024-01-01T00:00:00Z
+        '409':
+          $ref: '#/components/responses/Error'
+        '400':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Get cluster
+      responses:
+        '200':
+          description: Cluster
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Delete cluster
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/capabilities:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Cluster capabilities
+      responses:
+        '200':
+          description: Capability flags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+              example:
+                capsule: true
+                capsuleProxy: true
+                kubeVela: true
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/bootstrap/{component}:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - in: path
+        name: component
+        required: true
+        schema:
+          type: string
+        description: Component to bootstrap (capsule|capsule-proxy|kubevela|operator)
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Kick off bootstrap for a component
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                clusterId: 2c7b6b18-1f1b-4e4c-8af1-111111111111
+                component: operator
+                status: accepted
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List tenants for a cluster
+      responses:
+        '200':
+          description: Tenants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tenant'
+              example:
+                - id: 22222222-2222-2222-2222-222222222222
+                  clusterId: 11111111-1111-1111-1111-111111111111
+                  name: acme
+                  owners: [alice@example.com]
+                  plan: gold
+                  ownerNamespace: acme-owner
+                  appsNamespace: acme-apps
+                  quotas:
+                    cpu: "4"
+                  limits:
+                    pods: "20"
+                  networkPolicies: [default-deny-egress]
+                  createdAt: 2024-01-01T00:05:00Z
+                  updatedAt: 2024-01-01T00:05:00Z
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantRequest'
+            example:
+              name: acme
+              owners: [alice@example.com]
+              plan: baseline
+              labels:
+                tier: gold
+              quotas:
+                cpu: "4"
+      responses:
+        '201':
+          description: Tenant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+              example:
+                id: 22222222-2222-2222-2222-222222222222
+                clusterId: 11111111-1111-1111-1111-111111111111
+                name: acme
+                owners: [alice@example.com]
+                plan: gold
+                ownerNamespace: acme-owner
+                appsNamespace: acme-apps
+                quotas:
+                  cpu: "4"
+                limits:
+                  pods: "20"
+                networkPolicies: [default-deny-egress]
+                createdAt: 2024-01-01T00:05:00Z
+                updatedAt: 2024-01-01T00:05:00Z
+        '409':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Get tenant
+      responses:
+        '200':
+          description: Tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Delete tenant
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/owners:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Replace tenant owners
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnersRequest'
+            example:
+              owners: [alice@example.com, bob@example.com]
+      responses:
+        '200':
+          description: Updated tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/quotas:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Set tenant quotas
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+            example:
+              cpu: "4"
+              memory: 8Gi
+      responses:
+        '200':
+          description: Updated tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/limits:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Set tenant limits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+            example:
+              pods: "100"
+      responses:
+        '200':
+          description: Updated tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/network-policies:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Update tenant network policies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkPolicyRequest'
+            example:
+              policies: [deny-all-egress]
+      responses:
+        '200':
+          description: Updated tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/summary:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Tenant summary
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSummary'
+              example:
+                tenantId: 22222222-2222-2222-2222-222222222222
+                clusterId: 11111111-1111-1111-1111-111111111111
+                projects: 1
+                apps: 1
+                namespaces: 2
+                loadBalancers: 0
+                quotaViolations: 0
+  /api/v1/tenants/{tenantID}/kubeconfig:
+    parameters:
+      - $ref: '#/components/parameters/TenantID'
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Generate tenant kubeconfigs
+      responses:
+        '200':
+          description: Scoped kubeconfigs
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                owner: https://proxy.dev.example.com/acme/owner
+                readonly: https://proxy.dev.example.com/acme/readonly
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/tenants/{tenantID}/usage:
+    parameters:
+      - $ref: '#/components/parameters/TenantID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Tenant usage
+      responses:
+        '200':
+          description: Aggregated usage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usage'
+              example:
+                cpuRequests: "4"
+                memoryRequests: "8Gi"
+                pvcStorage: "50Gi"
+                loadBalancers: 1
+                pods: 4
+                namespaces: 2
+                apps: 1
+                quotaViolations: 0
+                lastReportedAt: 2024-01-01T01:00:00Z
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List projects
+      responses:
+        '200':
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+              example:
+                - id: 33333333-3333-3333-3333-333333333333
+                  clusterId: 11111111-1111-1111-1111-111111111111
+                  tenantId: 22222222-2222-2222-2222-222222222222
+                  name: payments
+                  description: Handles payment flows
+                  labels:
+                    env: dev
+                  access: [alice@example.com]
+                  createdAt: 2024-01-01T00:10:00Z
+                  updatedAt: 2024-01-01T00:10:00Z
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectRequest'
+            example:
+              name: payments
+              description: Payment services
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              example:
+                id: 33333333-3333-3333-3333-333333333333
+                clusterId: 11111111-1111-1111-1111-111111111111
+                tenantId: 22222222-2222-2222-2222-222222222222
+                name: payments
+                description: Handles payment flows
+                access: []
+                createdAt: 2024-01-01T00:10:00Z
+                updatedAt: 2024-01-01T00:10:00Z
+        '409':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Get project
+      responses:
+        '200':
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/Error'
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Update project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectRequest'
+      responses:
+        '200':
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Delete project
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/access:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Update project access list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessRequest'
+            example:
+              access: [alice@example.com, bob@example.com]
+      responses:
+        '200':
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/kubeconfig:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Project kubeconfig
+      responses:
+        '200':
+          description: Scoped kubeconfig
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                projectId: 1111-2222
+                kubeconfig: https://proxy.dev.example.com/acme/1111-2222
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/projects/{projectID}/usage:
+    parameters:
+      - $ref: '#/components/parameters/ProjectID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Project usage
+      responses:
+        '200':
+          description: Usage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usage'
+              example:
+                cpuRequests: "2"
+                memoryRequests: "4Gi"
+                pvcStorage: "10Gi"
+                loadBalancers: 0
+                pods: 2
+                namespaces: 1
+                apps: 1
+                quotaViolations: 0
+                lastReportedAt: 2024-01-01T01:00:00Z
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List applications
+      responses:
+        '200':
+          description: Applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/App'
+              example:
+                - id: 44444444-4444-4444-4444-444444444444
+                  clusterId: 11111111-1111-1111-1111-111111111111
+                  tenantId: 22222222-2222-2222-2222-222222222222
+                  projectId: 33333333-3333-3333-3333-333333333333
+                  name: api
+                  description: API service
+                  component: web
+                  image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                  spec:
+                    type: webservice
+                    properties:
+                      image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                      port: 8080
+                  traits:
+                    - type: scaler
+                      properties:
+                        min: 1
+                        max: 3
+                  revision: 1
+                  status: pending
+                  suspended: false
+                  createdAt: 2024-01-01T00:15:00Z
+                  updatedAt: 2024-01-01T00:15:00Z
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppRequest'
+            example:
+              name: web
+              component: webservice
+              image: ghcr.io/acme/web:1.0.0
+              spec:
+                type: webservice
+                properties:
+                  image: ghcr.io/acme/web:1.0.0
+                  port: 8080
+              traits:
+                - type: scaler
+                  properties:
+                    min: 1
+                    max: 3
+      responses:
+        '201':
+          description: Application created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/App'
+              example:
+                id: 44444444-4444-4444-4444-444444444444
+                clusterId: 11111111-1111-1111-1111-111111111111
+                tenantId: 22222222-2222-2222-2222-222222222222
+                projectId: 33333333-3333-3333-3333-333333333333
+                name: api
+                description: API service
+                component: web
+                image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                spec:
+                  type: webservice
+                  properties:
+                    image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                    port: 8080
+                traits:
+                  - type: scaler
+                    properties:
+                      min: 1
+                      max: 3
+                revision: 1
+                status: pending
+                suspended: false
+                createdAt: 2024-01-01T00:15:00Z
+                updatedAt: 2024-01-01T00:15:00Z
+        '409':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+      - $ref: '#/components/parameters/AppID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Get application
+      responses:
+        '200':
+          description: Application
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/App'
+              example:
+                id: 44444444-4444-4444-4444-444444444444
+                clusterId: 11111111-1111-1111-1111-111111111111
+                tenantId: 22222222-2222-2222-2222-222222222222
+                projectId: 33333333-3333-3333-3333-333333333333
+                name: api
+                description: API service
+                component: web
+                image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                spec:
+                  type: webservice
+                  properties:
+                    image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                    port: 8080
+                traits:
+                  - type: scaler
+                    properties:
+                      min: 1
+                      max: 3
+                revision: 2
+                status: Deployed
+                suspended: false
+                createdAt: 2024-01-01T00:15:00Z
+                updatedAt: 2024-01-01T00:25:00Z
+        '404':
+          $ref: '#/components/responses/Error'
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Update application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppRequest'
+            example:
+              description: API service v2
+              spec:
+                type: webservice
+                properties:
+                  image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                  port: 8080
+      responses:
+        '200':
+          description: Updated app
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/App'
+              example:
+                id: 44444444-4444-4444-4444-444444444444
+                clusterId: 11111111-1111-1111-1111-111111111111
+                tenantId: 22222222-2222-2222-2222-222222222222
+                projectId: 33333333-3333-3333-3333-333333333333
+                name: api
+                description: API service v2
+                component: web
+                image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                spec:
+                  type: webservice
+                  properties:
+                    image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                    port: 8080
+                traits:
+                  - type: scaler
+                    properties:
+                      min: 1
+                      max: 3
+                revision: 2
+                status: Deployed
+                suspended: false
+                createdAt: 2024-01-01T00:15:00Z
+                updatedAt: 2024-01-01T00:25:00Z
+  "/api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}:deploy":
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Deploy application
+      parameters:
+        - $ref: '#/components/parameters/ClusterID'
+        - $ref: '#/components/parameters/TenantID'
+        - $ref: '#/components/parameters/ProjectID'
+        - $ref: '#/components/parameters/AppID'
+      responses:
+        '202':
+          description: Deployment enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: Deployed
+        '404':
+          $ref: '#/components/responses/Error'
+  "/api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}:suspend":
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Suspend application
+      parameters:
+        - $ref: '#/components/parameters/ClusterID'
+        - $ref: '#/components/parameters/TenantID'
+        - $ref: '#/components/parameters/ProjectID'
+        - $ref: '#/components/parameters/AppID'
+      responses:
+        '202':
+          description: Suspended
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: Suspended
+  "/api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}:resume":
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Resume application
+      parameters:
+        - $ref: '#/components/parameters/ClusterID'
+        - $ref: '#/components/parameters/TenantID'
+        - $ref: '#/components/parameters/ProjectID'
+        - $ref: '#/components/parameters/AppID'
+      responses:
+        '202':
+          description: Resumed
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: Deployed
+  "/api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}:rollback":
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Roll back to previous revision
+      parameters:
+        - $ref: '#/components/parameters/ClusterID'
+        - $ref: '#/components/parameters/TenantID'
+        - $ref: '#/components/parameters/ProjectID'
+        - $ref: '#/components/parameters/AppID'
+      responses:
+        '200':
+          description: Rolled back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/App'
+        '422':
+          $ref: '#/components/responses/Error'
+  "/api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}:delete":
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Delete application via action
+      parameters:
+        - $ref: '#/components/parameters/ClusterID'
+        - $ref: '#/components/parameters/TenantID'
+        - $ref: '#/components/parameters/ProjectID'
+        - $ref: '#/components/parameters/AppID'
+      responses:
+        '202':
+          description: Deletion enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: deleting
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/status:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+      - $ref: '#/components/parameters/AppID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Application status
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: Deployed
+                revision: 2
+                suspended: false
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/revisions:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+      - $ref: '#/components/parameters/AppID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List app revisions
+      responses:
+        '200':
+          description: Revisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AppRevision'
+              example:
+                - number: 1
+                  spec:
+                    type: webservice
+                    properties:
+                      image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                      port: 8080
+                  createdAt: 2024-01-01T00:15:00Z
+                - number: 2
+                  spec:
+                    type: webservice
+                    properties:
+                      image: ghcr.io/vaheed/kubenova/kubenova-manager:dev
+                      port: 8080
+                  createdAt: 2024-01-01T00:25:00Z
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/diff/{revA}/{revB}:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+      - $ref: '#/components/parameters/AppID'
+      - in: path
+        name: revA
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: revB
+        required: true
+        schema:
+          type: string
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Diff two revisions
+      responses:
+        '200':
+          description: Diff summary
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                from: 1
+                to: 2
+                summary: changed spec from rev 1 to 2
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/logs/{component}:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+      - $ref: '#/components/parameters/AppID'
+      - in: path
+        name: component
+        required: true
+        schema:
+          type: string
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Retrieve component logs
+      responses:
+        '200':
+          description: Log lines
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                component: web
+                lines:
+                  - "2024-01-01T00:00:00Z starting"
+                  - "2024-01-01T00:00:01Z reconciled"
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/traits:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+      - $ref: '#/components/parameters/AppID'
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Replace app traits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppRequest'
+      responses:
+        '200':
+          description: Updated app
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/App'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/policies:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+      - $ref: '#/components/parameters/AppID'
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Replace app policies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppRequest'
+      responses:
+        '200':
+          description: Updated app
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/App'
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/workflow/run:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+      - $ref: '#/components/parameters/AppID'
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Trigger workflow run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowRequest'
+            example:
+              inputs:
+                image: ghcr.io/acme/web:1.0.1
+      responses:
+        '202':
+          description: Run started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowRun'
+              example:
+                id: 55555555-5555-5555-5555-555555555555
+                appId: 44444444-4444-4444-4444-444444444444
+                status: Running
+                inputs:
+                  action: smoke-test
+                startedAt: 2024-01-01T00:30:00Z
+  /api/v1/clusters/{clusterID}/tenants/{tenantID}/projects/{projectID}/apps/{appID}/workflow/runs:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+      - $ref: '#/components/parameters/TenantID'
+      - $ref: '#/components/parameters/ProjectID'
+      - $ref: '#/components/parameters/AppID'
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List workflow runs
+      responses:
+        '200':
+          description: Workflow runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkflowRun'
+              example:
+                - id: 55555555-5555-5555-5555-555555555555
+                  appId: 44444444-4444-4444-4444-444444444444
+                  status: Running
+                  inputs:
+                    action: smoke-test
+                  startedAt: 2024-01-01T00:30:00Z
+  /api/v1/apps/runs/{runID}:
+    parameters:
+      - in: path
+        name: runID
+        required: true
+        schema:
+          type: string
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Get workflow run by ID
+      responses:
+        '200':
+          description: Workflow run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowRun'
+              example:
+                id: 55555555-5555-5555-5555-555555555555
+                appId: 44444444-4444-4444-4444-444444444444
+                status: Running
+                inputs:
+                  action: smoke-test
+                startedAt: 2024-01-01T00:30:00Z
+        '404':
+          $ref: '#/components/responses/Error'
 components:
   securitySchemes:
     bearerAuth:
@@ -18,54 +1233,44 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
-    ClusterParam:
-      name: c
+    ClusterID:
       in: path
+      name: clusterID
       required: true
       schema:
         type: string
-        format: uuid
-        pattern: '^[0-9a-f-]{36}$'
-    TenantParam:
-      name: t
+      description: Cluster identifier
+    TenantID:
       in: path
+      name: tenantID
       required: true
       schema:
         type: string
-        format: uuid
-        pattern: '^[0-9a-f-]{36}$'
-    ProjectParam:
-      name: p
+      description: Tenant identifier
+    ProjectID:
       in: path
+      name: projectID
       required: true
       schema:
         type: string
-        format: uuid
-        pattern: '^[0-9a-f-]{36}$'
-    AppParam:
-      name: a
+      description: Project identifier
+    AppID:
       in: path
+      name: appID
       required: true
       schema:
         type: string
-        format: uuid
-        pattern: '^[0-9a-f-]{36}$'
-    Limit:
-      name: limit
-      in: query
-      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
-    Cursor:
-      name: cursor
-      in: query
-      schema: { type: string }
-    LabelSelector:
-      name: labelSelector
-      in: query
-      schema: { type: string }
-    OwnerFilter:
-      name: owner
-      in: query
-      schema: { type: string }
+      description: Application identifier
+  responses:
+    Error:
+      description: Structured error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: KN-404
+            message: not found
   schemas:
     Error:
       type: object
@@ -73,1413 +1278,321 @@ components:
       properties:
         code:
           type: string
-          description: KN-400, KN-401, KN-403, KN-404, KN-409, KN-422, KN-500
-        message: { type: string }
-        details: {}
-    Page:
-      type: object
-      required: [items]
-      properties:
-        items: { type: array, items: {} }
-        nextCursor: { type: string, nullable: true }
-    Condition:
-      type: object
-      properties:
-        type: { type: string }
-        status: { type: string, enum: [True, False, Unknown] }
-        reason: { type: string }
-        message: { type: string }
-        lastTransitionTime: { type: string, format: date-time }
-    Cluster:
-      type: object
-      required: [name]
-      properties:
-        uid:
+        message:
           type: string
-          description: Stable unique identifier
-          format: uuid
-          pattern: '^[0-9a-f-]{36}$'
-        name: { type: string }
-        displayName: { type: string }
-        labels: { type: object, additionalProperties: { type: string } }
-        createdAt: { type: string, format: date-time }
-        conditions: { type: array, items: { $ref: '#/components/schemas/Condition' } }
-    ClusterRegistration:
-      type: object
-      required: [name, kubeconfig, capsuleProxyUrl]
-      properties:
-        name: { type: string }
-        kubeconfig: { type: string, format: byte }
-        capsuleProxyUrl:
-          type: string
-          format: uri
-          description: HTTPS URL for capsule-proxy that will be used in all kubeconfigs issued for this cluster.
-        capsuleProxyCa:
-          type: string
-          format: byte
-          description: Optional CA bundle for capsule-proxy, base64-encoded and used as certificate-authority-data in issued kubeconfigs.
-        labels: { type: object, additionalProperties: { type: string } }
-    ClusterCapabilities:
-      type: object
-      properties:
-        tenancy: { type: boolean }
-        vela: { type: boolean }
-        proxy: { type: boolean }
-    Tenant:
-      type: object
-      required: [name]
-      properties:
-        uid:
-          type: string
-          format: uuid
-          pattern: '^[0-9a-f-]{36}$'
-        name: { type: string }
-        plan:
-          type: string
-          description: Optional tenant plan name (e.g. baseline, gold). When omitted on creation the server may apply a default baseline plan when available.
-        owners: { type: array, items: { type: string } }
-        labels: { type: object, additionalProperties: { type: string } }
-        annotations: { type: object, additionalProperties: { type: string } }
-        createdAt: { type: string, format: date-time }
-    TenantSummary:
-      type: object
-      properties:
-        namespaces: { type: array, items: { type: string } }
-        quotas: { type: object, additionalProperties: { type: string } }
-        usages: { type: object, additionalProperties: { type: string } }
-        plan:
-          type: string
-          description: Optional tenant plan name applied to this tenant
-    Project:
-      type: object
-      required: [name]
-      properties:
-        uid:
-          type: string
-          format: uuid
-          pattern: '^[0-9a-f-]{36}$'
-        name: { type: string }
-        labels: { type: object, additionalProperties: { type: string } }
-        annotations: { type: object, additionalProperties: { type: string } }
-        createdAt: { type: string, format: date-time }
-    ProjectAccess:
-      type: object
-      properties:
-        members:
-          type: array
-          items:
-            type: object
-            required: [subject, role]
-            properties:
-              subject: { type: string }
-              role: { type: string, enum: [tenantOwner, projectDev, readOnly] }
-    PolicySet:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string }
-        description: { type: string }
-        rules: { type: array, items: { type: object } }
-        attachedTo:
-          type: array
-          items:
-            type: object
-            properties:
-              tenant: { type: string }
-              project: { type: string }
-    Plan:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string }
-        description: { type: string }
-        tenantQuotas:
-          type: object
-          additionalProperties: { type: string }
-        policysets:
-          type: array
-          items: { type: string }
-    App:
-      type: object
-      required: [name]
-      properties:
-        uid:
-          type: string
-          format: uuid
-          pattern: '^[0-9a-f-]{36}$'
-        name: { type: string }
-        description: { type: string }
-        components: { type: array, items: { type: object } }
-        traits: { type: array, items: { type: object } }
-        policies: { type: array, items: { type: object } }
-        createdAt: { type: string, format: date-time }
-    AppStatus:
-      type: object
-      properties:
-        phase: { type: string, enum: [Pending, Deploying, Running, Suspended, Failed] }
-        healthy: { type: boolean }
-        conditions: { type: array, items: { $ref: '#/components/schemas/Condition' } }
-        lastUpdated: { type: string, format: date-time }
-    AppRevision:
-      type: object
-      properties:
-        revision: { type: integer }
-        createdAt: { type: string, format: date-time }
-        summary: { type: object }
-    AppDiff:
-      type: object
-      properties:
-        from: { type: integer }
-        to: { type: integer }
-        changes: { type: array, items: { type: object } }
-    LogLine:
-      type: object
-      properties:
-        ts: { type: string, format: date-time }
-        component: { type: string }
-        message: { type: string }
-    CatalogItem:
-      type: object
-      properties:
-        name: { type: string }
-        type: { type: string, enum: [component, trait, workflow] }
-        description: { type: string }
-        schema: { type: object }
-    WorkflowRun:
-      type: object
-      properties:
-        id: { type: string }
-        status: { type: string, enum: [Running, Succeeded, Failed] }
-        startedAt: { type: string, format: date-time }
-        finishedAt: { type: string, format: date-time, nullable: true }
-    UsageReport:
-      type: object
-      properties:
-        window: { type: string }
-        cpu: { type: string }
-        memory: { type: string }
-        pods: { type: integer }
     TokenRequest:
       type: object
       required: [subject]
       properties:
-        subject: { type: string }
-        roles: { type: array, items: { type: string, enum: [admin, ops, tenantOwner, projectDev, readOnly] } }
-        ttlSeconds: { type: integer, minimum: 60, maximum: 2592000, default: 3600 }
+        subject:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        ttlMinutes:
+          type: integer
     TokenResponse:
       type: object
       properties:
-        token: { type: string }
-        expiresAt: { type: string, format: date-time }
-    MeResponse:
-      type: object
-      properties:
-        subject: { type: string }
-        roles: { type: array, items: { type: string } }
-    KubeconfigResponse:
-      type: object
-      properties:
-        kubeconfig:
+        token:
           type: string
-          format: byte
         expiresAt:
           type: string
           format: date-time
-          nullable: true
-          description: Omitted or null when TTL is unlimited.
-
-paths:
-  # System
-  /api/v1/healthz:
-    get:
-      summary: Liveness probe
-      responses:
-        '200': { description: ok }
-  /api/v1/readyz:
-    get:
-      summary: Readiness probe
-      responses:
-        '200': { description: ok }
-  /api/v1/version:
-    get:
-      summary: Version info
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: object }
-              examples:
-                  version:
-                    value: { version: "0.9.6", commit: "abcdef", buildDate: "2025-01-01T00:00:00Z" }
-  /api/v1/features:
-    get:
-      summary: Feature flags
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: object }
-              examples:
-                features:
-                  value:
-                    tenancy: true
-                    proxy: true
-                    appDelivery: true
-                    defaultTenantPlan: baseline
-                    availablePlans: [baseline, gold]
-
-  # Access & Tokens
-  /api/v1/tokens:
-    post:
-      summary: Issue a JWT for API access
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/TokenRequest' } } }
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/TokenResponse' }
-              examples:
-                success:
-                  value: { token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", expiresAt: "2025-01-01T12:00:00Z" }
-        '401':
-          description: unauthorized
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                unauthorized:
-                  value: { code: "KN-401", message: "missing bearer token" }
-  /api/v1/me:
-    get:
-      summary: Return subject and roles of the caller
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/MeResponse' }
-              examples:
-                me:
-                  value: { subject: "alice@example.com", roles: ["admin"] }
-
-  # Clusters
-  /api/v1/clusters:
-    get:
-      summary: List clusters
-      parameters: [ { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/LabelSelector' } ]
-      responses:
-        '200':
-          description: ok
-          headers:
-            X-Next-Cursor:
-              schema: { type: string }
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/Cluster' } }
-              examples:
-                page:
-                  value:
-                    - { uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
-    post:
-      summary: Register a cluster using kubeconfig
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ClusterRegistration' }
-            examples:
-              register:
-                value:
-                  name: kind
-                  kubeconfig: YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==
-                  capsuleProxyUrl: https://capsule-proxy.example.com:9001
-                  labels: { env: dev }
-      responses:
-        '200':
-          description: created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Cluster' }
-              examples:
-                created:
-                  value: { uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60", name: "kind", labels: { env: "dev" }, createdAt: "2025-01-01T00:00:00Z" }
-        '422':
-          description: validation error
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-422", message: "name, kubeconfig and capsuleProxyUrl required" }
-  /api/v1/clusters/{c}:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
-    get:
-      summary: Get cluster
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Cluster' }
-              examples:
-                cluster:
-                  value:
-                    uid: "2f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f60"
-                    name: "kind"
-                    conditions:
-                      - { type: "AgentReady", status: "True", lastTransitionTime: "2025-01-01T00:01:00Z" }
-                      - { type: "AddonsReady", status: "True", lastTransitionTime: "2025-01-01T00:02:00Z" }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-    delete:
-      summary: Delete cluster
-      responses:
-        '204': { description: deleted }
-  /api/v1/clusters/{c}/bootstrap/{component}:
-    parameters:
-      - { $ref: '#/components/parameters/ClusterParam' }
-      - name: component
-        in: path
-        required: true
-        schema: { type: string, enum: [tenancy, proxy, app-delivery] }
-    post:
-      summary: Bootstrap a system component on the cluster
-      responses:
-        '202': { description: started }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-
-  /api/v1/clusters/{c}/cleanup:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
-    post:
-      summary: Cleanup platform resources to prepare for bootstrap
-      description: |
-        Removes broken webhooks, Vela cluster-gateway APIService, platform CRDs, and component namespaces (cert-manager, capsule-system, vela-system).
-        Returns 202 and performs work asynchronously.
-      responses:
-        '202':
-          description: accepted
-          content:
-            application/json:
-              examples:
-                accepted:
-                  value: { accepted: true }
-        '401':
-          description: unauthorized
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples: { missing: { value: { code: "KN-401", message: "missing bearer token" } } }
-        '403':
-          description: forbidden
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples: { deny: { value: { code: "KN-403", message: "forbidden" } } }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples: { missing: { value: { code: "KN-404", message: "cluster not found" } } }
-  /api/v1/clusters/{c}/bootstrap/paas:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
-    post:
-      summary: Bootstrap a default tenant, project, and kubeconfig for PaaS
-      description: |
-        Creates (or reuses) a tenant and project on the given cluster and returns
-        a project-scoped kubeconfig suitable for app deployment. Names and plan
-        are controlled by `KUBENOVA_BOOTSTRAP_*` environment variables.
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: object }
-              examples:
-                bootstrap:
-                  value:
-                    tenant: acme
-                    tenantId: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111"
-                    project: web
-                    projectId: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61"
-                    expiresAt: "2025-01-01T01:00:00Z"
-  /api/v1/clusters/{c}/capabilities:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
-    get:
-      summary: Get cluster capabilities
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ClusterCapabilities' }
-              examples:
-                caps:
-                  value: { tenancy: true, vela: true, proxy: true }
-
-  # Tenants
-  /api/v1/clusters/{c}/tenants:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/LabelSelector' }, { $ref: '#/components/parameters/OwnerFilter' } ]
-    get:
-      summary: List tenants
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/Tenant' } }
-              examples:
-                list:
-                  value:
-                    - { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
-    post:
-      summary: Create tenant
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/Tenant' }
-            examples:
-              create:
-                value: { name: "acme", owners: ["owner@example.com"], labels: { team: platform } }
-      responses:
-        '200':
-          description: created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Tenant' }
-              examples:
-                created:
-                  value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
-        '422':
-          description: validation error
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-  /api/v1/clusters/{c}/tenants/{t}:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
-    get:
-      summary: Get tenant
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Tenant' }
-              examples:
-                tenant:
-                  value: { uid: "3a7f5d62-2a0b-4b3e-bc39-3b3f1f33b111", name: "acme" }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-    delete:
-      summary: Delete tenant
-      responses:
-        '204': { description: deleted }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-  /api/v1/clusters/{c}/tenants/{t}/owners:
-    put:
-      summary: Replace tenant owners
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                owners: { type: array, items: { type: string } }
-      responses:
-        '200': { description: ok }
-        '404':
-          description: tenant not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-        '422':
-          description: invalid owners list
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-  /api/v1/clusters/{c}/tenants/{t}/quotas:
-    put:
-      summary: Set tenant quotas
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
-      responses:
-        '200': { description: ok }
-        '404':
-          description: tenant not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-        '422':
-          description: invalid quotas
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-  /api/v1/clusters/{c}/tenants/{t}/limits:
-    put:
-      summary: Set tenant resource limits
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: { type: string } } } } }
-      responses:
-        '200': { description: ok }
-        '404':
-          description: tenant not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-        '422':
-          description: invalid limits
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-  /api/v1/clusters/{c}/tenants/{t}/network-policies:
-    put:
-      summary: Configure default network policies for tenant
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
-      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
-      responses:
-        '200': { description: ok }
-        '404':
-          description: tenant not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-        '422':
-          description: invalid network policies
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-  /api/v1/clusters/{c}/tenants/{t}/summary:
-    get:
-      summary: Summary of tenant resources and usage
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/TenantSummary' }
-              examples:
-                summary:
-                  value: { namespaces: ["acme-system","acme-dev"], quotas: { cpu: "4", memory: "8Gi" }, usages: { cpu: "1", memory: "2Gi" } }
-
-  # Projects
-  /api/v1/clusters/{c}/tenants/{t}/projects:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
-    get:
-      summary: List projects for tenant
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/Project' } }
-              examples:
-                list:
-                  value: [ { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" } ]
-    post:
-      summary: Create project
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/Project' }
-            examples:
-              create:
-                value: { name: "web" }
-      responses:
-        '200':
-          description: created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Project' }
-              examples:
-                created:
-                  value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
-        '422':
-          description: validation error
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
-    get:
-      summary: Get project
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Project' }
-              examples:
-                project:
-                  value: { uid: "4f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f61", name: "web" }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-    put:
-      summary: Update project
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
-      responses: { '200': { description: ok } }
-    delete:
-      summary: Delete project
-      responses: { '204': { description: deleted } }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/access:
-    put:
-      summary: Set project access members and roles
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectAccess' } } } }
-      responses: { '200': { description: ok } }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/kubeconfig:
-    get:
-      summary: Issue a short-lived kubeconfig scoped to tenant/project via proxy
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/KubeconfigResponse' }
-              examples:
-                kubeconfig:
-                  value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
-        '404':
-          description: cluster not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-
-  # PolicySets
-  /api/v1/clusters/{c}/tenants/{t}/policysets:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' } ]
-    get:
-      summary: List PolicySets
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } }
-              examples:
-                list:
-                  value: [ { name: "baseline", description: "Base guardrails" } ]
-    post:
-      summary: Create PolicySet
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PolicySet' }
-            examples:
-              create:
-                value: { name: "baseline", description: "Base guardrails", rules: [] }
-      responses:
-        '200':
-          description: created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PolicySet' }
-              examples:
-                created:
-                  value: { name: "baseline", description: "Base guardrails" }
-  /api/v1/clusters/{c}/tenants/{t}/policysets/{name}:
-    parameters:
-      - { $ref: '#/components/parameters/ClusterParam' }
-      - { $ref: '#/components/parameters/TenantParam' }
-      - name: name
-        in: path
-        required: true
-        schema: { type: string }
-    get:
-      summary: Get PolicySet
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PolicySet' }
-              examples:
-                item:
-                  value: { name: "baseline", description: "Base guardrails" }
-    put:
-      summary: Update PolicySet
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PolicySet' }
-            examples:
-              update:
-                value: { name: "baseline", description: "Updated", rules: [] }
-      responses: { '200': { description: ok } }
-    delete:
-      summary: Delete PolicySet
-      responses: { '204': { description: deleted } }
-  /api/v1/clusters/{c}/policysets/catalog:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' } ]
-    get:
-      summary: Get curated PolicySet catalog
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/PolicySet' } }
-              examples:
-                catalog:
-                  value: [ { name: "baseline", description: "Base guardrails" } ]
-
-  # Apps
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' } ]
-    get:
-      summary: List apps
-      parameters: [ { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' } ]
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/App' } }
-              examples:
-                list:
-                  value: [ { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" } ]
-      post:
-        summary: Create app
-        requestBody:
-          required: true
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/App' }
-              examples:
-                create:
-                  value: { name: "hello" }
-        responses:
-        '200':
-          description: created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/App' }
-              examples:
-                created:
-                  value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
-        '422':
-          description: validation error
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:
-    parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-    get:
-      summary: Get app
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/App' }
-              examples:
-                app:
-                  value: { uid: "5f1e4c8a-8f9a-4b1e-9d92-1b2c3d4e5f62", name: "hello" }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-    put:
-      summary: Update app
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/App' } } } }
-      responses:
-        '200': { description: ok }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-        '422':
-          description: invalid payload
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-    delete:
-      summary: Delete app
-      responses:
-        '202': { description: deletion started }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "not found" }
-
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:deploy:
-    post:
-      summary: Deploy app
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses:
-        '202': { description: started }
-        '404':
-          description: cluster not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:suspend:
-    post:
-      summary: Suspend app
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses:
-        '202': { description: started }
-        '404':
-          description: cluster not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:resume:
-    post:
-      summary: Resume app
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses:
-        '202': { description: started }
-        '404':
-          description: cluster not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:rollback:
-    post:
-      summary: Roll back app to previous revision
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      requestBody:
-        required: false
-        content: { application/json: { schema: { type: object, properties: { toRevision: { type: integer } } } } }
-      responses:
-        '202': { description: started }
-        '404':
-          description: cluster not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}:delete:
-    post:
-      summary: Delete app (idempotent)
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses: { '202': { description: started } }
-
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/status:
-    get:
-      summary: Get app status
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AppStatus' }
-              examples:
-                status:
-                  value: { phase: "Running", healthy: true, conditions: [ { type: "Available", status: "True" } ] }
-        '404':
-          description: cluster not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/revisions:
-    get:
-      summary: List app revisions
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/AppRevision' } }
-              examples:
-                revisions:
-                  value: [ { revision: 1, createdAt: "2025-01-01T00:00:00Z" } ]
-        '404':
-          description: cluster not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/diff/{revA}/{revB}:
-    get:
-      summary: Diff between two app revisions
-      parameters:
-        - { $ref: '#/components/parameters/ClusterParam' }
-        - { $ref: '#/components/parameters/TenantParam' }
-        - { $ref: '#/components/parameters/ProjectParam' }
-        - { $ref: '#/components/parameters/AppParam' }
-        - name: revA
-          in: path
-          required: true
-          schema: { type: integer }
-        - name: revB
-          in: path
-          required: true
-          schema: { type: integer }
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AppDiff' }
-              examples:
-                diff:
-                  value: { from: 1, to: 2, changes: [] }
-        '404':
-          description: cluster not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/logs/{component}:
-    get:
-      summary: Stream or fetch component logs
-      parameters:
-        - { $ref: '#/components/parameters/ClusterParam' }
-        - { $ref: '#/components/parameters/TenantParam' }
-        - { $ref: '#/components/parameters/ProjectParam' }
-        - { $ref: '#/components/parameters/AppParam' }
-        - name: component
-          in: path
-          required: true
-          schema: { type: string }
-        - name: follow
-          in: query
-          schema: { type: boolean, default: false }
-        - name: tail
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 10000, default: 200 }
-        - name: sinceSeconds
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 604800 }
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/LogLine' } }
-              examples:
-                logs:
-                  value: [ { ts: "2025-01-01T00:00:00Z", component: "web", message: "started" } ]
-        '404':
-          description: cluster not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                missing:
-                  value: { code: "KN-404", message: "cluster not found" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/traits:
-    put:
-      summary: Replace app traits
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { type: array, items: { type: object } }
-            examples:
-              traits:
-                value: [ { type: "scaler", properties: { replicas: 2 } } ]
-      responses:
-        '200': { description: ok }
-        '422':
-          description: invalid payload
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/policies:
-    put:
-      summary: Replace app policies
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { type: array, items: { type: object } }
-            examples:
-              policies:
-                value: [ { type: "rollout", properties: { maxUnavailable: 1 } } ]
-      responses:
-        '200': { description: ok }
-        '422':
-          description: invalid payload
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/image-update:
-    post:
-      summary: Update image for an app component
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { type: object, properties: { component: { type: string }, image: { type: string }, tag: { type: string } }, required: [component, image] }
-            examples:
-              img:
-                value: { component: "web", image: "nginx", tag: "1.25.3" }
-      responses:
-        '202': { description: started }
-        '422':
-          description: invalid payload
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                invalid:
-                  value: { code: "KN-422", message: "invalid payload" }
-
-  # Catalog
-  /api/v1/catalog/components:
-    get:
-      summary: List component definitions
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } }
-              examples:
-                list:
-                  value: [ { name: "web", type: "component", description: "Web service" } ]
-  /api/v1/catalog/traits:
-    get:
-      summary: List trait definitions
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } }
-              examples:
-                list:
-                  value: [ { name: "scaler", type: "trait", description: "Scale deployments" } ]
-  /api/v1/catalog/workflows:
-    get:
-      summary: List workflow definitions
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/CatalogItem' } }
-              examples:
-                list:
-                  value: [ { name: "rollout", type: "workflow", description: "Rolling updates" } ]
-
-  # Workflows/Operations
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/run:
-    post:
-      summary: Run workflow with optional steps
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' } ]
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema: { type: object, properties: { steps: { type: array, items: { type: string } } } }
-            examples:
-              run:
-                value: { steps: ["deploy", "verify"] }
-      responses:
-        '202':
-          description: started
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/WorkflowRun' }
-              examples:
-                started:
-                  value: { id: "run-123", status: "Running", startedAt: "2025-01-01T00:00:00Z" }
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/{a}/workflow/runs:
-    get:
-      summary: List workflow runs
-      parameters: [ { $ref: '#/components/parameters/ClusterParam' }, { $ref: '#/components/parameters/TenantParam' }, { $ref: '#/components/parameters/ProjectParam' }, { $ref: '#/components/parameters/AppParam' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' } ]
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/WorkflowRun' } }
-              examples:
-                runs:
-                  value: [ { id: "run-123", status: "Succeeded", startedAt: "2025-01-01T00:00:00Z", finishedAt: "2025-01-01T00:05:00Z" } ]
-  /api/v1/clusters/{c}/tenants/{t}/projects/{p}/apps/runs/{id}:
-    get:
-      summary: Get workflow run by id
-      parameters:
-        - { $ref: '#/components/parameters/ClusterParam' }
-        - { $ref: '#/components/parameters/TenantParam' }
-        - { $ref: '#/components/parameters/ProjectParam' }
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/WorkflowRun' }
-              examples:
-                run:
-                  value: { id: "run-123", status: "Succeeded", startedAt: "2025-01-01T00:00:00Z", finishedAt: "2025-01-01T00:05:00Z" }
-
-  # Usage & Quota
-  /api/v1/tenants/{t}/usage:
-    get:
-      summary: Usage report for a tenant
-      parameters:
-        - { $ref: '#/components/parameters/TenantParam' }
-        - name: range
-          in: query
-          schema: { type: string, enum: [1h, 24h, 7d, 30d], default: 24h }
-        - name: cluster
-          in: query
-          schema: { type: string, nullable: true }
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/UsageReport' }
-              examples:
-                tenantUsage:
-                  value: { window: "24h", cpu: "2", memory: "4Gi", pods: 12 }
-  /api/v1/projects/{p}/usage:
-    get:
-      summary: Usage report for a project
-      parameters:
-        - { $ref: '#/components/parameters/ProjectParam' }
-        - name: range
-          in: query
-          schema: { type: string, enum: [1h, 24h, 7d, 30d], default: 24h }
-        - name: cluster
-          in: query
-          schema: { type: string, nullable: true }
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/UsageReport' }
-              examples:
-                projectUsage:
-                  value: { window: "24h", cpu: "1", memory: "1Gi", pods: 5 }
-
-  # Access & Tokens (kubeconfig issuance)
-  /api/v1/tenants/{t}/kubeconfig:
-    post:
-      summary: Issue a tenant-scoped kubeconfig via proxy
-      parameters: [ { $ref: '#/components/parameters/TenantParam' } ]
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                project:
-                  type: string
-                  description: Optional project name for a namespace-scoped kubeconfig. Required when role is projectDev.
-                role:
-                  type: string
-                  description: Logical role; actual RBAC is enforced by the access proxy.
-                  enum: [tenantOwner, projectDev, readOnly]
-                ttlSeconds:
-                  type: integer
-                  minimum: 0
-                  maximum: 315360000
-                  default: 0
-                  description: 0 or omitted means unlimited TTL; otherwise seconds until expiry.
-            examples:
-              tenantUnlimited:
-                summary: Tenant-scoped, read-only, unlimited TTL
-                value: {}
-              tenantReadOnly1h:
-                summary: Tenant-scoped, read-only, 1 hour TTL
-                value: { role: "readOnly", ttlSeconds: 3600 }
-              projectDev1h:
-                summary: Project-scoped, projectDev, 1 hour TTL
-                value: { project: "web", role: "projectDev", ttlSeconds: 3600 }
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/KubeconfigResponse' }
-              examples:
-                kubeconfig:
-                  value: { kubeconfig: "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6IFtdCmNvbnRleHRzOiBbXQ==", expiresAt: "2025-01-01T01:00:00Z" }
-  # Plans
-  /api/v1/plans:
-    get:
-      summary: List available tenant plans
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Plan' }
-  /api/v1/plans/{name}:
-    get:
-      summary: Get a specific tenant plan by name
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Plan' }
-        '404':
-          description: not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-  /api/v1/tenants/{t}/plan:
-    put:
-      summary: Apply a plan to a tenant (quotas + PolicySets)
-      parameters:
-        - { $ref: '#/components/parameters/TenantParam' }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name: { type: string }
-      responses:
-        '200':
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Plan' }
-        '404':
-          description: plan or tenant not found
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '422':
-          description: invalid payload or tenant has no primary cluster
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+    TelemetryEvent:
+      type: object
+      properties:
+        stream:
+          type: string
+        component:
+          type: string
+        status:
+          type: string
+        error:
+          type: string
+        clusterId:
+          type: string
+    ClusterRequest:
+      type: object
+      required: [name, kubeconfig]
+      properties:
+        name:
+          type: string
+        datacenter:
+          type: string
+        kubeconfig:
+          type: string
+          description: Base64-encoded kubeconfig payload (inline YAML is accepted for compatibility but is deprecated)
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        capsuleProxyEndpoint:
+          type: string
+          description: Base URL for the cluster's Capsule Proxy (per-cluster)
+    Capabilities:
+      type: object
+      properties:
+        capsule:
+          type: boolean
+        capsuleProxy:
+          type: boolean
+        kubeVela:
+          type: boolean
+    Cluster:
+      allOf:
+        - $ref: '#/components/schemas/ClusterRequest'
+        - type: object
+          properties:
+            id:
+              type: string
+            novaClusterId:
+              type: string
+            status:
+              type: string
+            capabilities:
+              $ref: '#/components/schemas/Capabilities'
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+    TenantRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        owners:
+          type: array
+          items:
+            type: string
+        plan:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        quotas:
+          type: object
+          additionalProperties:
+            type: string
+        limits:
+          type: object
+          additionalProperties:
+            type: string
+        networkPolicies:
+          type: array
+          items:
+            type: string
+    Tenant:
+      allOf:
+        - $ref: '#/components/schemas/TenantRequest'
+        - type: object
+          properties:
+            id:
+              type: string
+            clusterId:
+              type: string
+            ownerNamespace:
+              type: string
+            appsNamespace:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+    OwnersRequest:
+      type: object
+      properties:
+        owners:
+          type: array
+          items:
+            type: string
+    NetworkPolicyRequest:
+      type: object
+      properties:
+        policies:
+          type: array
+          items:
+            type: string
+    TenantSummary:
+      type: object
+      properties:
+        tenantId:
+          type: string
+        clusterId:
+          type: string
+        projects:
+          type: integer
+        apps:
+          type: integer
+        namespaces:
+          type: integer
+        loadBalancers:
+          type: integer
+        quotaViolations:
+          type: integer
+    ProjectRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        access:
+          type: array
+          items:
+            type: string
+    Project:
+      allOf:
+        - $ref: '#/components/schemas/ProjectRequest'
+        - type: object
+          properties:
+            id:
+              type: string
+            clusterId:
+              type: string
+            tenantId:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+    AccessRequest:
+      type: object
+      properties:
+        access:
+          type: array
+          items:
+            type: string
+    AppRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        component:
+          type: string
+        image:
+          type: string
+        spec:
+          type: object
+        traits:
+          type: array
+          items:
+            type: object
+        policies:
+          type: array
+          items:
+            type: object
+    AppRevision:
+      type: object
+      properties:
+        number:
+          type: integer
+        spec:
+          type: object
+        traits:
+          type: array
+          items:
+            type: object
+        policies:
+          type: array
+          items:
+            type: object
+        createdAt:
+          type: string
+          format: date-time
+    App:
+      allOf:
+        - $ref: '#/components/schemas/AppRequest'
+        - type: object
+          properties:
+            id:
+              type: string
+            clusterId:
+              type: string
+            tenantId:
+              type: string
+            projectId:
+              type: string
+            revision:
+              type: integer
+            status:
+              type: string
+            suspended:
+              type: boolean
+            revisions:
+              type: array
+              items:
+                $ref: '#/components/schemas/AppRevision'
+            workflowRuns:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkflowRun'
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+    WorkflowRequest:
+      type: object
+      properties:
+        inputs:
+          type: object
+    WorkflowRun:
+      type: object
+      properties:
+        id:
+          type: string
+        appId:
+          type: string
+        status:
+          type: string
+        inputs:
+          type: object
+        result:
+          type: object
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+    Usage:
+      type: object
+      properties:
+        cpuRequests:
+          type: string
+        memoryRequests:
+          type: string
+        pvcStorage:
+          type: string
+        loadBalancers:
+          type: integer
+        pods:
+          type: integer
+        namespaces:
+          type: integer
+        apps:
+          type: integer
+        quotaViolations:
+          type: integer
+        lastReportedAt:
+          type: string
+          format: date-time

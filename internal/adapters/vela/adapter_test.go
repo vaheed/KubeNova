@@ -1,13 +1,20 @@
 package vela
 
-import "testing"
+import (
+	"testing"
 
-func TestApplicationCR(t *testing.T) {
-	u := ApplicationCR("demo", "app", "nginx:latest")
-	if u.GetKind() != "Application" {
-		t.Fatal("kind mismatch")
-	}
-	if u.GetNamespace() != "demo" {
-		t.Fatal("ns mismatch")
+	"github.com/vaheed/kubenova/pkg/types"
+)
+
+func TestAppAdapter(t *testing.T) {
+	a := NewAppAdapter()
+	result := a.ToApplication(&types.App{
+		Name:      "web",
+		ProjectID: "proj1",
+		ClusterID: "c1",
+		TenantID:  "t1",
+	})
+	if result["name"] != "web" {
+		t.Fatalf("expected name")
 	}
 }

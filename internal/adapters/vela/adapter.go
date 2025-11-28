@@ -1,26 +1,30 @@
 package vela
 
-import "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+import "github.com/vaheed/kubenova/pkg/types"
 
-// ApplicationCR builds a minimal KubeVela Application in unstructured form.
-// apiVersion: core.oam.dev/v1beta1, kind: Application
-func ApplicationCR(ns, name, image string) *unstructured.Unstructured {
-	if ns == "" {
-		ns = "default"
+// AppAdapter translates apps to KubeVela-friendly structures.
+type AppAdapter struct{}
+
+// NewAppAdapter creates a new adapter.
+func NewAppAdapter() *AppAdapter {
+	return &AppAdapter{}
+}
+
+// ToApplication renders a simplified application payload.
+func (a *AppAdapter) ToApplication(app *types.App) map[string]any {
+	if app == nil {
+		return map[string]any{}
 	}
-	u := &unstructured.Unstructured{Object: map[string]interface{}{
-		"apiVersion": "core.oam.dev/v1beta1",
-		"kind":       "Application",
-		"metadata":   map[string]interface{}{"name": name, "namespace": ns},
-		"spec": map[string]interface{}{
-			"components": []interface{}{
-				map[string]interface{}{
-					"name":       name,
-					"type":       "webservice",
-					"properties": map[string]interface{}{"image": image},
-				},
-			},
-		},
-	}}
-	return u
+	return map[string]any{
+		"name":        app.Name,
+		"component":   app.Component,
+		"image":       app.Image,
+		"spec":        app.Spec,
+		"traits":      app.Traits,
+		"policies":    app.Policies,
+		"revision":    app.Revision,
+		"projectId":   app.ProjectID,
+		"clusterId":   app.ClusterID,
+		"environment": app.TenantID,
+	}
 }

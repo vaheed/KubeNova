@@ -1,47 +1,37 @@
-SHELL := /bin/bash
-.ONESHELL:
+.PHONY: fmt vet test build docs-dev docs-build compose-up compose-down kind-up e2e-live
 
-dev-up:
-	docker compose -f docker-compose.dev.yml up -d --build
+KUBENOVA_E2E_BASE_URL ?= http://localhost:8080
+KUBENOVA_E2E_KUBECONFIG ?= kind/config
 
-dev-down:
-	docker compose -f docker-compose.dev.yml down -v
+fmt:
+	go fmt ./...
 
-platform-up:
-	@echo "[platform-up] Add-ons are bootstrapped by the Agent; nothing to do."
+vet:
+	go vet ./...
 
-deploy-manager:
-	docker compose -f docker-compose.dev.yml up -d --build
-
-deploy-agent:
-	@echo "[deploy-agent] Not required; Manager installs Agent automatically upon cluster registration."
-
-.PHONY: test-unit
-
-test-unit:
+test:
 	go test ./... -count=1
 
-## Local kind dev cluster helpers (see README for details)
+build:
+	go build ./...
 
-kind-image:
-	docker build -t kubenova-kind kind
+docs-dev:
+	npm run docs:dev
 
-kind-up: kind-image
-	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-	  -v "$(PWD)/kind-kubeconfig:/kubeconfig" \
-	  kubenova-kind
+docs-build:
+	npm run docs:build
 
-kind-kubeconfig:
-	@echo "KUBECONFIG=$(PWD)/kind-kubeconfig/config"
+compose-up:
+	docker compose -f docker-compose.dev.yml up -d db manager
 
-manager-up:
-	docker compose -f docker-compose.dev.yml up -d --build manager db
+compose-down:
+	docker compose -f docker-compose.dev.yml down
 
-agent-build:
-	docker build -t ghcr.io/vaheed/kubenova/agent:dev -f build/Dockerfile.agent .
+kind-up:
+	./kind/e2e.sh
 
-agent-push:
-	docker push ghcr.io/vaheed/kubenova/agent:dev
-	
-down:
-	@echo "Nothing to tear down beyond docker compose; run 'make dev-down' if needed."
+e2e-live:
+	RUN_LIVE_E2E=1 \
+	KUBENOVA_E2E_BASE_URL=$(KUBENOVA_E2E_BASE_URL) \
+	KUBENOVA_E2E_KUBECONFIG=$(KUBENOVA_E2E_KUBECONFIG) \
+	go test -tags=integration ./internal/manager -run LiveAPIE2E -count=1 -v

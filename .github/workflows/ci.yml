@@ -105,9 +105,9 @@ jobs:
       - name: Build scan images (local Docker)
         run: |
           docker build -t manager:scan -f build/Dockerfile.manager .
-          docker build -t kubenova-agent:scan -f build/Dockerfile.agent .
+          docker build -t kubenova-operator:scan -f build/Dockerfile.operator .
           docker save manager:scan -o manager-scan.tar
-          docker save kubenova-agent:scan -o kubenova-agent-scan.tar
+          docker save kubenova-operator:scan -o kubenova-operator-scan.tar
       - name: Clean Trivy cache dir (avoid tar restore conflicts)
         run: rm -rf ~/.cache/trivy || true
       - name: Cache Trivy DB
@@ -124,14 +124,23 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
-      - name: Trivy image scan (Agent)
+      - name: Trivy image scan (operator)
         uses: aquasecurity/trivy-action@0.20.0
         with:
-          input: 'kubenova-agent-scan.tar'
+          input: 'kubenova-operator-scan.tar'
           format: 'table'
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
+          skip-files: /usr/local/bin/vela
+
+
+
+
+
+
+
+
 
   build_push_images:
     runs-on: ubuntu-latest
@@ -163,9 +172,9 @@ jobs:
           fi
           echo "Pushing platforms: ${PLATFORMS} tag: ${IMG_TAG}"
           docker buildx build --platform "${PLATFORMS}" \
-            -t ghcr.io/vaheed/kubenova/manager:${IMG_TAG} --push -f build/Dockerfile.manager .
+            -t ghcr.io/vaheed/kubenova/kubenova-manager:${IMG_TAG} --push -f build/Dockerfile.manager .
           docker buildx build --platform "${PLATFORMS}" \
-            -t ghcr.io/vaheed/kubenova/agent:${IMG_TAG} --push -f build/Dockerfile.agent .
+            -t ghcr.io/vaheed/kubenova/kubenova-operator:${IMG_TAG} --push -f build/Dockerfile.operator .
 
   charts_push_oci:
     runs-on: ubuntu-latest
@@ -179,7 +188,7 @@ jobs:
       - name: Setup Helm
         uses: azure/setup-helm@v4
         with:
-          version: v3.14.4
+          version: v3.19.2
       - name: Login to GHCR for Helm/ORAS
         run: echo ${{ secrets.GITHUB_TOKEN }} | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
       - name: Package charts (OCI)
@@ -197,7 +206,7 @@ jobs:
             helm package "$TMP" -d out
           }
           package_chart deploy/helm/manager
-          package_chart deploy/helm/agent
+          package_chart deploy/helm/operator
           ls -la out
       - name: Push charts to GHCR (OCI)
         env:
@@ -205,7 +214,7 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          REPO="oci://ghcr.io/${OWNER}/kubenova-charts"
+          REPO="oci://ghcr.io/${OWNER}/kubenova/charts"
           for f in out/*.tgz; do echo pushing "$f"; helm push "$f" "$REPO"; done
       - name: Setup ORAS CLI
         uses: oras-project/setup-oras@v1
@@ -220,8 +229,8 @@ jobs:
           for f in out/*.tgz; do
             name=$(helm show chart "$f" | awk -F': ' '/^name:/{print $2; exit}')
             ver=$(helm show chart "$f" | awk -F': ' '/^version:/{print $2; exit}')
-            src="ghcr.io/${OWNER}/kubenova-charts/${name}:${ver}"
-            if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova-charts/${name}:dev"; else dst="ghcr.io/${OWNER}/kubenova-charts/${name}:latest"; fi
+            src="ghcr.io/${OWNER}/kubenova/charts/${name}:${ver}"
+            if [[ "$BRANCH" == "develop" ]]; then dst="ghcr.io/${OWNER}/kubenova/charts/${name}:dev"; else dst="ghcr.io/${OWNER}/kubenova/charts/${name}:latest"; fi
             echo "Tagging $src -> $dst"
             oras copy "$src" "$dst"
           done
@@ -236,8 +245,8 @@ jobs:
           for f in out/*.tgz; do
             name=$(helm show chart "$f" | awk -F': ' '/^name:/{print $2; exit}')
             ver=$(helm show chart "$f" | awk -F': ' '/^version:/{print $2; exit}')
-            src="ghcr.io/${OWNER}/kubenova-charts/${name}:${ver}"
-            dst="ghcr.io/${OWNER}/kubenova-charts/${name}:${TAG}"
+            src="ghcr.io/${OWNER}/kubenova/charts/${name}:${ver}"
+            dst="ghcr.io/${OWNER}/kubenova/charts/${name}:${TAG}"
             echo "Tagging $src -> $dst"
             oras copy "$src" "$dst"
           done

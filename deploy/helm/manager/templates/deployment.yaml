@@ -25,14 +25,32 @@ spec:
           env:
             - name: KUBENOVA_REQUIRE_AUTH
               value: "{{ .Values.env.KUBENOVA_REQUIRE_AUTH }}"
-            - name: AGENT_IMAGE
-              value: "{{ .Values.env.AGENT_IMAGE }}"
             - name: MANAGER_URL_PUBLIC
               value: "{{ .Values.env.MANAGER_URL_PUBLIC }}"
             - name: DEFAULT_NS_RESOURCEQUOTA
               value: "{{ .Values.env.DEFAULT_NS_RESOURCEQUOTA | default "" }}"
             - name: DEFAULT_PROJECT_QUOTA
               value: "{{ .Values.env.DEFAULT_PROJECT_QUOTA | default "" }}"
+            {{- with .Values.otel }}
+            {{- if .endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "{{ .endpoint }}"
+            {{- end }}
+            - name: OTEL_EXPORTER_OTLP_INSECURE
+              value: "{{ ternary "true" "false" .insecure }}"
+            {{- if .environment }}
+            - name: KUBENOVA_ENV
+              value: "{{ .environment }}"
+            {{- end }}
+            {{- if .version }}
+            - name: KUBENOVA_VERSION
+              value: "{{ .version }}"
+            {{- end }}
+            {{- if .resourceAttributes }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "{{ .resourceAttributes }}"
+            {{- end }}
+            {{- end }}
             {{- if or .Values.jwt.existingSecret .Values.jwt.value }}
             - name: JWT_SIGNING_KEY
               valueFrom:

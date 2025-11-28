@@ -9,7 +9,6 @@ helm upgrade --install manager kubenova/manager \
   --set image.tag=latest \
   --set env.KUBENOVA_REQUIRE_AUTH=true \
   --set env.MANAGER_URL_PUBLIC=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
-  --set env.AGENT_IMAGE=ghcr.io/vaheed/kubenova/agent:latest
 ```
 
 JWT Signing Key
@@ -27,10 +26,14 @@ Values
 - `image.tag` (string) – image tag
 - `image.pullPolicy` (string) – IfNotPresent/Always
 - `env.KUBENOVA_REQUIRE_AUTH` (bool string) – "true" to enforce JWT
-- `env.AGENT_IMAGE` (string) – agent image ref used for remote install
 - `env.MANAGER_URL_PUBLIC` (string) – public URL for callbacks/clients
 - `env.DEFAULT_NS_RESOURCEQUOTA` (string, optional) – JSON for defaults
 - `env.DEFAULT_PROJECT_QUOTA` (string, optional) – JSON for defaults
 - `jwt.existingSecret` (string) – name of Secret that holds JWT key
 - `jwt.value` (string) – inline key (chart will create Secret)
 - `jwt.key` (string) – secret key name (default `JWT_SIGNING_KEY`)
+- `otel.endpoint` (string) – OTLP gRPC endpoint (e.g., SigNoz collector)
+- `otel.insecure` (bool) – set true for `http://` endpoints
+- `otel.environment` (string) – value for `deployment.environment` in traces
+- `otel.version` (string) – overrides reported service version
+- `otel.resourceAttributes` (string) – comma-separated OTEL_RESOURCE_ATTRIBUTES

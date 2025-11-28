@@ -2,27 +2,21 @@
 
 Helm charts and deployment assets.
 
-- `helm/manager` – chart for Manager (API)
-- `helm/agent` – chart for Agent
+- `helm/manager` – chart for the Manager API
+- `helm/operator` – chart for the in-cluster Operator (installs Capsule, Capsule Proxy, KubeVela, FluxCD, Velaux)
 
 Publishing
-- CI publishes charts in two formats:
-  - GitHub Pages: charts/dev (develop) and charts/stable (main)
-- OCI (GHCR): oci://ghcr.io/<owner>/kubenova-charts/{manager,agent}
-    - lightweight tags: dev (develop) and latest (main)
+- CI publishes OCI charts to `oci://ghcr.io/<owner>/kubenova/charts/{manager,operator}`
+  - lightweight tags: `dev` (develop) and `latest` (main)
+  - release tags (e.g., `0.1.1`) mirror git tags
 
-Install (Helm repo)
-```
-helm repo add kubenova https://vaheed.github.io/kubenova/charts/stable
-helm install manager kubenova/manager -n kubenova-system --create-namespace
+Install (OCI)
+```bash
+helm registry login ghcr.io -u <user> -p <token>
+helm pull oci://ghcr.io/<owner>/kubenova/charts/manager --version 0.1.1
+helm pull oci://ghcr.io/<owner>/kubenova/charts/operator --version 0.1.1
 ```
 
 Notes
-- Charts now include icons and the Manager chart supports JWT secret injection via values.
-- See per-chart READMEs for install flags and values: `deploy/helm/manager/README.md`, `deploy/helm/agent/README.md`.
-
-Install (OCI)
-```
-helm registry login ghcr.io -u <user> -p <token>
-helm pull oci://ghcr.io/<owner>/kubenova/manager --version latest
-```
+- Charts include icons and support JWT secret injection (`deploy/helm/manager/templates/secret-jwt.yaml`).
+- See per-chart READMEs and values for configuration: `deploy/helm/manager/values.yaml`, `deploy/helm/operator/values.yaml`.

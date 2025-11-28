@@ -3,7 +3,7 @@
 Container build assets.
 
 - `Dockerfile.manager` – multi-stage build for the Manager service (distroless runtime).
-- `Dockerfile.agent` – multi-stage build for the in-cluster Agent (distroless runtime).
+- `Dockerfile.operator` – multi-stage build for the in-cluster operator (distroless runtime).
 
 Notes
 - Images are built in CI and pushed to GHCR.

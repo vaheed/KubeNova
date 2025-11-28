@@ -1,13 +1,19 @@
 package capsule
 
-import "testing"
+import (
+	"testing"
 
-func TestTenantCR(t *testing.T) {
-	u := TenantCR("alice", []string{"alice@example.com"}, map[string]string{"t": "1"})
-	if u.GetKind() != "Tenant" {
-		t.Fatal("kind mismatch")
-	}
-	if u.GetName() != "alice" {
-		t.Fatal("name mismatch")
+	"github.com/vaheed/kubenova/pkg/types"
+)
+
+func TestAdapterProducesNamespaces(t *testing.T) {
+	adapter := NewTenantAdapter()
+	man := adapter.ToManifests(&types.Tenant{
+		Name:           "acme",
+		OwnerNamespace: "acme-owner",
+		AppsNamespace:  "acme-apps",
+	})
+	if len(man) == 0 {
+		t.Fatalf("expected manifests content")
 	}
 }

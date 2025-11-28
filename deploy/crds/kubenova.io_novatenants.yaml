@@ -1,0 +1,88 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: novatenants.kubenova.io
+spec:
+  group: kubenova.io
+  scope: Cluster
+  names:
+    plural: novatenants
+    singular: novatenant
+    kind: NovaTenant
+    shortNames:
+      - ntenant
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              properties:
+                owners:
+                  type: array
+                  items:
+                    type: string
+                plan:
+                  type: string
+                labels:
+                  type: object
+                  additionalProperties:
+                    type: string
+                ownerNamespace:
+                  type: string
+                appsNamespace:
+                  type: string
+                networkPolicies:
+                  type: array
+                  items:
+                    type: string
+                quotas:
+                  type: object
+                  additionalProperties:
+                    type: string
+                limits:
+                  type: object
+                  additionalProperties:
+                    type: string
+                proxyEndpoint:
+                  type: string
+              required: []
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: ["type", "status", "reason", "lastTransitionTime"]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+          required:
+            - spec
+      subresources:
+        status: {}

@@ -9,7 +9,7 @@ file issues, propose changes, and work with the codebase.
   - Bugs – something that is broken or behaves differently from the docs.
   - Feature requests – new capabilities or improvements.
 - When reporting a bug, please include:
-  - KubeNova version (Manager/Agent tags) and how you deployed it.
+  - KubeNova version (Manager/Operator tags) and how you deployed it.
   - Kubernetes version and environment (kind, managed cloud, etc.).
   - Reproduction steps and expected vs. actual behavior.
   - Relevant logs or error messages (redacting sensitive data).
