@@ -13,7 +13,6 @@ helm upgrade --install operator kubenova/operator \
   --set bootstrap.capsuleProxyVersion=0.9.13
 ```
 Release images follow git tag names and keep the leading `v` (e.g., `v0.1.1`).
-Chart versions published to GHCR use semantic versions without the `v` prefix (e.g., `0.1.1`).
 The chart bundles the NovaTenant/NovaProject/NovaApp CRDs under `crds/` so no extra `kubectl apply -k deploy/crds` step is required.
 
 Values

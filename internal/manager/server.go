@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	version                   = "0.1.1"
+	version                   = "v0.1.1"
 	authContextKey            = contextKey("auth")
 	defaultTokenTTL           = 60 * time.Minute
 	maxBodyBytes        int64 = 1 << 20 // 1MB

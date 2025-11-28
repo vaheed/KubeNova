@@ -10,7 +10,7 @@ KubeNova emits structured logs, Prometheus metrics, and OpenTelemetry traces.
 - Manager and operator expose OTLP/gRPC; configure via environment:
   - `OTEL_EXPORTER_OTLP_ENDPOINT` (e.g. `http://localhost:4317`)
   - `OTEL_EXPORTER_OTLP_INSECURE=true` when using HTTP endpoints
-  - `KUBENOVA_ENV` (dev|staging|prod), `KUBENOVA_VERSION` (default `0.1.1`)
+  - `KUBENOVA_ENV` (dev|staging|prod), `KUBENOVA_VERSION` (default `v0.1.1`)
   - Optional: `OTEL_RESOURCE_ATTRIBUTES` (comma-separated key=value pairs)
 - SigNoz quickstart:
 ```bash
@@ -26,7 +26,7 @@ helm upgrade --install manager deploy/helm/manager \
   --set otel.endpoint=http://signoz-otel-collector:4317 \
   --set otel.insecure=true \
   --set otel.environment=staging \
-  --set otel.version=0.1.1
+  --set otel.version=v0.1.1
 
 helm upgrade --install operator deploy/helm/operator \
   -n kubenova-system \
@@ -35,7 +35,7 @@ helm upgrade --install operator deploy/helm/operator \
   --set otel.endpoint=http://signoz-otel-collector:4317 \
   --set otel.insecure=true \
   --set otel.environment=staging \
-  --set otel.version=0.1.1
+  --set otel.version=v0.1.1
 ```
 - Expect services `kubenova-manager` and `kubenova-operator` to appear in SigNoz; logs include `trace_id` for correlation.
 

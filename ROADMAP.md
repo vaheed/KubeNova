@@ -1,11 +1,11 @@
-# KubeNova Roadmap (0.1.1 baseline)
+# KubeNova Roadmap (v0.1.1 baseline)
 
 ## Completed / Available
-- Core manager HTTP API (`/api/v1`) with structured errors, optional JWT/RBAC, and OpenAPI 0.1.1.
+- Core manager HTTP API (`/api/v1`) with structured errors, optional JWT/RBAC, and OpenAPI v0.1.1.
 - Postgres-backed store with in-memory fallback for tests; health/readiness checks fail fast when `DATABASE_URL` is missing.
 - Operator bootstrap pipeline with bundled Helm + charts for operator/cert-manager/Capsule/Capsule Proxy/KubeVela/FluxCD/Velaux; periodic reconcile loop.
 - Nova CRDs (tenant/project/app) and controller-runtime scaffolding with Capsule/Vela adapters.
-- Dev ergonomics: docker-compose stack, kind assets + helper script, VitePress docs, cleaned env example, Helm charts versioned at 0.1.1.
+- Dev ergonomics: docker-compose stack, kind assets + helper script, VitePress docs, cleaned env example, Helm charts versioned at v0.1.1.
 
 ## In Progress
 - Harden Postgres migrations and persistence for clusters/tenants/projects/apps/usage.
