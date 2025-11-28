@@ -19,12 +19,12 @@ docker compose -f docker-compose.dev.yml build              # rebuild images
 - To include the kind helper container: `docker compose -f docker-compose.dev.yml up -d kind` (requires `docker network create --subnet 10.250.0.0/16 kind-ipv4` first).
 
 ## Helm charts
-- Charts live under `deploy/helm/{manager,operator}` (chart version `0.1.1`; container tags use `v0.1.1`).
+- Charts live under `deploy/helm/{manager,operator}` with defaults set to `v0.1.1`.
 - Add the chart repo (OCI):
 ```bash
 helm registry login ghcr.io -u <user> -p <token>
-helm pull oci://ghcr.io/vaheed/kubenova/charts/manager --version 0.1.1
-helm pull oci://ghcr.io/vaheed/kubenova/charts/operator --version 0.1.1
+helm pull oci://ghcr.io/vaheed/kubenova/charts/manager --version v0.1.1
+helm pull oci://ghcr.io/vaheed/kubenova/charts/operator --version v0.1.1
 ```
 - Install manager (example):
 ```bash

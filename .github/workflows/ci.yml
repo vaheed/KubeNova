@@ -218,6 +218,20 @@ jobs:
           for f in out/*.tgz; do echo pushing "$f"; helm push "$f" "$REPO"; done
       - name: Setup ORAS CLI
         uses: oras-project/setup-oras@v1
+      - name: Tag charts with v-prefixed version
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          echo ${{ secrets.GITHUB_TOKEN }} | oras login ghcr.io -u ${{ github.actor }} --password-stdin
+          for f in out/*.tgz; do
+            name=$(helm show chart "$f" | awk -F': ' '/^name:/{print $2; exit}')
+            ver=$(helm show chart "$f" | awk -F': ' '/^version:/{print $2; exit}')
+            src="ghcr.io/${OWNER}/kubenova/charts/${name}:${ver}"
+            dst="ghcr.io/${OWNER}/kubenova/charts/${name}:v${ver}"
+            echo "Tagging $src -> $dst"
+            oras copy "$src" "$dst"
+          done
       - name: Apply lightweight tags (latest or dev)
         if: ${{ github.ref_name == 'develop' || github.ref_name == 'main' }}
         env:

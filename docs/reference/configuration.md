@@ -20,7 +20,7 @@ title: Configuration
 - `OTEL_EXPORTER_OTLP_ENDPOINT` – OTLP/gRPC or HTTP collector endpoint.
 - `OTEL_EXPORTER_OTLP_INSECURE` – set true for HTTP endpoints.
 - `KUBENOVA_ENV` – environment tag in traces (dev|staging|prod).
-- `KUBENOVA_VERSION` – version reported in traces/metrics (default `0.1.1`).
+- `KUBENOVA_VERSION` – version reported in traces/metrics (default `v0.1.1`).
 - `OTEL_RESOURCE_ATTRIBUTES` – optional comma-separated attributes.
 
 ## Bootstrap & addons

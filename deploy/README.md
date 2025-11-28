@@ -13,8 +13,8 @@ Publishing
 Install (OCI)
 ```bash
 helm registry login ghcr.io -u <user> -p <token>
-helm pull oci://ghcr.io/<owner>/kubenova/charts/manager --version 0.1.1
-helm pull oci://ghcr.io/<owner>/kubenova/charts/operator --version 0.1.1
+helm pull oci://ghcr.io/<owner>/kubenova/charts/manager --version v0.1.1
+helm pull oci://ghcr.io/<owner>/kubenova/charts/operator --version v0.1.1
 ```
 
 Notes

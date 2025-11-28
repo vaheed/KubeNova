@@ -1,5 +1,5 @@
 ---
-title: KubeNova 0.1.1
+title: KubeNova v0.1.1
 ---
 
 # KubeNova
@@ -14,7 +14,7 @@ Unified multi-datacenter CaaS/PaaS control plane that keeps clusters sovereign w
 ## Why this repo matters
 - Canonical API + OpenAPI spec for the manager and its DTOs
 - Helm charts for manager/operator, dev docker-compose, kind assets, and diagrams
-- Baseline release `0.1.1`: cleaned repository, VitePress docs, env hardening, refreshed roadmap, and kind-based E2E guidance
+- Baseline release `v0.1.1`: cleaned repository, VitePress docs, env hardening, refreshed roadmap, and kind-based E2E guidance
 
 ## Start here
 - Read the [Quickstart](getting-started/quickstart.md) to run the stack locally.
