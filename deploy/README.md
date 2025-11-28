@@ -8,7 +8,7 @@ Helm charts and deployment assets.
 Publishing
 - CI publishes OCI charts to `oci://ghcr.io/<owner>/kubenova/charts/{manager,operator}`
   - lightweight tags: `dev` (develop) and `latest` (main)
-  - release tags (e.g., `v0.1.1`) mirror git tags
+  - release chart tags (e.g., `0.1.1`) mirror Chart.yaml; container images keep the leading `v` (e.g., `v0.1.1`)
 
 Install (OCI)
 ```bash
