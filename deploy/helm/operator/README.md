@@ -6,13 +6,13 @@ Install
 ```
 helm upgrade --install operator kubenova/operator \
   -n kubenova-system \
-  --set image.tag=v0.1.1 \
+  --set image.tag=v0.1.2 \
   --set manager.url=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
   --set redis.enabled=true \
   --set bootstrap.capsuleVersion=0.10.6 \
   --set bootstrap.capsuleProxyVersion=0.9.13
 ```
-Release images follow git tag names and keep the leading `v` (e.g., `v0.1.1`).
+Release images follow git tag names and keep the leading `v` (e.g., `v0.1.2`).
 The chart bundles the NovaTenant/NovaProject/NovaApp CRDs under `crds/` so no extra `kubectl apply -k deploy/crds` step is required.
 
 Values

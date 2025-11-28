@@ -205,6 +205,34 @@ func (i *Installer) waitForComponent(ctx context.Context, component string) erro
 	return i.waitForReady(ctx, component)
 }
 
+func (i *Installer) waitForConfigMap(ctx context.Context, namespace, name string, timeout time.Duration) error {
+	reader := i.statusReader()
+	key := client.ObjectKey{Name: name, Namespace: namespace}
+	cfg := corev1.ConfigMap{}
+	timeoutChan := time.After(timeout)
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeoutChan:
+			return fmt.Errorf("timeout waiting for configmap %s/%s", namespace, name)
+		case <-tick.C:
+			err := reader.Get(ctx, key, &cfg)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					logging.L.Info("wait_configmap_pending", zap.String("configmap", name), zap.String("namespace", namespace))
+					continue
+				}
+				logging.L.Error("wait_configmap_error", zap.String("configmap", name), zap.String("namespace", namespace), zap.Error(err))
+				return err
+			}
+			return nil
+		}
+	}
+}
+
 func (i *Installer) runHelmLocal(ctx context.Context, release, chart, namespace string) error {
 	args := []string{"upgrade", "--install", release, chart, "--namespace", namespace, "--create-namespace"}
 	args = append(args, i.componentSetFlags(release)...)
@@ -448,6 +476,8 @@ func (i *Installer) componentSetFlags(component string) []string {
 		return []string{"--set", "installCRDs=true"}
 	case "capsule-proxy":
 		return []string{"--set", "service.type=LoadBalancer"}
+	case "kubevela":
+		return []string{"--set", "multicluster.enabled=false"}
 	case "operator":
 		if url := strings.TrimSpace(os.Getenv(envManagerURL)); url != "" {
 			return []string{"--set", fmt.Sprintf("manager.url=%s", url)}
@@ -533,7 +563,7 @@ var componentRepos = map[string]repoMeta{
 	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.10.4"},
 	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.10.6"},
 	"fluxcd":        {Repo: "https://fluxcd-community.github.io/helm-charts", Chart: "flux2", Version: "2.12.2"},
-	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "v0.1.1"},
+	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "v0.1.2"},
 }
 
 func parseBool(v string) bool {
@@ -556,6 +586,9 @@ func parseBoolWithDefault(envKey string, def bool) bool {
 func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 	kcfg, err := i.kubeconfigBytes()
 	if err != nil {
+		return err
+	}
+	if err := i.waitForConfigMap(ctx, "vela-system", "vela-addon-registry", 2*time.Minute); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp("", "kubenova-kubeconfig-*.yaml")

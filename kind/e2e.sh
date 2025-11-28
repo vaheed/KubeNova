@@ -34,8 +34,8 @@ mkdir -p kind
 kind get kubeconfig --name "$CLUSTER_NAME" > kind/config
 
 if [[ "${LOAD_IMAGES:-0}" == "1" ]]; then
-  echo "[e2e] loading manager/operator images into kind (tags: ${IMAGE_TAG:-v0.1.1})"
-  TAG="${IMAGE_TAG:-v0.1.1}"
+  echo "[e2e] loading manager/operator images into kind (tags: ${IMAGE_TAG:-v0.1.2})"
+  TAG="${IMAGE_TAG:-v0.1.2}"
   kind load docker-image "ghcr.io/vaheed/kubenova/kubenova-manager:${TAG}" --name "$CLUSTER_NAME" || true
   kind load docker-image "ghcr.io/vaheed/kubenova/kubenova-operator:${TAG}" --name "$CLUSTER_NAME" || true
 fi
