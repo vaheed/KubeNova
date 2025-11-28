@@ -19,7 +19,7 @@ docker compose -f docker-compose.dev.yml build              # rebuild images
 - To include the kind helper container: `docker compose -f docker-compose.dev.yml up -d kind` (requires `docker network create --subnet 10.250.0.0/16 kind-ipv4` first).
 
 ## Helm charts
-- Charts live under `deploy/helm/{manager,operator}` with defaults set to version `0.1.1`.
+- Charts live under `deploy/helm/{manager,operator}` (chart version `0.1.1`; container tags use `v0.1.1`).
 - Add the chart repo (OCI):
 ```bash
 helm registry login ghcr.io -u <user> -p <token>
@@ -30,7 +30,7 @@ helm pull oci://ghcr.io/vaheed/kubenova/charts/operator --version 0.1.1
 ```bash
 helm upgrade --install kubenova-manager deploy/helm/manager \
   -n kubenova-system --create-namespace \
-  --set image.tag=0.1.1 \
+  --set image.tag=v0.1.1 \
   --set env.DATABASE_URL=postgres://user:pass@db:5432/kubenova?sslmode=require \
   --set jwt.value="<strong-random-secret>"
 ```
@@ -38,7 +38,7 @@ helm upgrade --install kubenova-manager deploy/helm/manager \
 ```bash
 helm upgrade --install kubenova-operator deploy/helm/operator \
   -n kubenova-system --create-namespace \
-  --set image.tag=0.1.1 \
+  --set image.tag=v0.1.1 \
   --set manager.url=http://kubenova-manager.kubenova-system.svc.cluster.local:8080
 ```
 
