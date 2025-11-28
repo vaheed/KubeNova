@@ -10,13 +10,13 @@ Run live API/integration tests against a real Kubernetes cluster using `kind`. A
 - Docker + docker-compose
 - kind v0.23+ and kubectl v1.30+
 - Go 1.24+ (to run the integration test)
-- Optional: build local `ghcr.io/vaheed/kubenova/*:v0.1.1` images if you want to `kind load` them (`LOAD_IMAGES=1`)
+- Optional: build local `ghcr.io/vaheed/kubenova/*:v0.1.2` images if you want to `kind load` them (`LOAD_IMAGES=1`)
 
 ## 1) Create network + cluster
 ```bash
 docker network create --subnet 10.250.0.0/16 kind-ipv4 || true
 ./kind/e2e.sh                             # creates cluster 'nova', installs MetalLB, writes kind/config
-# Optional: LOAD_IMAGES=1 IMAGE_TAG=v0.1.1 ./kind/e2e.sh   # also loads local images into kind
+# Optional: LOAD_IMAGES=1 IMAGE_TAG=v0.1.2 ./kind/e2e.sh   # also loads local images into kind
 ```
 
 ## 2) Run the manager (Postgres + API)

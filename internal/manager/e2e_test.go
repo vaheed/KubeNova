@@ -76,11 +76,11 @@ func TestManagerEndToEndLifecycle(t *testing.T) {
 			"name":        "api",
 			"description": "API service",
 			"component":   "web",
-			"image":       "ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.1",
+			"image":       "ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.2",
 			"spec": map[string]any{
 				"type": "webservice",
 				"properties": map[string]any{
-					"image": "ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.1",
+					"image": "ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.2",
 					"port":  8080,
 				},
 			},

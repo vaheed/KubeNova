@@ -1,8 +1,8 @@
-# KubeNova v0.1.1
+# KubeNova v0.1.2
 Unified multi-datacenter CaaS/PaaS control plane. Manager runs centrally, clusters stay sovereign, operators connect outbound-only, and Capsule/KubeVela provide multi-tenancy and application delivery.
 
 - API contract: `docs/openapi/openapi.yaml` (`/api/v1`, structured errors `KN-*`, optional JWT/RBAC)
-- Charts: `deploy/helm/{manager,operator}` (version `v0.1.1`)
+- Charts: `deploy/helm/{manager,operator}` (version `v0.1.2`)
 - Docs: VitePress under `docs/` with architecture, operations, and quickstarts
 
 ## Quick start (docker-compose)
@@ -42,5 +42,5 @@ npm run docs:build   # static site in docs/.vitepress/dist
 - Compose and Helm intentionally avoid inline defaults—keep `.env` up to date.
 
 ## Roadmap & changes
-- Roadmap: `ROADMAP.md` or `docs/roadmap.md` (v0.1.1 baseline, live API E2E, docs refresh).
-- Changelog: `CHANGELOG.md` (current release v0.1.1).
+- Roadmap: `ROADMAP.md` or `docs/roadmap.md` (v0.1.2 baseline, live API E2E, docs refresh).
+- Changelog: `CHANGELOG.md` (current release v0.1.2).

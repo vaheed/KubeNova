@@ -1,3 +1,9 @@
+## v0.1.2 – Vela bootstrap hardening
+
+- Wait for the `vela-addon-registry` ConfigMap before enabling Vela addons so fluxcd/velaux installs stop failing when the registry is still pending.
+- Disable kubevela multicluster/cluster-gateway by default to avoid installing `kubevela-cluster-gateway-service` in managed clusters.
+- Bump default images/charts/docs to v0.1.2.
+
 ## v0.1.1 – Cleaned baseline
 
 - Repository hygiene: removed generated artifacts, standardized docs to VitePress, added kind helper script, and clarified single-source env handling.
