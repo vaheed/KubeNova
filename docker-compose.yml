@@ -16,8 +16,6 @@ services:
       context: .
       dockerfile: build/Dockerfile.manager
     env_file: [ .env ]
-    environment:
-      OPERATOR_REPO: ${OPERATOR_REPO:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports: ["8080:8080"]
