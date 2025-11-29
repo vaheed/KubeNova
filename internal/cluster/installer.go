@@ -37,6 +37,7 @@ type Installer struct {
 const (
 	defaultServiceAccountDir = "/var/run/secrets/kubernetes.io/serviceaccount"
 	serviceAccountDirEnv     = "KUBENOVA_SERVICEACCOUNT_DIR"
+	kubenovaNamespace        = "kubenova-system"
 	envCertManagerVersion    = "CERT_MANAGER_VERSION"
 	envCapsuleVersion        = "CAPSULE_VERSION"
 	envCapsuleProxyVersion   = "CAPSULE_PROXY_VERSION"
@@ -121,18 +122,18 @@ func (i *Installer) bootstrapAndSummarize(ctx context.Context, component string)
 		return i.waitForComponent(ctx, component)
 	}
 	// Ensure namespace
-	if err := i.ensureNamespace(ctx, "kubenova-system"); err != nil {
+	if err := i.ensureNamespace(ctx, kubenovaNamespace); err != nil {
 		return err
 	}
 
 	if i.ChartsDir != "" {
-		if err := i.runHelmLocal(ctx, component, fmt.Sprintf("%s/%s", i.ChartsDir, component), "kubenova-system"); err != nil {
+		if err := i.runHelmLocal(ctx, component, fmt.Sprintf("%s/%s", i.ChartsDir, component), kubenovaNamespace); err != nil {
 			return err
 		}
 		return i.waitForComponent(ctx, component)
 	}
 	if i.UseRemote {
-		if err := i.runHelmRemote(ctx, component, "kubenova-system"); err != nil {
+		if err := i.runHelmRemote(ctx, component, kubenovaNamespace); err != nil {
 			return err
 		}
 		return i.waitForComponent(ctx, component)
@@ -167,7 +168,7 @@ func (i *Installer) ensureNamespace(ctx context.Context, ns string) error {
 
 func (i *Installer) ensurePlaceholder(ctx context.Context, component string) error {
 	cm := &corev1.ConfigMap{}
-	key := client.ObjectKey{Name: "kubenova-bootstrap-" + component, Namespace: "kubenova-system"}
+	key := client.ObjectKey{Name: "kubenova-bootstrap-" + component, Namespace: kubenovaNamespace}
 	err := i.Client.Get(ctx, key, cm)
 	if apierrors.IsNotFound(err) {
 		cm = &corev1.ConfigMap{
@@ -400,7 +401,7 @@ func (i *Installer) waitForReady(ctx context.Context, component string) error {
 		return nil
 	}
 	var dep appsv1.Deployment
-	key := client.ObjectKey{Name: deploy, Namespace: "kubenova-system"}
+	key := client.ObjectKey{Name: deploy, Namespace: kubenovaNamespace}
 	reader := i.statusReader()
 	timeout := time.After(5 * time.Minute)
 	tick := time.Tick(5 * time.Second)
@@ -588,7 +589,7 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 	if err != nil {
 		return err
 	}
-	if err := i.waitForConfigMap(ctx, "vela-system", "vela-addon-registry", 2*time.Minute); err != nil {
+	if err := i.waitForConfigMap(ctx, kubenovaNamespace, "vela-addon-registry", 2*time.Minute); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp("", "kubenova-kubeconfig-*.yaml")
@@ -615,6 +616,7 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("KUBECONFIG=%s", tmp.Name()),
 		fmt.Sprintf("VELA_HOME=%s", home),
+		fmt.Sprintf("KUBEVELA_SYSTEM_NAMESPACE=%s", kubenovaNamespace),
 		fmt.Sprintf("HOME=%s", home),
 	)
 	return cmd.Run()
@@ -649,6 +651,7 @@ func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("KUBECONFIG=%s", tmp.Name()),
 		fmt.Sprintf("VELA_HOME=%s", home),
+		fmt.Sprintf("KUBEVELA_SYSTEM_NAMESPACE=%s", kubenovaNamespace),
 		fmt.Sprintf("HOME=%s", home),
 	)
 	return cmd.Run()
@@ -672,7 +675,7 @@ func (i *Installer) uninstall(ctx context.Context, component string) error {
 }
 
 func (i *Installer) runHelmUninstall(ctx context.Context, release string) error {
-	args := []string{"uninstall", release, "--namespace", "kubenova-system"}
+	args := []string{"uninstall", release, "--namespace", kubenovaNamespace}
 	cmd, cleanup, err := i.prepareHelmCommand(ctx, args...)
 	if err != nil {
 		return err
