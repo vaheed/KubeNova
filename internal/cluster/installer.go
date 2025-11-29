@@ -56,7 +56,7 @@ const (
 	envVelauxServiceType     = "VELAUX_SERVICE_TYPE"
 	envVelauxNodePort        = "VELAUX_NODE_PORT"
 	envVelauxAdminName       = "VELAUX_ADMIN_NAME"
-	envVelauxAdminPassword   = "VELAUX_ADMIN_PASSWORD"
+	envVelauxAdminPassword   = "VELAUX_ADMIN_PASSWORD" // #nosec G101 config name only
 	envVelauxAdminEmail      = "VELAUX_ADMIN_EMAIL"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
@@ -686,10 +686,8 @@ func velauxServiceTypeFromEnv() corev1.ServiceType {
 
 func velauxNodePortFromEnv() int32 {
 	if port := strings.TrimSpace(os.Getenv(envVelauxNodePort)); port != "" {
-		if v, err := strconv.Atoi(port); err == nil && v > 0 && v <= 65535 {
-			if v <= math.MaxInt32 {
-				return int32(v)
-			}
+		if v, err := strconv.ParseInt(port, 10, 32); err == nil && v > 0 && v <= math.MaxInt32 {
+			return int32(v)
 		}
 	}
 	return 0
