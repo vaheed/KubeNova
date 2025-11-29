@@ -164,7 +164,7 @@ func NewSpoolBuffer(managerURL, dir string) *SpoolBuffer {
 	if dir == "" {
 		dir = filepath.Join(os.TempDir(), "kubenova", "telemetry")
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		logging.L.Warn("telemetry_spool_mkdir_failed", zap.Error(err), zap.String("dir", dir))
 	}
 	return &SpoolBuffer{
@@ -225,18 +225,26 @@ func (b *SpoolBuffer) storeEvent(payload map[string]string) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
+		if cerr := tmp.Close(); cerr != nil {
+			logging.L.Warn("telemetry_spool_temp_close_failed", zap.Error(cerr), zap.String("path", tmp.Name()))
+		}
+		if rerr := os.Remove(tmp.Name()); rerr != nil {
+			logging.L.Warn("telemetry_spool_temp_remove_failed", zap.Error(rerr), zap.String("path", tmp.Name()))
+		}
 		return fmt.Errorf("write payload: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
+		if rerr := os.Remove(tmp.Name()); rerr != nil {
+			logging.L.Warn("telemetry_spool_temp_remove_failed", zap.Error(rerr), zap.String("path", tmp.Name()))
+		}
 		return fmt.Errorf("close payload: %w", err)
 	}
 	name := fmt.Sprintf("%020d-%d.json", time.Now().UnixNano(), atomic.AddUint64(&b.seq, 1))
 	final := filepath.Join(b.dir, name)
 	if err := os.Rename(tmp.Name(), final); err != nil {
-		os.Remove(tmp.Name())
+		if rerr := os.Remove(tmp.Name()); rerr != nil {
+			logging.L.Warn("telemetry_spool_temp_remove_failed", zap.Error(rerr), zap.String("path", tmp.Name()))
+		}
 		return fmt.Errorf("rename payload: %w", err)
 	}
 	return nil
@@ -258,6 +266,9 @@ func (b *SpoolBuffer) flush() {
 		if entry.IsDir() {
 			continue
 		}
+		if !isSafeEventFilename(entry.Name()) {
+			continue
+		}
 		full := filepath.Join(b.dir, entry.Name())
 		data, err := os.ReadFile(full)
 		if err != nil {
@@ -275,13 +286,28 @@ func (b *SpoolBuffer) flush() {
 			logging.L.Warn("telemetry_spool_forward_failed", zap.String("url", req.URL.String()), zap.Error(err))
 			return
 		}
-		resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			logging.L.Warn("telemetry_spool_close_failed", zap.Error(cerr), zap.String("url", req.URL.String()))
+		}
 		if resp.StatusCode >= 300 {
 			logging.L.Warn("telemetry_spool_non2xx", zap.String("url", req.URL.String()), zap.Int("status", resp.StatusCode))
 			return
 		}
 		_ = os.Remove(full)
 	}
+}
+
+func isSafeEventFilename(name string) bool {
+	if name == "" {
+		return false
+	}
+	if filepath.Base(name) != name {
+		return false
+	}
+	if strings.Contains(name, "..") {
+		return false
+	}
+	return true
 }
 
 type noopBuffer struct{}
