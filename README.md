@@ -38,7 +38,7 @@ npm run docs:build   # static site in docs/.vitepress/dist
 
 ## Configuration
 - `env.example` is canonical; manager fails fast if `DATABASE_URL` is missing.
-- Key env vars: `KUBENOVA_REQUIRE_AUTH`, `JWT_SIGNING_KEY`, `MANAGER_URL`, `PROXY_API_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, component version toggles (`CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `FLUXCD_VERSION`, `VELAUX_VERSION`, `VELA_CLI_VERSION`), `BOOTSTRAP_*` switches.
+- Key env vars: `KUBENOVA_REQUIRE_AUTH`, `JWT_SIGNING_KEY`, `MANAGER_URL`, `PROXY_API_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, component version toggles (`CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `VELAUX_VERSION`, `VELA_CLI_VERSION`), `BOOTSTRAP_*` switches.
 - Compose and Helm intentionally avoid inline defaults—keep `.env` up to date.
 
 ## Roadmap & changes

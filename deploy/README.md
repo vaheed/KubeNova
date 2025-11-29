@@ -3,7 +3,7 @@
 Helm charts and deployment assets.
 
 - `helm/manager` – chart for the Manager API
-- `helm/operator` – chart for the in-cluster Operator (installs Capsule, Capsule Proxy, KubeVela, FluxCD, Velaux)
+- `helm/operator` – chart for the in-cluster Operator (installs Capsule, Capsule Proxy, KubeVela, and Velaux)
 
 Publishing
 - CI publishes OCI charts to `oci://ghcr.io/<owner>/kubenova/charts/{manager,operator}`

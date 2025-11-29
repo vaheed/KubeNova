@@ -7,7 +7,7 @@ title: KubeNova v0.1.2
 Unified multi-datacenter CaaS/PaaS control plane that keeps clusters sovereign while a single manager coordinates metadata, tenant lifecycle, and application orchestration through outbound-only operators.
 
 - Manager API: `/api/v1` (JWT optional), contract defined in `docs/openapi/openapi.yaml`
-- Operators: install Capsule, Capsule Proxy, KubeVela, FluxCD, and Velaux per cluster
+- Operators: install Capsule, Capsule Proxy, KubeVela, and Velaux per cluster
 - Tenants: opinionated two-namespace layout with kubeconfigs per role
 - Transport: outbound gRPC from clusters; manager never talks directly to kube-apiservers
 

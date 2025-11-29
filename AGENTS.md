@@ -43,6 +43,6 @@ Scope: Entire repository.
 - Docs: `npm install && npm run docs:dev` (or `docs:build`)
 - Dev stack: `docker compose -f docker-compose.dev.yml up -d db manager`
 - kind E2E: `./kind/e2e.sh` then `RUN_LIVE_E2E=1 go test -tags=integration ./internal/manager -run LiveAPIE2E -count=1`
-- Upgrade/Bootstrap validation: see `docs/operations/upgrade.md` (register cluster, verify cert-manager/capsule/capsule-proxy/KubeVela/VelaUX/FluxCD, LB check for capsule-proxy, certificate renewal).
+- Upgrade/Bootstrap validation: see `docs/operations/upgrade.md` (register cluster, verify cert-manager/capsule/capsule-proxy/KubeVela/VelaUX, LB check for capsule-proxy, certificate renewal).
 
 By committing, an agent asserts the checklist has been followed.

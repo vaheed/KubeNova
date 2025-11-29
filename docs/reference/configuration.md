@@ -27,12 +27,11 @@ title: Configuration
 ## Bootstrap & addons
 - Charts baked into images: operator chart at `/charts/operator`; Helm bundled in manager image.
 - Overrides:
-  - Versions: `CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `FLUXCD_VERSION`, `VELAUX_VERSION`, `VELA_CLI_VERSION`.
-  - Repos: `VELAUX_REPO`, `FLUXCD_REPO`, `OPERATOR_REPO`.
-  - Toggle installs: `BOOTSTRAP_CERT_MANAGER`, `BOOTSTRAP_CAPSULE`, `BOOTSTRAP_CAPSULE_PROXY`, `BOOTSTRAP_KUBEVELA`, `BOOTSTRAP_FLUXCD`, `BOOTSTRAP_VELAUX`.
+  - Versions: `CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `VELAUX_VERSION`, `VELA_CLI_VERSION`.
+  - Repos: `VELAUX_REPO`, `OPERATOR_REPO`.
+  - Toggle installs: `BOOTSTRAP_CERT_MANAGER`, `BOOTSTRAP_CAPSULE`, `BOOTSTRAP_CAPSULE_PROXY`, `BOOTSTRAP_KUBEVELA`, `BOOTSTRAP_VELAUX`.
 - Source selection: `HELM_CHARTS_DIR` (local charts path), `HELM_USE_REMOTE=true` to pull charts instead of using baked charts.
 - Reconcile cadence: `COMPONENT_RECONCILE_SECONDS`.
-- Velaux exposure: `VELAUX_SERVICE_TYPE` (ClusterIP|NodePort|LoadBalancer) and `VELAUX_NODE_PORT` when nodePort is required.
 - Velaux admin bootstrap: `VELAUX_ADMIN_NAME`, `VELAUX_ADMIN_PASSWORD`, `VELAUX_ADMIN_EMAIL` seed the initial Velaux admin account.
 
 ## Proxy / network

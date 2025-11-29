@@ -4,13 +4,13 @@ title: Upgrades & Validations
 
 # Upgrades & Validations
 
-Use this runbook to validate bootstrap and upgrades for cert-manager, Capsule, Capsule Proxy, KubeVela, Velaux, and FluxCD.
+Use this runbook to validate bootstrap and upgrades for cert-manager, Capsule, Capsule Proxy, KubeVela, and Velaux.
 
 ## Prerequisites
 - Manager and operator images built/tagged (default `v0.1.2`).
 - `docker-compose.dev.yml` for local manager + Postgres.
 - `kind` cluster (see [kind E2E setup](kind-e2e.md)).
-- Optional Helm overrides via `.env`: `CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `FLUXCD_VERSION`, `VELAUX_VERSION`, proxy settings.
+- Optional Helm overrides via `.env`: `CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `VELAUX_VERSION`, proxy settings.
 
 ## Fresh start
 ```bash
@@ -35,23 +35,21 @@ curl -s http://localhost:8080/api/v1/clusters
 kubectl --kubeconfig kind/config -n cert-manager get deployments
 kubectl --kubeconfig kind/config -n capsule-system get deployments
 kubectl --kubeconfig kind/config -n vela-system get deployments
-kubectl --kubeconfig kind/config -n flux-system get deployments
 kubectl --kubeconfig kind/config -n kubenova-system get deployments
 kubectl --kubeconfig kind/config -n kubenova-system get secrets | grep sh.helm
 kubectl --kubeconfig kind/config -n capsule-system get svc capsule-proxy -o jsonpath='{.spec.type}'
 ```
-Expect deployments Ready: `cert-manager`, `cert-manager-cainjector`, `cert-manager-webhook` (in `cert-manager`), `capsule-controller-manager`, `capsule-proxy` (in `capsule-system`), `vela-core`, `fluxcd` controllers (in `vela-system`), `kubenova-operator` (in `kubenova-system`).
+Expect deployments Ready: `cert-manager`, `cert-manager-cainjector`, `cert-manager-webhook` (in `cert-manager`), `capsule-controller-manager`, `capsule-proxy` (in `capsule-system`), `vela-core`, `kubenova-operator` (in `kubenova-system`).
 
 Velaux install (optional):
 ```bash
 kubectl --kubeconfig kind/config -n kubenova-system exec deploy/kubenova-operator -- vela addon enable velaux
 kubectl --kubeconfig kind/config -n vela-system get deployments
 ```
-If you want Velaux exposed via a load balancer, set `VELAUX_SERVICE_TYPE=LoadBalancer` (and `VELAUX_NODE_PORT` if needed) before re-running the addon enablement, then watch `kubectl --kubeconfig kind/config -n vela-system get svc velaux-server` for the assigned `EXTERNAL-IP`.
 Ensure `VELAUX_ADMIN_NAME`, `VELAUX_ADMIN_PASSWORD`, and `VELAUX_ADMIN_EMAIL` are set in `.env` so the bootstrap seeds the Velaux admin user automatically.
 
--## Upgrade triggers
-- HTTP: `POST /api/v1/clusters/{clusterID}/bootstrap/{component}:upgrade` where component is `cert-manager|capsule|capsule-proxy|kubevela|velaux|fluxcd`.
+## Upgrade triggers
+- HTTP: `POST /api/v1/clusters/{clusterID}/bootstrap/{component}:upgrade` where component is `cert-manager|capsule|capsule-proxy|kubevela|velaux`.
 - HTTP: `POST /api/v1/clusters/{clusterID}/refresh` to rerun the full bootstrap/install set when you want to purge state or redeploy everything from scratch.
 - Logs: `docker exec kubenova-kind-1 kubectl --kubeconfig /kubeconfig/config -n kubenova-system logs deploy/kubenova-operator -f --since=5m`.
 

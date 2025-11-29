@@ -10,7 +10,7 @@ KubeNova is a federated control plane: a single global **Manager** orchestrates 
 - **Manager** – HTTP API (`/api/v1`), Postgres-backed store, Helm client to bootstrap operators, OpenTelemetry hooks, and structured logging.
 - **Operator** – controller-runtime manager that installs and reconciles:
   - Capsule (multi-tenancy), Capsule Proxy (per-tenant LB isolation)
-  - KubeVela (application orchestration) + optional FluxCD/Velaux
+  - KubeVela (application orchestration) with optional Velaux addons
   - Nova CRDs (tenants, projects, apps) projected into Capsule/Vela resources.
 - **Store** – Postgres (required) with in-memory fallback only in tests.
 - **Adapters** – translate Nova models into Capsule/Vela manifests; Helm installer for addons.

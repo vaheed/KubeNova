@@ -216,7 +216,7 @@ func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // BootstrapHelmJob installs foundational components (cert-manager, capsule, capsule-proxy, kubevela).
 func BootstrapHelmJob(ctx context.Context, c client.Client, reader client.Reader, scheme *runtime.Scheme) error {
 	installer := cluster.NewInstaller(c, scheme, nil, reader, false)
-	components := []string{"cert-manager", "capsule", "capsule-proxy", "kubevela", "fluxcd", "velaux"}
+	components := []string{"cert-manager", "capsule", "capsule-proxy", "kubevela", "velaux"}
 	for _, comp := range components {
 		logging.L.Info("bootstrap_component_start", zap.String("component", comp))
 		if err := installer.Reconcile(ctx, comp); err != nil {
@@ -241,7 +241,7 @@ func PeriodicComponentReconciler(ctx context.Context, c client.Client, reader cl
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			for _, comp := range []string{"cert-manager", "capsule", "capsule-proxy", "kubevela", "fluxcd", "velaux"} {
+			for _, comp := range []string{"cert-manager", "capsule", "capsule-proxy", "kubevela", "velaux"} {
 				start := time.Now()
 				logging.L.Info("reconcile_component_start", zap.String("component", comp))
 				if err := installer.Reconcile(ctx, comp); err != nil {
