@@ -22,6 +22,7 @@ title: Configuration
 - `KUBENOVA_ENV` – environment tag in traces (dev|staging|prod).
 - `KUBENOVA_VERSION` – version reported in traces/metrics (default `v0.1.2`).
 - `OTEL_RESOURCE_ATTRIBUTES` – optional comma-separated attributes.
+- `TELEMETRY_SPOOL_DIR` – local directory where the operator persists telemetry events when the manager is unreachable (defaults to `$TMPDIR/kubenova/telemetry`).
 
 ## Bootstrap & addons
 - Charts baked into images: operator chart at `/charts/operator`; Helm bundled in manager image.
@@ -31,6 +32,7 @@ title: Configuration
   - Toggle installs: `BOOTSTRAP_CERT_MANAGER`, `BOOTSTRAP_CAPSULE`, `BOOTSTRAP_CAPSULE_PROXY`, `BOOTSTRAP_KUBEVELA`, `BOOTSTRAP_FLUXCD`, `BOOTSTRAP_VELAUX`.
   - Source selection: `HELM_CHARTS_DIR` (local charts path), `HELM_USE_REMOTE=true` to pull charts instead of using baked charts.
   - Reconcile cadence: `COMPONENT_RECONCILE_SECONDS`.
+  - Velaux exposure: `VELAUX_SERVICE_TYPE` (ClusterIP|NodePort|LoadBalancer) and `VELAUX_NODE_PORT` when nodePort is required.
 
 ## Proxy / network
 - `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` – forwarded to Helm when installing remote charts.

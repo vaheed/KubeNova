@@ -46,9 +46,11 @@ Velaux install (optional):
 kubectl --kubeconfig kind/config -n kubenova-system exec deploy/kubenova-operator -- vela addon enable velaux
 kubectl --kubeconfig kind/config -n vela-system get deployments
 ```
+If you want Velaux exposed via a load balancer, set `VELAUX_SERVICE_TYPE=LoadBalancer` (and `VELAUX_NODE_PORT` if needed) before re-running the addon enablement, then watch `kubectl --kubeconfig kind/config -n vela-system get svc velaux-server` for the assigned `EXTERNAL-IP`.
 
-## Upgrade triggers
+-## Upgrade triggers
 - HTTP: `POST /api/v1/clusters/{clusterID}/bootstrap/{component}:upgrade` where component is `cert-manager|capsule|capsule-proxy|kubevela|velaux|fluxcd`.
+- HTTP: `POST /api/v1/clusters/{clusterID}/refresh` to rerun the full bootstrap/install set when you want to purge state or redeploy everything from scratch.
 - Logs: `docker exec kubenova-kind-1 kubectl --kubeconfig /kubeconfig/config -n kubenova-system logs deploy/kubenova-operator -f --since=5m`.
 
 ## Certificate renewal

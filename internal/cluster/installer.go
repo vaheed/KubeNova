@@ -47,6 +47,8 @@ const (
 	envVelauxRepo            = "VELAUX_REPO"
 	envFluxRepo              = "FLUXCD_REPO"
 	envOperatorRepo          = "OPERATOR_REPO"
+	envVelauxServiceType     = "VELAUX_SERVICE_TYPE"
+	envVelauxNodePort        = "VELAUX_NODE_PORT"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
 	envBootstrapCapsuleProxy = "BOOTSTRAP_CAPSULE_PROXY"
@@ -609,6 +611,17 @@ func parseBoolWithDefault(envKey string, def bool) bool {
 	return parseBool(raw)
 }
 
+func velauxAddonArgs() []string {
+	args := []string{}
+	if svc := strings.TrimSpace(os.Getenv(envVelauxServiceType)); svc != "" {
+		args = append(args, "--set", fmt.Sprintf("serviceType=%s", svc))
+	}
+	if port := strings.TrimSpace(os.Getenv(envVelauxNodePort)); port != "" {
+		args = append(args, "--set", fmt.Sprintf("nodePort=%s", port))
+	}
+	return args
+}
+
 func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 	kcfg, err := i.kubeconfigBytes()
 	if err != nil {
@@ -633,6 +646,7 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		return err
 	}
 	args := []string{"addon", "enable", addon, "--yes"}
+	args = append(args, velauxAddonArgs()...)
 	home, err := os.MkdirTemp("", "kubenova-vela-home-*")
 	if err != nil {
 		return err

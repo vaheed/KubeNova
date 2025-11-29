@@ -17,12 +17,14 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/vaheed/kubenova/internal/cluster"
 	"github.com/vaheed/kubenova/internal/logging"
+	"github.com/vaheed/kubenova/internal/reconcile"
 	"github.com/vaheed/kubenova/internal/store"
 	"github.com/vaheed/kubenova/pkg/types"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -83,6 +85,7 @@ func (s *Server) Router() http.Handler {
 				r.Delete("/", s.deleteCluster)
 				r.Get("/capabilities", s.getCapabilities)
 				r.Post("/bootstrap/{component}", s.bootstrapComponent)
+				r.Post("/refresh", s.refreshCluster)
 
 				r.Route("/tenants", func(r chi.Router) {
 					r.Get("/", s.listTenants)
@@ -479,6 +482,64 @@ func (s *Server) bootstrapComponent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"clusterId": c.ID,
 		"component": component,
+		"status":    c.Status,
+	})
+}
+
+func (s *Server) refreshCluster(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin", "ops") {
+		return
+	}
+	id := chi.URLParam(r, "clusterID")
+	c, err := s.store.GetCluster(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+
+	if c.Kubeconfig == "" {
+		writeError(w, http.StatusBadRequest, "KN-400", "kubeconfig missing")
+		return
+	}
+
+	c.Status = "reinstalling"
+	c.UpdatedAt = time.Now().UTC()
+	_ = s.store.UpdateCluster(r.Context(), c)
+
+	cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(c.Kubeconfig))
+	if err != nil {
+		c.Status = "error"
+		_ = s.store.UpdateCluster(r.Context(), c)
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("parse kubeconfig: %v", err))
+		return
+	}
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	cli, err := ctrlclient.New(cfg, ctrlclient.Options{Scheme: scheme})
+	if err != nil {
+		c.Status = "error"
+		_ = s.store.UpdateCluster(r.Context(), c)
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("build client: %v", err))
+		return
+	}
+
+	if err := reconcile.BootstrapHelmJob(r.Context(), cli, cli, scheme); err != nil {
+		c.Status = "error"
+		_ = s.store.UpdateCluster(r.Context(), c)
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("reinstall components: %v", err))
+		return
+	}
+
+	c.Status = "connected"
+	c.UpdatedAt = time.Now().UTC()
+	_ = s.store.UpdateCluster(r.Context(), c)
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"clusterId": c.ID,
 		"status":    c.Status,
 	})
 }
