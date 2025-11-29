@@ -43,9 +43,9 @@ helm upgrade --install kubenova-operator deploy/helm/operator \
 ```
 
 ## Bootstrap/upgrade components
-- The operator installs cert-manager, Capsule, Capsule Proxy, KubeVela, FluxCD, and Velaux by default.
-- Version overrides: set `CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `FLUXCD_VERSION`, `VELAUX_VERSION`, `VELA_CLI_VERSION`.
-- Toggle installs: `BOOTSTRAP_CERT_MANAGER`, `BOOTSTRAP_CAPSULE`, `BOOTSTRAP_CAPSULE_PROXY`, `BOOTSTRAP_KUBEVELA`, `BOOTSTRAP_FLUXCD`, `BOOTSTRAP_VELAUX`.
+- The operator installs cert-manager, Capsule, Capsule Proxy, KubeVela, and Velaux by default.
+- Version overrides: set `CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `VELAUX_VERSION`, `VELA_CLI_VERSION`.
+- Toggle installs: `BOOTSTRAP_CERT_MANAGER`, `BOOTSTRAP_CAPSULE`, `BOOTSTRAP_CAPSULE_PROXY`, `BOOTSTRAP_KUBEVELA`, `BOOTSTRAP_VELAUX`.
 
 ## CRDs and manifests
 - Nova CRDs live under `deploy/crds/`; apply with `kubectl apply -k deploy/crds`.

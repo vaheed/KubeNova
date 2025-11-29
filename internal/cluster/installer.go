@@ -7,12 +7,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -48,13 +46,9 @@ const (
 	envCapsuleVersion        = "CAPSULE_VERSION"
 	envCapsuleProxyVersion   = "CAPSULE_PROXY_VERSION"
 	envVelaVersion           = "VELA_VERSION"
-	envFluxVersion           = "FLUXCD_VERSION"
 	envVelauxVersion         = "VELAUX_VERSION"
 	envVelauxRepo            = "VELAUX_REPO"
-	envFluxRepo              = "FLUXCD_REPO"
 	envOperatorRepo          = "OPERATOR_REPO"
-	envVelauxServiceType     = "VELAUX_SERVICE_TYPE"
-	envVelauxNodePort        = "VELAUX_NODE_PORT"
 	envVelauxAdminName       = "VELAUX_ADMIN_NAME"
 	envVelauxAdminPassword   = "VELAUX_ADMIN_PASSWORD" // #nosec G101 config name only
 	envVelauxAdminEmail      = "VELAUX_ADMIN_EMAIL"
@@ -63,7 +57,6 @@ const (
 	envBootstrapCapsuleProxy = "BOOTSTRAP_CAPSULE_PROXY"
 	envBootstrapKubeVela     = "BOOTSTRAP_KUBEVELA"
 	envBootstrapVelaux       = "BOOTSTRAP_VELAUX"
-	envBootstrapFluxCD       = "BOOTSTRAP_FLUXCD"
 	envManagerURL            = "MANAGER_URL"
 )
 
@@ -73,7 +66,6 @@ var componentNamespaces = map[string]string{
 	"capsule-proxy": "capsule-system",
 	"kubevela":      "vela-system",
 	"velaux":        "vela-system",
-	"fluxcd":        "flux-system",
 }
 
 func namespaceForComponent(component string) string {
@@ -139,7 +131,7 @@ func (i *Installer) Reconcile(ctx context.Context, component string) error {
 func (i *Installer) bootstrapAndSummarize(ctx context.Context, component string) error {
 	start := time.Now()
 	meta := i.componentMeta(component)
-	if component == "velaux" || component == "fluxcd" {
+	if component == "velaux" {
 		if err := i.enableVelaAddon(ctx, component); err != nil {
 			return err
 		}
@@ -147,13 +139,8 @@ func (i *Installer) bootstrapAndSummarize(ctx context.Context, component string)
 		if err := i.waitForComponent(ctx, component); err != nil {
 			return err
 		}
-		if component == "velaux" {
-			if err := i.reconcileVelauxServiceExposure(ctx); err != nil {
-				return err
-			}
-			if err := i.ensureVelauxAdmin(ctx); err != nil {
-				return err
-			}
+		if err := i.ensureVelauxAdmin(ctx); err != nil {
+			return err
 		}
 		return nil
 	}
@@ -510,10 +497,6 @@ func (i *Installer) versionOverride(component, fallback string) string {
 				return v
 			}
 		}
-	case "fluxcd":
-		if v := os.Getenv(envFluxVersion); v != "" {
-			return v
-		}
 	}
 	return fallback
 }
@@ -546,10 +529,6 @@ func (i *Installer) componentMeta(component string) *repoMeta {
 		if repo := os.Getenv(envVelauxRepo); repo != "" {
 			meta.Repo = repo
 		}
-	case "fluxcd":
-		if repo := os.Getenv(envFluxRepo); repo != "" {
-			meta.Repo = repo
-		}
 	case "operator":
 		if repo := os.Getenv(envOperatorRepo); repo != "" {
 			meta.Repo = repo
@@ -570,8 +549,6 @@ func (i *Installer) shouldBootstrap(component string) bool {
 		return parseBoolWithDefault(envBootstrapKubeVela, true)
 	case "velaux":
 		return parseBoolWithDefault(envBootstrapVelaux, true)
-	case "fluxcd":
-		return parseBoolWithDefault(envBootstrapFluxCD, true)
 	default:
 		return true
 	}
@@ -589,8 +566,6 @@ func deploymentNames(component string) []string {
 		return []string{"kubevela-vela-core", "kubevela-vela-core-webhook"}
 	case "velaux":
 		return []string{"velaux-server"}
-	case "fluxcd":
-		return []string{"helm-controller"}
 	case "operator":
 		return []string{"kubenova-operator"}
 	default:
@@ -610,7 +585,6 @@ var componentRepos = map[string]repoMeta{
 	"capsule-proxy": {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule-proxy", Version: "0.9.13"},
 	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.10.4"},
 	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.10.6"},
-	"fluxcd":        {Repo: "https://fluxcd-community.github.io/helm-charts", Chart: "flux2", Version: "2.12.2"},
 	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "v0.1.2"},
 }
 
@@ -629,68 +603,6 @@ func parseBoolWithDefault(envKey string, def bool) bool {
 		return def
 	}
 	return parseBool(raw)
-}
-
-func velauxAddonArgs() []string {
-	args := []string{}
-	if svc := strings.TrimSpace(os.Getenv(envVelauxServiceType)); svc != "" {
-		args = append(args, "--set", fmt.Sprintf("serviceType=%s", svc))
-	}
-	if port := strings.TrimSpace(os.Getenv(envVelauxNodePort)); port != "" {
-		args = append(args, "--set", fmt.Sprintf("nodePort=%s", port))
-	}
-	return args
-}
-
-func (i *Installer) reconcileVelauxServiceExposure(ctx context.Context) error {
-	svcType := velauxServiceTypeFromEnv()
-	if svcType == "" || svcType == corev1.ServiceTypeClusterIP {
-		return nil
-	}
-	target := &corev1.Service{}
-	key := client.ObjectKey{
-		Name:      "velaux-server",
-		Namespace: namespaceForComponent("velaux"),
-	}
-	if err := i.Client.Get(ctx, key, target); err != nil {
-		return err
-	}
-	needsUpdate := target.Spec.Type != svcType
-	if !needsUpdate && svcType == corev1.ServiceTypeNodePort {
-		if port := velauxNodePortFromEnv(); port > 0 && (len(target.Spec.Ports) == 0 || target.Spec.Ports[0].NodePort != port) {
-			needsUpdate = true
-		}
-	}
-	if !needsUpdate {
-		return nil
-	}
-	target.Spec.Type = svcType
-	if svcType == corev1.ServiceTypeNodePort {
-		if port := velauxNodePortFromEnv(); port > 0 && len(target.Spec.Ports) > 0 {
-			target.Spec.Ports[0].NodePort = port
-		}
-	}
-	if err := i.Client.Update(ctx, target); err != nil {
-		return err
-	}
-	logging.L.Info("velaux_service_updated", zap.String("type", string(svcType)))
-	return nil
-}
-
-func velauxServiceTypeFromEnv() corev1.ServiceType {
-	if svc := strings.TrimSpace(os.Getenv(envVelauxServiceType)); svc != "" {
-		return corev1.ServiceType(svc)
-	}
-	return ""
-}
-
-func velauxNodePortFromEnv() int32 {
-	if port := strings.TrimSpace(os.Getenv(envVelauxNodePort)); port != "" {
-		if v, err := strconv.ParseInt(port, 10, 32); err == nil && v > 0 && v <= math.MaxInt32 {
-			return int32(v)
-		}
-	}
-	return 0
 }
 
 func (i *Installer) ensureVelauxAdmin(ctx context.Context) error {
@@ -872,7 +784,6 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		return err
 	}
 	args := []string{"addon", "enable", addon, "--yes"}
-	args = append(args, velauxAddonArgs()...)
 	home, err := os.MkdirTemp("", "kubenova-vela-home-*")
 	if err != nil {
 		return err
@@ -927,7 +838,7 @@ func (i *Installer) uninstall(ctx context.Context, component string) error {
 	start := time.Now()
 	meta := i.componentMeta(component)
 	var err error
-	if component == "velaux" || component == "fluxcd" {
+	if component == "velaux" {
 		err = i.disableVelaAddon(ctx, component)
 	} else {
 		err = i.runHelmUninstall(ctx, component)
