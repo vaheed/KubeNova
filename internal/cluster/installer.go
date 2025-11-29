@@ -461,10 +461,60 @@ func (i *Installer) waitForReady(ctx context.Context, component string) error {
 				}
 			}
 			if allReady {
+				if component == "kubevela" {
+					if err := i.waitForWebhookService(ctx); err != nil {
+						return err
+					}
+				}
 				return nil
 			}
 		}
 	}
+}
+
+func (i *Installer) waitForWebhookService(ctx context.Context) error {
+	ns := namespaceForComponent("kubevela")
+	return i.waitForEndpoints(ctx, ns, "vela-core-webhook", 5*time.Minute)
+}
+
+func (i *Installer) waitForEndpoints(ctx context.Context, namespace, name string, timeout time.Duration) error {
+	reader := i.statusReader()
+	key := client.ObjectKey{Name: name, Namespace: namespace}
+	timeoutChan := time.After(timeout)
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeoutChan:
+			return fmt.Errorf("timeout waiting for service %s/%s endpoints", namespace, name)
+		case <-tick.C:
+			var eps corev1.Endpoints
+			if err := reader.Get(ctx, key, &eps); err != nil {
+				if apierrors.IsNotFound(err) {
+					logging.L.Info("webhook_service_pending", zap.String("namespace", namespace), zap.String("service", name))
+					continue
+				}
+				logging.L.Error("webhook_service_error", zap.String("namespace", namespace), zap.String("service", name), zap.Error(err))
+				return err
+			}
+			if endpointsReady(&eps) {
+				logging.L.Info("webhook_service_ready", zap.String("namespace", namespace), zap.String("service", name))
+				return nil
+			}
+			logging.L.Info("webhook_service_pending", zap.String("namespace", namespace), zap.String("service", name))
+		}
+	}
+}
+
+func endpointsReady(eps *corev1.Endpoints) bool {
+	for _, subset := range eps.Subsets {
+		if len(subset.Addresses) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (i *Installer) statusReader() client.Reader {
@@ -563,7 +613,7 @@ func deploymentNames(component string) []string {
 	case "capsule-proxy":
 		return []string{"capsule-proxy"}
 	case "kubevela":
-		return []string{"kubevela-vela-core", "kubevela-vela-core-webhook"}
+		return []string{"kubevela-vela-core"}
 	case "velaux":
 		return []string{"velaux-server"}
 	case "operator":
