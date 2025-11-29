@@ -25,7 +25,7 @@ KubeNova is a federated control plane: a single global **Manager** orchestrates 
 
 ## Lifecycle (happy path)
 1. Register cluster → Manager installs operator via Helm using the provided kubeconfig.
-2. Operator bootstraps Capsule, Capsule Proxy, KubeVela (and addons) in `kubenova-system`.
+2. Operator bootstraps Capsule, Capsule Proxy, KubeVela (and addons) into their dedicated namespaces (`cert-manager`, `capsule-system`, `vela-system`) while the operator itself and Manager live in `kubenova-system`.
 3. Tenants/projects/apps are created through the Manager API and projected by the operator.
 4. Operator reports status/usage back to the Manager; manager serves read-only summaries.
 

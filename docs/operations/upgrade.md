@@ -32,11 +32,14 @@ curl -s http://localhost:8080/api/v1/clusters
 
 ## Verify installs
 ```bash
+kubectl --kubeconfig kind/config -n cert-manager get deployments
+kubectl --kubeconfig kind/config -n capsule-system get deployments
+kubectl --kubeconfig kind/config -n vela-system get deployments
 kubectl --kubeconfig kind/config -n kubenova-system get deployments
 kubectl --kubeconfig kind/config -n kubenova-system get secrets | grep sh.helm
-kubectl --kubeconfig kind/config -n kubenova-system get svc capsule-proxy -o jsonpath='{.spec.type}'
+kubectl --kubeconfig kind/config -n capsule-system get svc capsule-proxy -o jsonpath='{.spec.type}'
 ```
-Expect deployments Ready: `cert-manager`, `cert-manager-cainjector`, `cert-manager-webhook`, `capsule-controller-manager`, `capsule-proxy`, `vela-core`, `fluxcd` controllers, `kubenova-operator`.
+Expect deployments Ready: `cert-manager`, `cert-manager-cainjector`, `cert-manager-webhook` (in `cert-manager`), `capsule-controller-manager`, `capsule-proxy` (in `capsule-system`), `vela-core`, `fluxcd` controllers (in `vela-system`), `kubenova-operator` (in `kubenova-system`).
 
 Velaux install (optional):
 ```bash
@@ -51,7 +54,7 @@ kubectl --kubeconfig kind/config -n vela-system get deployments
 ## Certificate renewal
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/clusters/{clusterID}/cert-manager:renew
-kubectl --kubeconfig kind/config -n kubenova-system rollout status deploy/cert-manager-webhook
+kubectl --kubeconfig kind/config -n cert-manager rollout status deploy/cert-manager-webhook
 ```
 
 ## Rollback expectation
