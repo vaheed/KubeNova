@@ -411,37 +411,47 @@ users:
 }
 
 func (i *Installer) waitForReady(ctx context.Context, component string) error {
-	deploy := deploymentName(component)
-	if deploy == "" {
+	deployments := deploymentNames(component)
+	if len(deployments) == 0 {
 		return nil
 	}
-	var dep appsv1.Deployment
-	key := client.ObjectKey{Name: deploy, Namespace: namespaceForComponent(component)}
 	reader := i.statusReader()
 	timeout := time.After(5 * time.Minute)
-	tick := time.Tick(5 * time.Second)
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+	ns := namespaceForComponent(component)
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-timeout:
-			return fmt.Errorf("timeout waiting for %s ready", deploy)
-		case <-tick:
-			err := reader.Get(ctx, key, &dep)
-			if err != nil {
-				if apierrors.IsNotFound(err) {
-					logging.L.Info("bootstrap_component_pending", zap.String("component", component))
-					continue
+			return fmt.Errorf("timeout waiting for %s ready", deployments[0])
+		case <-tick.C:
+			allReady := true
+			for _, name := range deployments {
+				key := client.ObjectKey{Name: name, Namespace: ns}
+				var dep appsv1.Deployment
+				err := reader.Get(ctx, key, &dep)
+				if err != nil {
+					if apierrors.IsNotFound(err) {
+						logging.L.Info("bootstrap_component_pending", zap.String("component", component), zap.String("deployment", name))
+						allReady = false
+						continue
+					}
+					logging.L.Error("bootstrap_component_get_failed", zap.String("component", component), zap.String("deployment", name), zap.Error(err))
+					return err
 				}
-				logging.L.Error("bootstrap_component_get_failed", zap.String("component", component), zap.Error(err))
-				return err
+				logging.L.Info("bootstrap_component_status",
+					zap.String("component", component),
+					zap.String("deployment", name),
+					zap.Int32("available", dep.Status.AvailableReplicas),
+					zap.Int32("ready", dep.Status.ReadyReplicas),
+				)
+				if dep.Status.AvailableReplicas == 0 {
+					allReady = false
+				}
 			}
-			logging.L.Info("bootstrap_component_status",
-				zap.String("component", component),
-				zap.Int32("available", dep.Status.AvailableReplicas),
-				zap.Int32("ready", dep.Status.ReadyReplicas),
-			)
-			if dep.Status.AvailableReplicas > 0 {
+			if allReady {
 				return nil
 			}
 		}
@@ -545,24 +555,24 @@ func (i *Installer) shouldBootstrap(component string) bool {
 	}
 }
 
-func deploymentName(component string) string {
+func deploymentNames(component string) []string {
 	switch component {
 	case "cert-manager":
-		return "cert-manager"
+		return []string{"cert-manager"}
 	case "capsule":
-		return "capsule-controller-manager"
+		return []string{"capsule-controller-manager"}
 	case "capsule-proxy":
-		return "capsule-proxy"
+		return []string{"capsule-proxy"}
 	case "kubevela":
-		return "kubevela-vela-core"
+		return []string{"kubevela-vela-core", "kubevela-vela-core-webhook"}
 	case "velaux":
-		return "velaux"
+		return []string{"velaux-server"}
 	case "fluxcd":
-		return "helm-controller"
+		return []string{"helm-controller"}
 	case "operator":
-		return "kubenova-operator"
+		return []string{"kubenova-operator"}
 	default:
-		return ""
+		return nil
 	}
 }
 
