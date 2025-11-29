@@ -275,6 +275,24 @@ paths:
                 status: accepted
         '404':
           $ref: '#/components/responses/Error'
+  /api/v1/clusters/{clusterID}/refresh:
+    parameters:
+      - $ref: '#/components/parameters/ClusterID'
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Reinstall all foundational components for a cluster
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                clusterId: 2c7b6b18-1f1b-4e4c-8af1-111111111111
+                status: connected
+        '404':
+          $ref: '#/components/responses/Error'
   /api/v1/clusters/{clusterID}/tenants:
     parameters:
       - $ref: '#/components/parameters/ClusterID'
