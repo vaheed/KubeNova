@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -262,6 +263,7 @@ func (b *SpoolBuffer) flush() {
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() < entries[j].Name()
 	})
+	rootfs := os.DirFS(b.dir)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -270,7 +272,7 @@ func (b *SpoolBuffer) flush() {
 			continue
 		}
 		full := filepath.Join(b.dir, entry.Name())
-		data, err := os.ReadFile(full)
+		data, err := fs.ReadFile(rootfs, entry.Name())
 		if err != nil {
 			logging.L.Warn("telemetry_spool_read_file_failed", zap.Error(err), zap.String("path", full))
 			continue
