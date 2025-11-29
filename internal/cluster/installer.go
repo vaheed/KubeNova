@@ -1,12 +1,17 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +54,9 @@ const (
 	envOperatorRepo          = "OPERATOR_REPO"
 	envVelauxServiceType     = "VELAUX_SERVICE_TYPE"
 	envVelauxNodePort        = "VELAUX_NODE_PORT"
+	envVelauxAdminName       = "VELAUX_ADMIN_NAME"
+	envVelauxAdminPassword   = "VELAUX_ADMIN_PASSWORD"
+	envVelauxAdminEmail      = "VELAUX_ADMIN_EMAIL"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
 	envBootstrapCapsuleProxy = "BOOTSTRAP_CAPSULE_PROXY"
@@ -64,7 +72,7 @@ var componentNamespaces = map[string]string{
 	"capsule-proxy": "capsule-system",
 	"kubevela":      "vela-system",
 	"velaux":        "vela-system",
-	"fluxcd":        "vela-system",
+	"fluxcd":        "flux-system",
 }
 
 func namespaceForComponent(component string) string {
@@ -135,7 +143,18 @@ func (i *Installer) bootstrapAndSummarize(ctx context.Context, component string)
 			return err
 		}
 		i.logSummary(component, meta, start, "enabled")
-		return i.waitForComponent(ctx, component)
+		if err := i.waitForComponent(ctx, component); err != nil {
+			return err
+		}
+		if component == "velaux" {
+			if err := i.reconcileVelauxServiceExposure(ctx); err != nil {
+				return err
+			}
+			if err := i.ensureVelauxAdmin(ctx); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	ns := namespaceForComponent(component)
 	// Ensure namespace
@@ -622,6 +641,210 @@ func velauxAddonArgs() []string {
 	return args
 }
 
+func (i *Installer) reconcileVelauxServiceExposure(ctx context.Context) error {
+	svcType := velauxServiceTypeFromEnv()
+	if svcType == "" || svcType == corev1.ServiceTypeClusterIP {
+		return nil
+	}
+	target := &corev1.Service{}
+	key := client.ObjectKey{
+		Name:      "velaux-server",
+		Namespace: namespaceForComponent("velaux"),
+	}
+	if err := i.Client.Get(ctx, key, target); err != nil {
+		return err
+	}
+	needsUpdate := target.Spec.Type != svcType
+	if !needsUpdate && svcType == corev1.ServiceTypeNodePort {
+		if port := velauxNodePortFromEnv(); port > 0 && (len(target.Spec.Ports) == 0 || target.Spec.Ports[0].NodePort != port) {
+			needsUpdate = true
+		}
+	}
+	if !needsUpdate {
+		return nil
+	}
+	target.Spec.Type = svcType
+	if svcType == corev1.ServiceTypeNodePort {
+		if port := velauxNodePortFromEnv(); port > 0 && len(target.Spec.Ports) > 0 {
+			target.Spec.Ports[0].NodePort = port
+		}
+	}
+	if err := i.Client.Update(ctx, target); err != nil {
+		return err
+	}
+	logging.L.Info("velaux_service_updated", zap.String("type", string(svcType)))
+	return nil
+}
+
+func velauxServiceTypeFromEnv() corev1.ServiceType {
+	if svc := strings.TrimSpace(os.Getenv(envVelauxServiceType)); svc != "" {
+		return corev1.ServiceType(svc)
+	}
+	return ""
+}
+
+func velauxNodePortFromEnv() int32 {
+	if port := strings.TrimSpace(os.Getenv(envVelauxNodePort)); port != "" {
+		if v, err := strconv.Atoi(port); err == nil && v > 0 && v <= 65535 {
+			return int32(v)
+		}
+	}
+	return 0
+}
+
+func (i *Installer) ensureVelauxAdmin(ctx context.Context) error {
+	cfg := velauxAdminConfigFromEnv()
+	if !cfg.valid() {
+		logging.L.Info("velaux_admin_config_skipped")
+		return nil
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	baseURL := velauxServerBaseURL()
+	configuredEndpoint := baseURL + velauxAdminConfiguredPath
+	if err := waitForVelauxEndpoint(ctx, client, configuredEndpoint); err != nil {
+		return err
+	}
+	configured, err := velauxAdminConfigured(ctx, client, configuredEndpoint)
+	if err != nil {
+		return err
+	}
+	if configured {
+		logging.L.Info("velaux_admin_already_configured")
+		return nil
+	}
+	if err := velauxInitAdmin(ctx, client, baseURL+velauxInitAdminPath, cfg); err != nil {
+		return err
+	}
+	logging.L.Info("velaux_admin_initialized", zap.String("admin", cfg.Name))
+	return nil
+}
+
+type velauxAdminConfig struct {
+	Name     string
+	Password string
+	Email    string
+}
+
+func (c velauxAdminConfig) valid() bool {
+	return c.Name != "" && c.Password != "" && c.Email != ""
+}
+
+func velauxAdminConfigFromEnv() velauxAdminConfig {
+	return velauxAdminConfig{
+		Name:     envOrDefault(envVelauxAdminName, defaultVelauxAdminName),
+		Password: envOrDefault(envVelauxAdminPassword, defaultVelauxAdminPassword),
+		Email:    envOrDefault(envVelauxAdminEmail, defaultVelauxAdminEmail),
+	}
+}
+
+func envOrDefault(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			return trimmed
+		}
+		return ""
+	}
+	return fallback
+}
+
+func velauxServerBaseURL() string {
+	return fmt.Sprintf("http://velaux-server.%s.svc:%d", namespaceForComponent("velaux"), velauxServerPort)
+}
+
+func waitForVelauxEndpoint(ctx context.Context, client *http.Client, url string) error {
+	timeout := time.After(velauxAdminTimeout)
+	ticker := time.NewTicker(velauxAdminPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for velaux admin endpoint %s", url)
+		case <-ticker.C:
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				return err
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				continue
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+	}
+}
+
+func velauxAdminConfigured(ctx context.Context, client *http.Client, url string) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("checking velaux admin returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	var payload struct {
+		Configured bool `json:"configured"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return false, err
+	}
+	return payload.Configured, nil
+}
+
+func velauxInitAdmin(ctx context.Context, client *http.Client, url string, cfg velauxAdminConfig) error {
+	payload, err := json.Marshal(map[string]string{
+		"name":     cfg.Name,
+		"password": cfg.Password,
+		"email":    cfg.Email,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("initialize velaux admin returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
+const (
+	velauxServerPort           = 8000
+	velauxAdminTimeout         = 2 * time.Minute
+	velauxAdminPollInterval    = 5 * time.Second
+	velauxAdminConfiguredPath  = "/api/v1/auth/admin_configured"
+	velauxInitAdminPath        = "/api/v1/auth/init_admin"
+	defaultVelauxAdminName     = "admin"
+	defaultVelauxAdminPassword = "admin"
+	defaultVelauxAdminEmail    = "admin@example.com"
+)
+
 func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 	kcfg, err := i.kubeconfigBytes()
 	if err != nil {
@@ -654,15 +877,13 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 	defer os.RemoveAll(home)
 	// #nosec G204 -- command and args are controlled internally for trusted addons
 	cmd := exec.CommandContext(ctx, "vela", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("KUBECONFIG=%s", tmp.Name()),
 		fmt.Sprintf("VELA_HOME=%s", home),
 		fmt.Sprintf("KUBEVELA_SYSTEM_NAMESPACE=%s", ns),
 		fmt.Sprintf("HOME=%s", home),
 	)
-	return cmd.Run()
+	return runVelaCommandWithBuffer(cmd)
 }
 
 func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
@@ -690,15 +911,13 @@ func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
 	defer os.RemoveAll(home)
 	// #nosec G204 -- command and args are controlled internally for trusted addons
 	cmd := exec.CommandContext(ctx, "vela", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("KUBECONFIG=%s", tmp.Name()),
 		fmt.Sprintf("VELA_HOME=%s", home),
 		fmt.Sprintf("KUBEVELA_SYSTEM_NAMESPACE=%s", ns),
 		fmt.Sprintf("HOME=%s", home),
 	)
-	return cmd.Run()
+	return runVelaCommandWithBuffer(cmd)
 }
 
 func (i *Installer) uninstall(ctx context.Context, component string) error {
@@ -715,6 +934,20 @@ func (i *Installer) uninstall(ctx context.Context, component string) error {
 		return err
 	}
 	i.logSummary(component, meta, start, "uninstalled")
+	return nil
+}
+
+func runVelaCommandWithBuffer(cmd *exec.Cmd) error {
+	var buf bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stdout, &buf)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &buf)
+	if err := cmd.Run(); err != nil {
+		output := strings.TrimSpace(buf.String())
+		if output != "" {
+			return fmt.Errorf("%w: %s", err, output)
+		}
+		return err
+	}
 	return nil
 }
 

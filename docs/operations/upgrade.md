@@ -35,6 +35,7 @@ curl -s http://localhost:8080/api/v1/clusters
 kubectl --kubeconfig kind/config -n cert-manager get deployments
 kubectl --kubeconfig kind/config -n capsule-system get deployments
 kubectl --kubeconfig kind/config -n vela-system get deployments
+kubectl --kubeconfig kind/config -n flux-system get deployments
 kubectl --kubeconfig kind/config -n kubenova-system get deployments
 kubectl --kubeconfig kind/config -n kubenova-system get secrets | grep sh.helm
 kubectl --kubeconfig kind/config -n capsule-system get svc capsule-proxy -o jsonpath='{.spec.type}'
@@ -47,6 +48,7 @@ kubectl --kubeconfig kind/config -n kubenova-system exec deploy/kubenova-operato
 kubectl --kubeconfig kind/config -n vela-system get deployments
 ```
 If you want Velaux exposed via a load balancer, set `VELAUX_SERVICE_TYPE=LoadBalancer` (and `VELAUX_NODE_PORT` if needed) before re-running the addon enablement, then watch `kubectl --kubeconfig kind/config -n vela-system get svc velaux-server` for the assigned `EXTERNAL-IP`.
+Ensure `VELAUX_ADMIN_NAME`, `VELAUX_ADMIN_PASSWORD`, and `VELAUX_ADMIN_EMAIL` are set in `.env` so the bootstrap seeds the Velaux admin user automatically.
 
 -## Upgrade triggers
 - HTTP: `POST /api/v1/clusters/{clusterID}/bootstrap/{component}:upgrade` where component is `cert-manager|capsule|capsule-proxy|kubevela|velaux|fluxcd`.
