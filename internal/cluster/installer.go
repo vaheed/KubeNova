@@ -47,14 +47,12 @@ const (
 	envVelauxRepo            = "VELAUX_REPO"
 	envFluxRepo              = "FLUXCD_REPO"
 	envOperatorRepo          = "OPERATOR_REPO"
-	envVelaCLIVersion        = "VELA_CLI_VERSION"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
 	envBootstrapCapsuleProxy = "BOOTSTRAP_CAPSULE_PROXY"
 	envBootstrapKubeVela     = "BOOTSTRAP_KUBEVELA"
 	envBootstrapVelaux       = "BOOTSTRAP_VELAUX"
 	envBootstrapFluxCD       = "BOOTSTRAP_FLUXCD"
-	envReconcileInterval     = "COMPONENT_RECONCILE_SECONDS"
 	envManagerURL            = "MANAGER_URL"
 )
 
