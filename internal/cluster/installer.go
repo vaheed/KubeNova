@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -686,7 +687,9 @@ func velauxServiceTypeFromEnv() corev1.ServiceType {
 func velauxNodePortFromEnv() int32 {
 	if port := strings.TrimSpace(os.Getenv(envVelauxNodePort)); port != "" {
 		if v, err := strconv.Atoi(port); err == nil && v > 0 && v <= 65535 {
-			return int32(v)
+			if v <= math.MaxInt32 {
+				return int32(v)
+			}
 		}
 	}
 	return 0
@@ -771,7 +774,9 @@ func waitForVelauxEndpoint(ctx context.Context, client *http.Client, url string)
 				continue
 			}
 			_, _ = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
+			if err := resp.Body.Close(); err != nil {
+				logging.L.Warn("velaux_admin_response_close_failed", zap.Error(err))
+			}
 			if resp.StatusCode == http.StatusOK {
 				return nil
 			}
@@ -840,9 +845,9 @@ const (
 	velauxAdminPollInterval    = 5 * time.Second
 	velauxAdminConfiguredPath  = "/api/v1/auth/admin_configured"
 	velauxInitAdminPath        = "/api/v1/auth/init_admin"
-	defaultVelauxAdminName     = "admin"
-	defaultVelauxAdminPassword = "admin"
-	defaultVelauxAdminEmail    = "admin@example.com"
+	defaultVelauxAdminName     = ""
+	defaultVelauxAdminPassword = ""
+	defaultVelauxAdminEmail    = ""
 )
 
 func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
