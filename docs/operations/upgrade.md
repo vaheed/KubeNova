@@ -46,7 +46,6 @@ Velaux install (optional):
 kubectl --kubeconfig kind/config -n kubenova-system exec deploy/kubenova-operator -- vela addon enable velaux
 kubectl --kubeconfig kind/config -n vela-system get deployments
 ```
-Ensure `VELAUX_ADMIN_NAME`, `VELAUX_ADMIN_PASSWORD`, and `VELAUX_ADMIN_EMAIL` are set in `.env` so the bootstrap seeds the Velaux admin user automatically.
 
 ## Upgrade triggers
 - HTTP: `POST /api/v1/clusters/{clusterID}/bootstrap/{component}:upgrade` where component is `cert-manager|capsule|capsule-proxy|kubevela|velaux`.
