@@ -3,6 +3,7 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -466,7 +467,13 @@ func (i *Installer) waitForReady(ctx context.Context, component string) error {
 
 func (i *Installer) waitForWebhookService(ctx context.Context) error {
 	ns := namespaceForComponent("kubevela")
-	return i.waitForEndpoints(ctx, ns, "vela-core-webhook", 5*time.Minute)
+	if err := i.waitForEndpoints(ctx, ns, "vela-core-webhook", 5*time.Minute); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		logging.L.Warn("webhook_service_endpoints_unavailable", zap.String("namespace", ns), zap.String("service", "vela-core-webhook"), zap.Error(err))
+	}
+	return nil
 }
 
 func (i *Installer) waitForEndpoints(ctx context.Context, namespace, name string, timeout time.Duration) error {
