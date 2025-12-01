@@ -32,7 +32,6 @@ title: Configuration
   - Toggle installs: `BOOTSTRAP_CERT_MANAGER`, `BOOTSTRAP_CAPSULE`, `BOOTSTRAP_CAPSULE_PROXY`, `BOOTSTRAP_KUBEVELA`, `BOOTSTRAP_VELAUX`.
 - Source selection: `HELM_CHARTS_DIR` (local charts path), `HELM_USE_REMOTE=true` to pull charts instead of using baked charts.
 - Reconcile cadence: `COMPONENT_RECONCILE_SECONDS`.
-- Velaux admin bootstrap: `VELAUX_ADMIN_NAME`, `VELAUX_ADMIN_PASSWORD`, `VELAUX_ADMIN_EMAIL` seed the initial Velaux admin account.
 
 ## Proxy / network
 - `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` – forwarded to Helm when installing remote charts.

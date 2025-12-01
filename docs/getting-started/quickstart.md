@@ -48,7 +48,12 @@ curl -s -X POST http://localhost:8080/api/v1/clusters \
 ```
 The manager uses Helm (bundled in the image) and the local operator chart to install the operator into the cluster.
 
-## 5) Next steps
+## 5) VelaUX LoadBalancer
+```bash
+- kubectl -n vela-system patch svc velaux-server -p '{"spec": {"type": "LoadBalancer"}}'
+```
+
+## 6) Next steps
 - Walk through the [API lifecycle](api-playbook.md) for tenants/projects/apps.
 - See [Operations](../operations/kind-e2e.md) for running full integration tests with `kind`.
 - Build the docs locally: `npm install && npm run docs:dev`.
