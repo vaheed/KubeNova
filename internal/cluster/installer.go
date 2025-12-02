@@ -704,6 +704,7 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		return err
 	}
 	args := []string{"addon", "enable", addon, "--yes"}
+	args = append(args, "--upgrade")
 	if svc := strings.TrimSpace(os.Getenv(envVelauxServiceType)); svc != "" {
 		args = append(args, fmt.Sprintf("serviceType=%s", svc))
 	}
@@ -720,7 +721,10 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		fmt.Sprintf("KUBEVELA_SYSTEM_NAMESPACE=%s", ns),
 		fmt.Sprintf("HOME=%s", home),
 	)
-	return runVelaCommandWithBuffer(cmd)
+	if err := runVelaCommandWithBuffer(cmd); err != nil {
+		return err
+	}
+	return i.ensureVelauxServiceType(ctx)
 }
 
 func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
@@ -755,6 +759,26 @@ func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
 		fmt.Sprintf("HOME=%s", home),
 	)
 	return runVelaCommandWithBuffer(cmd)
+}
+
+func (i *Installer) ensureVelauxServiceType(ctx context.Context) error {
+	svcType := strings.TrimSpace(os.Getenv(envVelauxServiceType))
+	if svcType == "" {
+		return nil
+	}
+	svc := &corev1.Service{}
+	key := client.ObjectKey{Name: "velaux-server", Namespace: namespaceForComponent("velaux")}
+	if err := i.statusReader().Get(ctx, key, svc); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if string(svc.Spec.Type) == svcType {
+		return nil
+	}
+	svc.Spec.Type = corev1.ServiceType(svcType)
+	return i.Client.Update(ctx, svc)
 }
 
 func (i *Installer) uninstall(ctx context.Context, component string) error {
