@@ -19,10 +19,13 @@ import (
 	"github.com/vaheed/kubenova/internal/logging"
 	"github.com/vaheed/kubenova/internal/reconcile"
 	"github.com/vaheed/kubenova/internal/store"
+	v1alpha1 "github.com/vaheed/kubenova/pkg/api/v1alpha1"
 	"github.com/vaheed/kubenova/pkg/types"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -41,11 +44,14 @@ const (
 
 type contextKey string
 
+type kubeClientFactory func(context.Context, string) (ctrlclient.Client, error)
+
 // Server exposes the HTTP handlers for the Manager.
 type Server struct {
 	store       store.Store
 	requireAuth bool
 	signingKey  []byte
+	kubeFactory kubeClientFactory
 }
 
 // NewServer builds a Server using the provided persistence store.
@@ -54,6 +60,7 @@ func NewServer(st store.Store) *Server {
 		store:       st,
 		requireAuth: parseBool(os.Getenv("KUBENOVA_REQUIRE_AUTH")),
 		signingKey:  []byte(os.Getenv("JWT_SIGNING_KEY")),
+		kubeFactory: defaultKubeClientFactory(),
 	}
 }
 
@@ -549,6 +556,15 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	clusterID := chi.URLParam(r, "clusterID")
+	cluster, err := s.store.GetCluster(r.Context(), clusterID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
 	var req TenantRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "KN-400", err.Error())
@@ -577,6 +593,11 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		}
+		return
+	}
+	if err := s.syncTenantWithCluster(r.Context(), cluster, t); err != nil {
+		_ = s.store.DeleteTenant(r.Context(), clusterID, t.ID)
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("sync tenant: %v", err))
 		return
 	}
 	writeJSON(w, http.StatusCreated, t)
@@ -619,6 +640,15 @@ func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
+	tenant, err := s.store.GetTenant(r.Context(), clusterID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "KN-404", "tenant not found")
+		return
+	}
+	if err := s.deleteTenantResource(r.Context(), tenant); err != nil {
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("delete tenant from cluster: %v", err))
+		return
+	}
 	if err := s.store.DeleteTenant(r.Context(), clusterID, tenantID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "KN-404", "tenant not found")
@@ -647,6 +677,10 @@ func (s *Server) updateTenantOwners(w http.ResponseWriter, r *http.Request) {
 	t.UpdatedAt = time.Now().UTC()
 	if err := s.store.UpdateTenant(r.Context(), t); err != nil {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	if err := s.syncTenant(r.Context(), t); err != nil {
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("sync tenant: %v", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
@@ -679,6 +713,10 @@ func (s *Server) updateTenantNetworkPolicies(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
+	if err := s.syncTenant(r.Context(), t); err != nil {
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("sync tenant: %v", err))
+		return
+	}
 	writeJSON(w, http.StatusOK, t)
 }
 
@@ -699,6 +737,10 @@ func (s *Server) updateTenantMapField(w http.ResponseWriter, r *http.Request, ap
 	t.UpdatedAt = time.Now().UTC()
 	if err := s.store.UpdateTenant(r.Context(), t); err != nil {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	if err := s.syncTenant(r.Context(), t); err != nil {
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("sync tenant: %v", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
@@ -772,6 +814,20 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
+	cluster, err := s.store.GetCluster(r.Context(), clusterID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	tenant, err := s.store.GetTenant(r.Context(), clusterID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "KN-404", "tenant not found")
+		return
+	}
 	var req ProjectRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "KN-400", err.Error())
@@ -798,6 +854,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		}
+		return
+	}
+	if err := s.syncProjectWithCluster(r.Context(), cluster, tenant, p); err != nil {
+		_ = s.store.DeleteProject(r.Context(), clusterID, tenantID, p.ID)
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("sync project: %v", err))
 		return
 	}
 	writeJSON(w, http.StatusCreated, p)
@@ -861,6 +922,10 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
+	if err := s.syncProject(r.Context(), project, nil); err != nil {
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("sync project: %v", err))
+		return
+	}
 	writeJSON(w, http.StatusOK, project)
 }
 
@@ -871,6 +936,15 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 	clusterID := chi.URLParam(r, "clusterID")
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
+	project, err := s.store.GetProject(r.Context(), clusterID, tenantID, projectID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "KN-404", "project not found")
+		return
+	}
+	if err := s.deleteProjectResource(r.Context(), project); err != nil {
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("delete project from cluster: %v", err))
+		return
+	}
 	if err := s.store.DeleteProject(r.Context(), clusterID, tenantID, projectID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "KN-404", "project not found")
@@ -900,6 +974,10 @@ func (s *Server) updateProjectAccess(w http.ResponseWriter, r *http.Request) {
 	project.UpdatedAt = time.Now().UTC()
 	if err := s.store.UpdateProject(r.Context(), project); err != nil {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
+		return
+	}
+	if err := s.syncProject(r.Context(), project, nil); err != nil {
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("sync project: %v", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, project)
@@ -1552,6 +1630,205 @@ func normalizeKubeconfig(raw string) string {
 		}
 	}
 	return trimmed
+}
+
+func defaultKubeClientFactory() kubeClientFactory {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+	return func(ctx context.Context, kubeconfig string) (ctrlclient.Client, error) {
+		cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
+		if err != nil {
+			return nil, fmt.Errorf("build rest config: %w", err)
+		}
+		return ctrlclient.New(cfg, ctrlclient.Options{Scheme: scheme})
+	}
+}
+
+func (s *Server) kubeClientForCluster(ctx context.Context, c *types.Cluster) (ctrlclient.Client, error) {
+	if c == nil {
+		return nil, errors.New("cluster is nil")
+	}
+	if c.Kubeconfig == "" {
+		return nil, errors.New("kubeconfig missing")
+	}
+	if s.kubeFactory == nil {
+		s.kubeFactory = defaultKubeClientFactory()
+	}
+	return s.kubeFactory(ctx, c.Kubeconfig)
+}
+
+func (s *Server) syncTenant(ctx context.Context, tenant *types.Tenant) error {
+	return s.syncTenantWithCluster(ctx, nil, tenant)
+}
+
+func (s *Server) syncTenantWithCluster(ctx context.Context, cluster *types.Cluster, tenant *types.Tenant) error {
+	if tenant == nil {
+		return errors.New("tenant is nil")
+	}
+	var err error
+	if cluster == nil {
+		cluster, err = s.store.GetCluster(ctx, tenant.ClusterID)
+		if err != nil {
+			return err
+		}
+	}
+	cli, err := s.kubeClientForCluster(ctx, cluster)
+	if err != nil {
+		return err
+	}
+	return upsertNovaTenant(ctx, cli, tenant)
+}
+
+func (s *Server) syncProject(ctx context.Context, project *types.Project, tenant *types.Tenant) error {
+	return s.syncProjectWithCluster(ctx, nil, tenant, project)
+}
+
+func (s *Server) syncProjectWithCluster(ctx context.Context, cluster *types.Cluster, tenant *types.Tenant, project *types.Project) error {
+	if project == nil {
+		return errors.New("project is nil")
+	}
+	var err error
+	if tenant == nil {
+		tenant, err = s.store.GetTenant(ctx, project.ClusterID, project.TenantID)
+		if err != nil {
+			return err
+		}
+	}
+	if cluster == nil {
+		cluster, err = s.store.GetCluster(ctx, project.ClusterID)
+		if err != nil {
+			return err
+		}
+	}
+	cli, err := s.kubeClientForCluster(ctx, cluster)
+	if err != nil {
+		return err
+	}
+	return upsertNovaProject(ctx, cli, tenant.Name, project)
+}
+
+func (s *Server) deleteTenantResource(ctx context.Context, tenant *types.Tenant) error {
+	if tenant == nil {
+		return errors.New("tenant is nil")
+	}
+	cluster, err := s.store.GetCluster(ctx, tenant.ClusterID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	cli, err := s.kubeClientForCluster(ctx, cluster)
+	if err != nil {
+		return err
+	}
+	obj := &v1alpha1.NovaTenant{ObjectMeta: metav1.ObjectMeta{Name: tenant.Name}}
+	if err := cli.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) deleteProjectResource(ctx context.Context, project *types.Project) error {
+	if project == nil {
+		return errors.New("project is nil")
+	}
+	cluster, err := s.store.GetCluster(ctx, project.ClusterID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	cli, err := s.kubeClientForCluster(ctx, cluster)
+	if err != nil {
+		return err
+	}
+	obj := &v1alpha1.NovaProject{ObjectMeta: metav1.ObjectMeta{Name: project.Name}}
+	if err := cli.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+func upsertNovaTenant(ctx context.Context, cli ctrlclient.Client, t *types.Tenant) error {
+	if cli == nil {
+		return errors.New("kube client is nil")
+	}
+	if t == nil {
+		return errors.New("tenant is nil")
+	}
+	spec := v1alpha1.NovaTenantSpec{
+		Owners:          t.Owners,
+		Plan:            t.Plan,
+		Labels:          t.Labels,
+		OwnerNamespace:  t.OwnerNamespace,
+		AppsNamespace:   t.AppsNamespace,
+		NetworkPolicies: t.NetworkPolicies,
+		Quotas:          t.Quotas,
+		Limits:          t.Limits,
+	}
+	current := &v1alpha1.NovaTenant{}
+	err := cli.Get(ctx, ctrlclient.ObjectKey{Name: t.Name}, current)
+	if apierrors.IsNotFound(err) {
+		return cli.Create(ctx, &v1alpha1.NovaTenant{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: v1alpha1.GroupVersion.String(),
+				Kind:       "NovaTenant",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   t.Name,
+				Labels: t.Labels,
+			},
+			Spec: spec,
+		})
+	}
+	if err != nil {
+		return err
+	}
+	current.Spec = spec
+	current.Labels = t.Labels
+	return cli.Update(ctx, current)
+}
+
+func upsertNovaProject(ctx context.Context, cli ctrlclient.Client, tenantName string, project *types.Project) error {
+	if cli == nil {
+		return errors.New("kube client is nil")
+	}
+	if project == nil {
+		return errors.New("project is nil")
+	}
+	if tenantName == "" {
+		return errors.New("tenant name is required")
+	}
+	spec := v1alpha1.NovaProjectSpec{
+		Tenant:      tenantName,
+		Description: project.Description,
+		Labels:      project.Labels,
+		Access:      project.Access,
+	}
+	current := &v1alpha1.NovaProject{}
+	err := cli.Get(ctx, ctrlclient.ObjectKey{Name: project.Name}, current)
+	if apierrors.IsNotFound(err) {
+		return cli.Create(ctx, &v1alpha1.NovaProject{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: v1alpha1.GroupVersion.String(),
+				Kind:       "NovaProject",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   project.Name,
+				Labels: project.Labels,
+			},
+			Spec: spec,
+		})
+	}
+	if err != nil {
+		return err
+	}
+	current.Spec = spec
+	current.Labels = project.Labels
+	return cli.Update(ctx, current)
 }
 
 func (s *Server) installOperator(ctx context.Context, c *types.Cluster) error {
