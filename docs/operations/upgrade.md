@@ -7,7 +7,7 @@ title: Upgrades & Validations
 Use this runbook to validate bootstrap and upgrades for cert-manager, Capsule, Capsule Proxy, KubeVela, and Velaux.
 
 ## Prerequisites
-- Manager and operator images built/tagged (default `v0.1.2`).
+- Manager and operator images built/tagged (default `v0.1.3`).
 - `docker-compose.dev.yml` for local manager + Postgres.
 - `kind` cluster (see [kind E2E setup](kind-e2e.md)).
 - Optional Helm overrides via `.env`: `CERT_MANAGER_VERSION`, `CAPSULE_VERSION`, `CAPSULE_PROXY_VERSION`, `VELA_VERSION`, `VELAUX_VERSION`, proxy settings.

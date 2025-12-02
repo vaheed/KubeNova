@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -37,11 +38,17 @@ func (m *mockVela) ApplyApp(ctx context.Context, spec map[string]any) error {
 	return nil
 }
 
+func (m *mockVela) ApplyProject(ctx context.Context, spec map[string]any) error {
+	m.called = true
+	return nil
+}
+
 func TestTenantReconcilerCreatesNamespacesAndPublishes(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
 	capsulebackend.AddToScheme(scheme)
 	_ = v1alpha1.AddToScheme(scheme)
+	_ = rbacv1.AddToScheme(scheme)
 	tenant := &v1alpha1.NovaTenant{
 		ObjectMeta: metav1.ObjectMeta{Name: "acme"},
 		Spec: v1alpha1.NovaTenantSpec{
@@ -118,10 +125,14 @@ func TestProjectReconcilerEnsuresNamespaces(t *testing.T) {
 		},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project, tenant).Build()
-	r := &ProjectReconciler{Client: client, Scheme: scheme}
+	mock := &mockVela{}
+	r := &ProjectReconciler{Client: client, Scheme: scheme, Backend: mock}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "proj"}})
 	if err != nil {
 		t.Fatalf("reconcile error: %v", err)
+	}
+	if !mock.called {
+		t.Fatalf("expected vela project call")
 	}
 	var ns corev1.Namespace
 	if err := client.Get(context.Background(), types.NamespacedName{Name: "tenantx-apps"}, &ns); err != nil {

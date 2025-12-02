@@ -10,7 +10,7 @@ KubeNova emits structured logs, Prometheus metrics, and OpenTelemetry traces.
 - Manager and operator expose OTLP/gRPC; configure via environment:
   - `OTEL_EXPORTER_OTLP_ENDPOINT` (e.g. `http://localhost:4317`)
   - `OTEL_EXPORTER_OTLP_INSECURE=true` when using HTTP endpoints
-  - `KUBENOVA_ENV` (dev|staging|prod), `KUBENOVA_VERSION` (default `v0.1.2`)
+  - `KUBENOVA_ENV` (dev|staging|prod), `KUBENOVA_VERSION` (default `v0.1.3`)
   - Optional: `OTEL_RESOURCE_ATTRIBUTES` (comma-separated key=value pairs)
 - SigNoz quickstart:
 ```bash
@@ -22,20 +22,20 @@ docker compose -f docker-compose.yaml up -d
 ```bash
 helm upgrade --install manager deploy/helm/manager \
   -n kubenova-system --create-namespace \
-  --set image.tag=v0.1.2 \
+  --set image.tag=v0.1.3 \
   --set otel.endpoint=http://signoz-otel-collector:4317 \
   --set otel.insecure=true \
   --set otel.environment=staging \
-  --set otel.version=v0.1.2
+  --set otel.version=v0.1.3
 
 helm upgrade --install operator deploy/helm/operator \
   -n kubenova-system \
-  --set image.tag=v0.1.2 \
+  --set image.tag=v0.1.3 \
   --set manager.url=http://kubenova-manager.kubenova-system.svc.cluster.local:8080 \
   --set otel.endpoint=http://signoz-otel-collector:4317 \
   --set otel.insecure=true \
   --set otel.environment=staging \
-  --set otel.version=v0.1.2
+  --set otel.version=v0.1.3
 ```
 - Expect services `kubenova-manager` and `kubenova-operator` to appear in SigNoz; logs include `trace_id` for correlation.
 

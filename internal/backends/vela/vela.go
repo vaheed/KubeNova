@@ -13,6 +13,7 @@ import (
 // Interface abstracts the interaction with KubeVela Application resources.
 type Interface interface {
 	ApplyApp(ctx context.Context, spec map[string]any) error
+	ApplyProject(ctx context.Context, spec map[string]any) error
 }
 
 type clientImpl struct {
@@ -26,9 +27,16 @@ var applicationGVK = schema.GroupVersionKind{
 	Kind:    "Application",
 }
 
+var projectGVK = schema.GroupVersionKind{
+	Group:   "core.oam.dev",
+	Version: "v1beta1",
+	Kind:    "Project",
+}
+
 // AddToScheme registers the KubeVela Application GVK for unstructured usage.
 func AddToScheme(scheme *runtime.Scheme) {
 	scheme.AddKnownTypeWithName(applicationGVK, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(projectGVK, &unstructured.Unstructured{})
 }
 
 // NewClient returns a KubeVela backend backed by the Kubernetes API.
@@ -44,6 +52,33 @@ func (c *clientImpl) ApplyApp(ctx context.Context, spec map[string]any) error {
 	}
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(applicationGVK)
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, obj)
+	if apierrors.IsNotFound(err) {
+		obj.SetName(name)
+		obj.SetNamespace(namespace)
+		obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+		obj.Object["spec"] = specFromMap(spec)
+		return c.client.Create(ctx, obj)
+	}
+	if err != nil {
+		return err
+	}
+	obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+	obj.Object["spec"] = specFromMap(spec)
+	return c.client.Update(ctx, obj)
+}
+
+func (c *clientImpl) ApplyProject(ctx context.Context, spec map[string]any) error {
+	name, _ := spec["name"].(string)
+	if name == "" {
+		return nil
+	}
+	namespace := "vela-system"
+	if ns, ok := spec["namespace"].(string); ok && ns != "" {
+		namespace = ns
+	}
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(projectGVK)
 	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, obj)
 	if apierrors.IsNotFound(err) {
 		obj.SetName(name)
