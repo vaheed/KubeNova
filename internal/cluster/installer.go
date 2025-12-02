@@ -704,7 +704,6 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		return err
 	}
 	args := []string{"addon", "enable", addon, "--yes"}
-	args = append(args, "--upgrade")
 	if svc := strings.TrimSpace(os.Getenv(envVelauxServiceType)); svc != "" {
 		args = append(args, fmt.Sprintf("serviceType=%s", svc))
 	}
@@ -722,7 +721,10 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		fmt.Sprintf("HOME=%s", home),
 	)
 	if err := runVelaCommandWithBuffer(cmd); err != nil {
-		return err
+		// Older vela CLI reports "already enabled" without an upgrade flag; keep going to enforce service type.
+		if !strings.Contains(strings.ToLower(err.Error()), "already enabled") {
+			return err
+		}
 	}
 	return i.ensureVelauxServiceType(ctx)
 }
