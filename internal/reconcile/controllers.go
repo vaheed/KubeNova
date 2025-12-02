@@ -23,12 +23,16 @@ import (
 	v1alpha1 "github.com/vaheed/kubenova/pkg/api/v1alpha1"
 	"github.com/vaheed/kubenova/pkg/types"
 	"go.uber.org/zap"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
-// ProjectReconciler watches NovaProjects and ensures namespaces exist.
+// ProjectReconciler watches NovaProjects and ensures namespaces exist and Vela projects align.
 type ProjectReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme  *runtime.Scheme
+	Backend velabackend.Interface
 }
 
 func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -61,12 +65,30 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := ensureNamespace(ctx, r.Client, appsNS); err != nil {
 		return ctrl.Result{}, err
 	}
+	if r.Backend != nil {
+		manifest := map[string]any{
+			"name":        proj.Name,
+			"tenant":      tenantName,
+			"description": proj.Spec.Description,
+			"labels":      proj.Spec.Labels,
+		}
+		if err := r.Backend.ApplyProject(ctx, manifest); err != nil {
+			if apimeta.IsNoMatchError(err) {
+				logging.L.Warn("vela_project_crd_missing", zap.Error(err))
+			} else {
+				return ctrl.Result{}, err
+			}
+		}
+	}
 	return ctrl.Result{}, nil
 }
 
 func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Scheme == nil {
 		r.Scheme = mgr.GetScheme()
+	}
+	if r.Backend == nil {
+		r.Backend = velabackend.NewClient(mgr.GetClient(), mgr.GetScheme())
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.NovaProject{}).
@@ -130,6 +152,9 @@ func (r *TenantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 	if err := ensureNamespace(ctx, r.Client, appsNS); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := ensureTenantAccess(ctx, r.Client, tenantName, ownerNS, appsNS, tenantObj.Spec.ProxyEndpoint); err != nil {
 		return ctrl.Result{}, err
 	}
 	_ = setStatusReady(ctx, r.Client, &tenantObj)
@@ -241,7 +266,7 @@ func PeriodicComponentReconciler(ctx context.Context, c client.Client, reader cl
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			for _, comp := range []string{"cert-manager", "capsule", "capsule-proxy", "kubevela", "velaux"} {
+			for _, comp := range []string{"cert-manager", "capsule", "capsule-proxy", "kubevela"} {
 				start := time.Now()
 				logging.L.Info("reconcile_component_start", zap.String("component", comp))
 				if err := installer.Reconcile(ctx, comp); err != nil {
@@ -287,6 +312,190 @@ func patchAnnotations(ctx context.Context, c client.Client, obj client.Object, a
 	}
 	obj.SetAnnotations(current)
 	return c.Update(ctx, obj)
+}
+
+func ensureTenantAccess(ctx context.Context, c client.Client, tenant, ownerNS, appsNS, proxyEndpoint string) error {
+	ownerSA := "kubenova-owner"
+	readonlySA := "kubenova-readonly"
+	// ServiceAccounts
+	if err := ensureServiceAccount(ctx, c, ownerNS, ownerSA); err != nil {
+		return err
+	}
+	if err := ensureServiceAccount(ctx, c, ownerNS, readonlySA); err != nil {
+		return err
+	}
+	// Roles and bindings in both namespaces
+	for _, ns := range []string{ownerNS, appsNS} {
+		if err := ensureRole(ctx, c, ns, "kubenova-owner", []string{"*"}, []string{"*"}, []string{"*"}); err != nil {
+			return err
+		}
+		if err := ensureRole(ctx, c, ns, "kubenova-readonly", []string{"get", "list", "watch"}, []string{"*"}, []string{"*"}); err != nil {
+			return err
+		}
+		if err := ensureRoleBinding(ctx, c, ns, "kubenova-owner-binding", "kubenova-owner", ownerSA, ownerNS); err != nil {
+			return err
+		}
+		if err := ensureRoleBinding(ctx, c, ns, "kubenova-readonly-binding", "kubenova-readonly", readonlySA, ownerNS); err != nil {
+			return err
+		}
+	}
+	// Kubeconfigs secret (best-effort: skip if tokens not yet available)
+	_ = ensureKubeconfigSecret(ctx, c, tenant, ownerNS, proxyEndpoint, ownerSA, readonlySA)
+	return nil
+}
+
+func ensureServiceAccount(ctx context.Context, c client.Client, ns, name string) error {
+	sa := &corev1.ServiceAccount{}
+	err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, sa)
+	if apierrors.IsNotFound(err) {
+		sa = &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
+				Labels:    map[string]string{"managed-by": "kubenova"},
+			},
+		}
+		return c.Create(ctx, sa)
+	}
+	return err
+}
+
+func ensureRole(ctx context.Context, c client.Client, ns, name string, verbs, resources, apiGroups []string) error {
+	role := &rbacv1.Role{}
+	err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, role)
+	if apierrors.IsNotFound(err) {
+		role = &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
+				Labels:    map[string]string{"managed-by": "kubenova"},
+			},
+			Rules: []rbacv1.PolicyRule{{
+				APIGroups: apiGroups,
+				Resources: resources,
+				Verbs:     verbs,
+			}},
+		}
+		return c.Create(ctx, role)
+	}
+	if err != nil {
+		return err
+	}
+	role.Rules = []rbacv1.PolicyRule{{
+		APIGroups: apiGroups,
+		Resources: resources,
+		Verbs:     verbs,
+	}}
+	return c.Update(ctx, role)
+}
+
+func ensureRoleBinding(ctx context.Context, c client.Client, ns, name, roleName, saName, saNamespace string) error {
+	rb := &rbacv1.RoleBinding{}
+	err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, rb)
+	subjects := []rbacv1.Subject{{
+		Kind:      "ServiceAccount",
+		Name:      saName,
+		Namespace: saNamespace,
+	}}
+	if apierrors.IsNotFound(err) {
+		rb = &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
+				Labels:    map[string]string{"managed-by": "kubenova"},
+			},
+			Subjects: subjects,
+			RoleRef: rbacv1.RoleRef{
+				Kind:     "Role",
+				Name:     roleName,
+				APIGroup: "rbac.authorization.k8s.io",
+			},
+		}
+		return c.Create(ctx, rb)
+	}
+	if err != nil {
+		return err
+	}
+	rb.Subjects = subjects
+	rb.RoleRef = rbacv1.RoleRef{
+		Kind:     "Role",
+		Name:     roleName,
+		APIGroup: "rbac.authorization.k8s.io",
+	}
+	return c.Update(ctx, rb)
+}
+
+func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ns, proxyEndpoint, ownerSA, readonlySA string) error {
+	if proxyEndpoint == "" {
+		proxyEndpoint = fmt.Sprintf("https://proxy.kubenova.local/%s", tenant)
+	}
+	secret := &corev1.Secret{}
+	err := c.Get(ctx, client.ObjectKey{Name: "kubenova-kubeconfigs", Namespace: ns}, secret)
+	if err == nil {
+		return nil
+	}
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	ownerToken, _ := findServiceAccountToken(ctx, c, ns, ownerSA)
+	readonlyToken, _ := findServiceAccountToken(ctx, c, ns, readonlySA)
+	data := map[string][]byte{}
+	if ownerToken != "" {
+		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint+"/owner", ownerToken))
+	}
+	if readonlyToken != "" {
+		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint+"/readonly", readonlyToken))
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	secret = &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kubenova-kubeconfigs",
+			Namespace: ns,
+			Labels:    map[string]string{"managed-by": "kubenova", "tenant": tenant},
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: data,
+	}
+	return c.Create(ctx, secret)
+}
+
+func findServiceAccountToken(ctx context.Context, c client.Client, ns, saName string) (string, error) {
+	var secrets corev1.SecretList
+	selector := labels.Set{"kubernetes.io/service-account.name": saName}.AsSelector()
+	if err := c.List(ctx, &secrets, client.InNamespace(ns), client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return "", err
+	}
+	for _, s := range secrets.Items {
+		if s.Type == corev1.SecretTypeServiceAccountToken {
+			if token, ok := s.Data["token"]; ok {
+				return string(token), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("token secret for sa %s not found", saName)
+}
+
+func buildProxyKubeconfig(serverURL, token string) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: %s
+    insecure-skip-tls-verify: true
+  name: proxy
+contexts:
+- context:
+    cluster: proxy
+    user: sa
+  name: proxy
+current-context: proxy
+users:
+- name: sa
+  user:
+    token: %s
+`, serverURL, token)
 }
 
 func setStatusReady(ctx context.Context, c client.Client, obj client.Object) error {

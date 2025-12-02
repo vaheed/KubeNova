@@ -20,7 +20,7 @@ title: Configuration
 - `OTEL_EXPORTER_OTLP_ENDPOINT` – OTLP/gRPC or HTTP collector endpoint.
 - `OTEL_EXPORTER_OTLP_INSECURE` – set true for HTTP endpoints.
 - `KUBENOVA_ENV` – environment tag in traces (dev|staging|prod).
-- `KUBENOVA_VERSION` – version reported in traces/metrics (default `v0.1.2`).
+- `KUBENOVA_VERSION` – version reported in traces/metrics (default `v0.1.3`).
 - `OTEL_RESOURCE_ATTRIBUTES` – optional comma-separated attributes.
 - `TELEMETRY_SPOOL_DIR` – local directory where the operator persists telemetry events when the manager is unreachable (defaults to `$TMPDIR/kubenova/telemetry`).
 

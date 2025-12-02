@@ -52,6 +52,12 @@ TENANT=$(curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants" \
 TENANT_ID=$(echo "$TENANT" | jq -r '.id')
 ```
 
+Fetch tenant kubeconfigs (owner/read-only) once the operator reconciles:
+```bash
+curl -s "$KN_HOST/api/v1/tenants/$TENANT_ID/kubeconfig" -H "$KN_ROLES"
+```
+If kubeconfigs aren’t ready yet, the response falls back to Capsule Proxy URLs.
+
 ## 4) Create a project
 ```bash
 PROJECT=$(curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects" \
@@ -71,11 +77,11 @@ APP=$(curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/p
     "name": "api",
     "description": "API service",
     "component": "web",
-    "image": "ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.2",
+    "image": "ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.3",
     "spec": {
       "type":"webservice",
       "properties":{
-        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.2",
+        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.3",
         "port":8080
       }
     },
@@ -104,7 +110,7 @@ curl -s -X PUT "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects
     "spec": {
       "type":"webservice",
       "properties":{
-        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.2",
+        "image":"ghcr.io/vaheed/kubenova/kubenova-manager:v0.1.3",
         "port":8080
       }
     }

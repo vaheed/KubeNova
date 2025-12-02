@@ -50,7 +50,6 @@ const (
 	envOperatorRepo          = "OPERATOR_REPO"
 	envOperatorVersion       = "OPERATOR_VERSION"
 	envOperatorImageTag      = "OPERATOR_IMAGE_TAG"
-	envVelauxServiceType     = "VELAUX_SERVICE_TYPE"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
 	envBootstrapCapsuleProxy = "BOOTSTRAP_CAPSULE_PROXY"
@@ -565,11 +564,6 @@ func (i *Installer) componentSetFlags(component string) []string {
 		return []string{"--set", "service.type=LoadBalancer"}
 	case "kubevela":
 		return []string{"--set", "multicluster.enabled=false"}
-	case "velaux":
-		if v := strings.TrimSpace(os.Getenv(envVelauxServiceType)); v != "" {
-			return []string{"--set", fmt.Sprintf("service.type=%s", v)}
-		}
-		return nil
 	case "operator":
 		flags := []string{}
 		if url := strings.TrimSpace(os.Getenv(envManagerURL)); url != "" {
@@ -650,7 +644,7 @@ var componentRepos = map[string]repoMeta{
 	"capsule-proxy": {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule-proxy", Version: "0.9.13"},
 	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.10.4"},
 	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.10.6"},
-	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "v0.1.2"},
+	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "v0.1.3"},
 }
 
 func parseBool(v string) bool {
@@ -704,9 +698,6 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		return err
 	}
 	args := []string{"addon", "enable", addon, "--yes"}
-	if svc := strings.TrimSpace(os.Getenv(envVelauxServiceType)); svc != "" {
-		args = append(args, fmt.Sprintf("serviceType=%s", svc))
-	}
 	home, err := os.MkdirTemp("", "kubenova-vela-home-*")
 	if err != nil {
 		return err
@@ -721,12 +712,12 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		fmt.Sprintf("HOME=%s", home),
 	)
 	if err := runVelaCommandWithBuffer(cmd); err != nil {
-		// Older vela CLI reports "already enabled" without an upgrade flag; keep going to enforce service type.
+		// Older vela CLI reports "already enabled" without an upgrade flag.
 		if !strings.Contains(strings.ToLower(err.Error()), "already enabled") {
 			return err
 		}
 	}
-	return i.ensureVelauxServiceType(ctx)
+	return nil
 }
 
 func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
@@ -761,26 +752,6 @@ func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
 		fmt.Sprintf("HOME=%s", home),
 	)
 	return runVelaCommandWithBuffer(cmd)
-}
-
-func (i *Installer) ensureVelauxServiceType(ctx context.Context) error {
-	svcType := strings.TrimSpace(os.Getenv(envVelauxServiceType))
-	if svcType == "" {
-		return nil
-	}
-	svc := &corev1.Service{}
-	key := client.ObjectKey{Name: "velaux-server", Namespace: namespaceForComponent("velaux")}
-	if err := i.statusReader().Get(ctx, key, svc); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return err
-	}
-	if string(svc.Spec.Type) == svcType {
-		return nil
-	}
-	svc.Spec.Type = corev1.ServiceType(svcType)
-	return i.Client.Update(ctx, svc)
 }
 
 func (i *Installer) uninstall(ctx context.Context, component string) error {

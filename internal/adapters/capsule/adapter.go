@@ -20,10 +20,10 @@ func (a *TenantAdapter) ToManifests(t *types.Tenant) map[string]any {
 		if o == "" {
 			continue
 		}
-		owners = append(owners, map[string]any{"name": o})
+		owners = append(owners, map[string]any{"name": o, "kind": "User"})
 	}
 	if len(owners) == 0 {
-		owners = append(owners, map[string]any{"name": t.Name})
+		owners = append(owners, map[string]any{"name": t.Name, "kind": "User"})
 	}
 	return map[string]any{
 		"tenant": t.Name,

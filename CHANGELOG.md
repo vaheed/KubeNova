@@ -1,3 +1,10 @@
+## v0.1.3 – Tenant RBAC + Vela project sync
+
+- Tenant reconcile now creates owner/read-only ServiceAccounts with Roles/RoleBindings in both namespaces and writes owner/readonly kubeconfigs into `kubenova-kubeconfigs` so the Manager API can return them.
+- NovaProjects now map to KubeVela Projects via the operator; NovaApps already map to KubeVela Applications.
+- VelaUX periodic reconcile disabled (install once); removed service-type overrides; optional manual LB patch documented in quickstart.
+- Version bump to v0.1.3 across charts/docs/OpenAPI.
+
 ## v0.1.2 – Vela bootstrap hardening
 
 - Wait for the `vela-addon-registry` ConfigMap before enabling Vela addons so Velaux installs stop failing when the registry is still pending.

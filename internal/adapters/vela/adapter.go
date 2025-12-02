@@ -15,16 +15,42 @@ func (a *AppAdapter) ToApplication(app *types.App) map[string]any {
 	if app == nil {
 		return map[string]any{}
 	}
+	componentName := app.Component
+	if componentName == "" {
+		componentName = app.Name
+	}
+	var compType string
+	var compProps map[string]any
+	if app.Spec != nil {
+		if t, ok := app.Spec["type"].(string); ok {
+			compType = t
+		}
+		if p, ok := app.Spec["properties"].(map[string]any); ok {
+			compProps = p
+		}
+	}
+	component := map[string]any{
+		"name": componentName,
+		"type": compType,
+	}
+	if compProps != nil {
+		component["properties"] = compProps
+	}
+	if len(app.Traits) > 0 {
+		component["traits"] = app.Traits
+	}
+	spec := map[string]any{
+		"components": []map[string]any{component},
+	}
+	if len(app.Policies) > 0 {
+		spec["policies"] = app.Policies
+	}
 	return map[string]any{
-		"name":        app.Name,
-		"component":   app.Component,
-		"image":       app.Image,
-		"spec":        app.Spec,
-		"traits":      app.Traits,
-		"policies":    app.Policies,
-		"revision":    app.Revision,
-		"projectId":   app.ProjectID,
-		"clusterId":   app.ClusterID,
-		"environment": app.TenantID,
+		"name":      app.Name,
+		"spec":      spec,
+		"revision":  app.Revision,
+		"projectId": app.ProjectID,
+		"clusterId": app.ClusterID,
+		"tenantId":  app.TenantID,
 	}
 }
