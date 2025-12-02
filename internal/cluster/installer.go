@@ -48,6 +48,7 @@ const (
 	envVelauxVersion         = "VELAUX_VERSION"
 	envVelauxRepo            = "VELAUX_REPO"
 	envOperatorRepo          = "OPERATOR_REPO"
+	envVelauxServiceType     = "VELAUX_SERVICE_TYPE"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
 	envBootstrapCapsuleProxy = "BOOTSTRAP_CAPSULE_PROXY"
@@ -558,6 +559,11 @@ func (i *Installer) componentSetFlags(component string) []string {
 		return []string{"--set", "service.type=LoadBalancer"}
 	case "kubevela":
 		return []string{"--set", "multicluster.enabled=false"}
+	case "velaux":
+		if v := strings.TrimSpace(os.Getenv(envVelauxServiceType)); v != "" {
+			return []string{"--set", fmt.Sprintf("service.type=%s", v)}
+		}
+		return nil
 	case "operator":
 		if url := strings.TrimSpace(os.Getenv(envManagerURL)); url != "" {
 			return []string{"--set", fmt.Sprintf("manager.url=%s", url)}

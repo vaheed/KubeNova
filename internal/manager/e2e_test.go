@@ -2,6 +2,7 @@ package manager
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,12 @@ import (
 	"testing"
 
 	"github.com/vaheed/kubenova/internal/store"
+	v1alpha1 "github.com/vaheed/kubenova/pkg/api/v1alpha1"
 	"github.com/vaheed/kubenova/pkg/types"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestManagerEndToEndLifecycle(t *testing.T) {
@@ -20,6 +26,13 @@ func TestManagerEndToEndLifecycle(t *testing.T) {
 
 	st := store.NewMemoryStore()
 	srv := NewServer(st)
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = v1alpha1.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	srv.kubeFactory = func(context.Context, string) (ctrlclient.Client, error) {
+		return fakeClient, nil
+	}
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
