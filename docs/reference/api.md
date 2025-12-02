@@ -4,7 +4,7 @@ title: API & OpenAPI
 
 # API & OpenAPI
 
-- Contract: `docs/openapi/openapi.yaml` (v0.1.2). All routes, models, status codes, and examples must be updated in lockstep with handler changes.
+- Contract: `docs/openapi/openapi.yaml` (v0.1.3). All routes, models, status codes, and examples must be updated in lockstep with handler changes.
 - Base path: `/api/v1`.
 - Error shape: structured body with `code` and `message` (`KN-400|401|403|404|409|422|500`).
 - Auth/RBAC: when enabled, HS256 JWT with roles `admin`, `ops`, `tenantOwner`, `projectDev`, `readOnly`. Tests may use `X-KN-Roles` for simulation.
@@ -15,6 +15,7 @@ title: API & OpenAPI
 - Auth: `POST /tokens`, `GET /me`
 - Clusters: CRUD + `/capabilities`, `/bootstrap/{component}`
 - Tenants/projects/apps: nested routes for creation, updates, workflow runs, revisions, usage
+- Tenant kubeconfigs: `GET /tenants/{tenantId}/kubeconfig` returns inline owner/readonly kubeconfigs when the Secret exists, otherwise Capsule Proxy URLs.
 - Usage: `/tenants/{id}/usage`, `/projects/{id}/usage`
 
 See the [API lifecycle walkthrough](../getting-started/api-playbook.md) for concrete curl examples that mirror the spec and tests.

@@ -14,7 +14,7 @@ KubeNova enforces tenant isolation with Capsule and Capsule Proxy. Each tenant r
 - ServiceAccounts:
   - Owner (full access within tenant namespaces)
   - Readonly (get/list/watch)
-- Two kubeconfigs per tenant derived from the ServiceAccounts
+- Two kubeconfigs per tenant derived from the ServiceAccounts (Secret `kubenova-kubeconfigs` in `<tenant>-owner`; Manager API surfaces these)
 - One KubeVela project per tenant; unlimited KubeVela applications per project
 
 ## Defaulting rules
@@ -25,7 +25,7 @@ KubeNova enforces tenant isolation with Capsule and Capsule Proxy. Each tenant r
 ## Enforcement path
 1. Tenant CRD → Capsule Tenant + namespaces + RBAC.
 2. Proxy backend publishes tenant-specific endpoints (Capsule Proxy).
-3. Projects → namespaces ensured, kubeconfig issuance endpoints exposed by the Manager.
+3. Projects → namespaces ensured, Vela Project created, kubeconfig issuance endpoints exposed by the Manager.
 4. Apps → translated into KubeVela Applications with traits/policies maintained by the operator.
 
 ## Relevant ADRs

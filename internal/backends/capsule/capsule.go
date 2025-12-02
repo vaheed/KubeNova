@@ -42,20 +42,33 @@ func (c *clientImpl) EnsureTenant(ctx context.Context, spec map[string]any) erro
 	if name == "" {
 		return nil
 	}
+	labels := map[string]string{"managed-by": "kubenova"}
+	if raw, ok := spec["labels"].(map[string]string); ok {
+		for k, v := range raw {
+			labels[k] = v
+		}
+	} else if rawAny, ok := spec["labels"].(map[string]any); ok {
+		for k, v := range rawAny {
+			if str, ok := v.(string); ok {
+				labels[k] = str
+			}
+		}
+	}
+	delete(spec, "labels")
 
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(tenantGVK)
 	err := c.client.Get(ctx, client.ObjectKey{Name: name}, obj)
 	if apierrors.IsNotFound(err) {
 		obj.SetName(name)
-		obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+		obj.SetLabels(labels)
 		obj.Object["spec"] = specFromMap(spec)
 		return c.client.Create(ctx, obj)
 	}
 	if err != nil {
 		return err
 	}
-	obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+	obj.SetLabels(labels)
 	obj.Object["spec"] = specFromMap(spec)
 	return c.client.Update(ctx, obj)
 }

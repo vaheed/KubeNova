@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,7 +35,7 @@ import (
 )
 
 const (
-	version                   = "v0.1.2"
+	version                   = "v0.1.3"
 	authContextKey            = contextKey("auth")
 	defaultTokenTTL           = 60 * time.Minute
 	maxBodyBytes        int64 = 1 << 20 // 1MB
@@ -776,11 +777,35 @@ func (s *Server) tenantKubeconfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "KN-404", "tenant not found")
 		return
 	}
+	cfgs := map[string]string{}
+	cluster, err := s.store.GetCluster(r.Context(), tenant.ClusterID)
+	if err == nil {
+		if cli, e := s.kubeClientForCluster(r.Context(), cluster); e == nil {
+			ns := tenant.OwnerNamespace
+			if ns == "" {
+				ns = tenant.Name + "-owner"
+			}
+			var secret corev1.Secret
+			if err := cli.Get(r.Context(), ctrlclient.ObjectKey{Name: "kubenova-kubeconfigs", Namespace: ns}, &secret); err == nil {
+				if v, ok := secret.Data["owner"]; ok {
+					cfgs["owner"] = string(v)
+				}
+				if v, ok := secret.Data["readonly"]; ok {
+					cfgs["readonly"] = string(v)
+				}
+			}
+			_ = err
+		}
+	}
+	// Fallback to proxy URLs if kubeconfigs not found
 	base := s.clusterProxyBase(r.Context(), tenant.ClusterID)
-	writeJSON(w, http.StatusOK, map[string]string{
-		"owner":    fmt.Sprintf("%s/%s/owner", base, tenant.Name),
-		"readonly": fmt.Sprintf("%s/%s/readonly", base, tenant.Name),
-	})
+	if cfgs["owner"] == "" {
+		cfgs["owner"] = fmt.Sprintf("%s/%s/owner", base, tenant.Name)
+	}
+	if cfgs["readonly"] == "" {
+		cfgs["readonly"] = fmt.Sprintf("%s/%s/readonly", base, tenant.Name)
+	}
+	writeJSON(w, http.StatusOK, cfgs)
 }
 
 func (s *Server) tenantUsage(w http.ResponseWriter, r *http.Request) {
@@ -1042,6 +1067,21 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "KN-400", "name is required")
 		return
 	}
+	cluster, err := s.store.GetCluster(r.Context(), clusterID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "KN-404", "cluster not found")
+		return
+	}
+	tenant, err := s.store.GetTenant(r.Context(), clusterID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "KN-404", "tenant not found")
+		return
+	}
+	project, err := s.store.GetProject(r.Context(), clusterID, tenantID, projectID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "KN-404", "project not found")
+		return
+	}
 	now := time.Now().UTC()
 	app := &types.App{
 		ClusterID:   clusterID,
@@ -1075,6 +1115,11 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		}
+		return
+	}
+	if err := s.syncAppWithCluster(r.Context(), cluster, tenant, project, app); err != nil {
+		_ = s.store.DeleteApp(r.Context(), clusterID, tenantID, projectID, app.ID)
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("sync app: %v", err))
 		return
 	}
 	writeJSON(w, http.StatusCreated, app)
@@ -1125,6 +1170,7 @@ func (s *Server) updateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "KN-404", "app not found")
 		return
 	}
+	tenant, _ := s.store.GetTenant(r.Context(), clusterID, tenantID)
 	var req AppRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "KN-400", err.Error())
@@ -1155,6 +1201,10 @@ func (s *Server) updateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "KN-500", err.Error())
 		return
 	}
+	if err := s.syncApp(r.Context(), app, tenant, nil); err != nil {
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("sync app: %v", err))
+		return
+	}
 	writeJSON(w, http.StatusOK, app)
 }
 
@@ -1178,6 +1228,15 @@ func (s *Server) deleteAppAction(w http.ResponseWriter, r *http.Request) {
 	tenantID := chi.URLParam(r, "tenantID")
 	projectID := chi.URLParam(r, "projectID")
 	appID := chi.URLParam(r, "appID")
+	app, err := s.store.GetApp(r.Context(), clusterID, tenantID, projectID, appID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "KN-404", "app not found")
+		return
+	}
+	if err := s.deleteAppResource(r.Context(), app); err != nil {
+		writeError(w, http.StatusInternalServerError, "KN-500", fmt.Sprintf("delete app from cluster: %v", err))
+		return
+	}
 	if err := s.store.DeleteApp(r.Context(), clusterID, tenantID, projectID, appID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "KN-404", "app not found")
@@ -1708,6 +1767,40 @@ func (s *Server) syncProjectWithCluster(ctx context.Context, cluster *types.Clus
 	return upsertNovaProject(ctx, cli, tenant.Name, project)
 }
 
+func (s *Server) syncApp(ctx context.Context, app *types.App, tenant *types.Tenant, project *types.Project) error {
+	return s.syncAppWithCluster(ctx, nil, tenant, project, app)
+}
+
+func (s *Server) syncAppWithCluster(ctx context.Context, cluster *types.Cluster, tenant *types.Tenant, project *types.Project, app *types.App) error {
+	if app == nil {
+		return errors.New("app is nil")
+	}
+	var err error
+	if tenant == nil {
+		tenant, err = s.store.GetTenant(ctx, app.ClusterID, app.TenantID)
+		if err != nil {
+			return err
+		}
+	}
+	if project == nil {
+		project, err = s.store.GetProject(ctx, app.ClusterID, app.TenantID, app.ProjectID)
+		if err != nil {
+			return err
+		}
+	}
+	if cluster == nil {
+		cluster, err = s.store.GetCluster(ctx, app.ClusterID)
+		if err != nil {
+			return err
+		}
+	}
+	cli, err := s.kubeClientForCluster(ctx, cluster)
+	if err != nil {
+		return err
+	}
+	return upsertNovaApp(ctx, cli, tenant, project, app)
+}
+
 func (s *Server) deleteTenantResource(ctx context.Context, tenant *types.Tenant) error {
 	if tenant == nil {
 		return errors.New("tenant is nil")
@@ -1746,6 +1839,39 @@ func (s *Server) deleteProjectResource(ctx context.Context, project *types.Proje
 		return err
 	}
 	obj := &v1alpha1.NovaProject{ObjectMeta: metav1.ObjectMeta{Name: project.Name}}
+	if err := cli.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) deleteAppResource(ctx context.Context, app *types.App) error {
+	if app == nil {
+		return errors.New("app is nil")
+	}
+	cluster, err := s.store.GetCluster(ctx, app.ClusterID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	tenant, err := s.store.GetTenant(ctx, app.ClusterID, app.TenantID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	ns := tenant.AppsNamespace
+	if ns == "" {
+		ns = tenant.Name + "-apps"
+	}
+	cli, err := s.kubeClientForCluster(ctx, cluster)
+	if err != nil {
+		return err
+	}
+	obj := &v1alpha1.NovaApp{ObjectMeta: metav1.ObjectMeta{Name: app.Name, Namespace: ns}}
 	if err := cli.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -1828,6 +1954,66 @@ func upsertNovaProject(ctx context.Context, cli ctrlclient.Client, tenantName st
 	}
 	current.Spec = spec
 	current.Labels = project.Labels
+	return cli.Update(ctx, current)
+}
+
+func upsertNovaApp(ctx context.Context, cli ctrlclient.Client, tenant *types.Tenant, project *types.Project, app *types.App) error {
+	if cli == nil {
+		return errors.New("kube client is nil")
+	}
+	if app == nil {
+		return errors.New("app is nil")
+	}
+	if tenant == nil {
+		return errors.New("tenant is nil")
+	}
+	if project == nil {
+		return errors.New("project is nil")
+	}
+	ns := tenant.AppsNamespace
+	if ns == "" {
+		ns = tenant.Name + "-apps"
+	}
+	spec := v1alpha1.NovaAppSpec{
+		Tenant:      tenant.Name,
+		Project:     project.Name,
+		Namespace:   ns,
+		Description: app.Description,
+		Component:   app.Component,
+		Image:       app.Image,
+		Template:    app.Spec,
+		Traits:      app.Traits,
+		Policies:    app.Policies,
+	}
+	current := &v1alpha1.NovaApp{}
+	key := ctrlclient.ObjectKey{Name: app.Name, Namespace: ns}
+	err := cli.Get(ctx, key, current)
+	if apierrors.IsNotFound(err) {
+		return cli.Create(ctx, &v1alpha1.NovaApp{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: v1alpha1.GroupVersion.String(),
+				Kind:       "NovaApp",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      app.Name,
+				Namespace: ns,
+				Labels: map[string]string{
+					"tenant":  tenant.Name,
+					"project": project.Name,
+				},
+			},
+			Spec: spec,
+		})
+	}
+	if err != nil {
+		return err
+	}
+	current.Spec = spec
+	if current.Labels == nil {
+		current.Labels = map[string]string{}
+	}
+	current.Labels["tenant"] = tenant.Name
+	current.Labels["project"] = project.Name
 	return cli.Update(ctx, current)
 }
 

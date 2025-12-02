@@ -3,7 +3,7 @@
 Scope: Entire repository.
 
 ## Contract: API‑Only (/api/v1)
-- The HTTP surface is defined by `docs/openapi/openapi.yaml` (0.1.2) and the generated types/servers in `internal/http`.
+- The HTTP surface is defined by `docs/openapi/openapi.yaml` (0.1.3) and the generated types/servers in `internal/http`.
 - Any change to routes, models, status codes, or examples MUST update the OpenAPI and corresponding handlers atomically.
 - Error responses always use structured bodies with `code` and `message` (KN‑* family):
   - KN‑400 bad request, KN‑401 unauthorized, KN‑403 forbidden, KN‑404 not found,

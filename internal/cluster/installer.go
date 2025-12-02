@@ -48,7 +48,8 @@ const (
 	envVelauxVersion         = "VELAUX_VERSION"
 	envVelauxRepo            = "VELAUX_REPO"
 	envOperatorRepo          = "OPERATOR_REPO"
-	envVelauxServiceType     = "VELAUX_SERVICE_TYPE"
+	envOperatorVersion       = "OPERATOR_VERSION"
+	envOperatorImageTag      = "OPERATOR_IMAGE_TAG"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
 	envBootstrapCapsuleProxy = "BOOTSTRAP_CAPSULE_PROXY"
@@ -268,14 +269,14 @@ func (i *Installer) runHelmRemote(ctx context.Context, component, namespace stri
 	if meta == nil {
 		return fmt.Errorf("no remote repo for component %s", component)
 	}
-	chartRef := meta.Chart
-	repo := meta.Repo
-	// Allow OCI registries that do not expose an index.
-	if strings.HasPrefix(meta.Chart, "oci://") {
+	chartRef := strings.TrimSuffix(meta.Chart, "/")
+	repo := strings.TrimSuffix(meta.Repo, "/")
+	// Allow OCI registries that may already include the chart path (and optional tag).
+	if strings.HasPrefix(repo, "oci://") {
+		chartRef = repo
 		repo = ""
-	} else if strings.HasPrefix(meta.Repo, "oci://") {
+	} else if strings.HasPrefix(chartRef, "oci://") {
 		repo = ""
-		chartRef = strings.TrimSuffix(meta.Repo, "/") + "/" + strings.TrimPrefix(meta.Chart, "/")
 	}
 	args := []string{"upgrade", "--install", component, chartRef, "--namespace", namespace, "--create-namespace"}
 	if repo != "" {
@@ -547,6 +548,10 @@ func (i *Installer) versionOverride(component, fallback string) string {
 				return v
 			}
 		}
+	case "operator":
+		if v := os.Getenv(envOperatorVersion); v != "" {
+			return v
+		}
 	}
 	return fallback
 }
@@ -559,16 +564,15 @@ func (i *Installer) componentSetFlags(component string) []string {
 		return []string{"--set", "service.type=LoadBalancer"}
 	case "kubevela":
 		return []string{"--set", "multicluster.enabled=false"}
-	case "velaux":
-		if v := strings.TrimSpace(os.Getenv(envVelauxServiceType)); v != "" {
-			return []string{"--set", fmt.Sprintf("service.type=%s", v)}
-		}
-		return nil
 	case "operator":
+		flags := []string{}
 		if url := strings.TrimSpace(os.Getenv(envManagerURL)); url != "" {
-			return []string{"--set", fmt.Sprintf("manager.url=%s", url)}
+			flags = append(flags, "--set", fmt.Sprintf("manager.url=%s", url))
 		}
-		return nil
+		if tag := strings.TrimSpace(operatorImageTag()); tag != "" {
+			flags = append(flags, "--set", fmt.Sprintf("image.tag=%s", tag))
+		}
+		return flags
 	default:
 		return nil
 	}
@@ -640,7 +644,7 @@ var componentRepos = map[string]repoMeta{
 	"capsule-proxy": {Repo: "https://projectcapsule.github.io/charts", Chart: "capsule-proxy", Version: "0.9.13"},
 	"kubevela":      {Repo: "https://kubevela.github.io/charts", Chart: "vela-core", Version: "1.10.4"},
 	"velaux":        {Repo: "oci://ghcr.io/kubevela/velaux", Chart: "velaux", Version: "v1.10.6"},
-	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "v0.1.2"},
+	"operator":      {Repo: "oci://ghcr.io/vaheed/kubenova/charts", Chart: "operator", Version: "v0.1.3"},
 }
 
 func parseBool(v string) bool {
@@ -650,6 +654,16 @@ func parseBool(v string) bool {
 	default:
 		return false
 	}
+}
+
+func operatorImageTag() string {
+	if v := os.Getenv(envOperatorImageTag); strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
+	if v := os.Getenv(envOperatorVersion); strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
+	return ""
 }
 
 func parseBoolWithDefault(envKey string, def bool) bool {
@@ -697,7 +711,13 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		fmt.Sprintf("KUBEVELA_SYSTEM_NAMESPACE=%s", ns),
 		fmt.Sprintf("HOME=%s", home),
 	)
-	return runVelaCommandWithBuffer(cmd)
+	if err := runVelaCommandWithBuffer(cmd); err != nil {
+		// Older vela CLI reports "already enabled" without an upgrade flag.
+		if !strings.Contains(strings.ToLower(err.Error()), "already enabled") {
+			return err
+		}
+	}
+	return nil
 }
 
 func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {

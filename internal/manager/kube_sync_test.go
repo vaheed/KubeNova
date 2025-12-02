@@ -111,3 +111,52 @@ func TestUpsertNovaProjectCreatesAndUpdates(t *testing.T) {
 		t.Fatalf("access list not updated: %+v", updated.Spec.Access)
 	}
 }
+
+func TestUpsertNovaAppCreatesAndUpdates(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = v1alpha1.AddToScheme(scheme)
+	cli := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	tenant := &types.Tenant{Name: "acme", AppsNamespace: "acme-apps"}
+	project := &types.Project{Name: "payments"}
+	app := &types.App{
+		Name:        "api",
+		Description: "api svc",
+		Component:   "web",
+		Image:       "ghcr.io/example/api:dev",
+		Spec: map[string]any{
+			"type": "webservice",
+		},
+		Traits:   []map[string]any{{"type": "scaler", "properties": map[string]any{"min": 1}}},
+		Policies: []map[string]any{{"type": "autoscale"}},
+	}
+
+	if err := upsertNovaApp(context.Background(), cli, tenant, project, app); err != nil {
+		t.Fatalf("create novaapp: %v", err)
+	}
+
+	var created v1alpha1.NovaApp
+	if err := cli.Get(context.Background(), ctrlclient.ObjectKey{Name: app.Name, Namespace: "acme-apps"}, &created); err != nil {
+		t.Fatalf("get novaapp: %v", err)
+	}
+	if created.Spec.Tenant != "acme" || created.Spec.Project != "payments" {
+		t.Fatalf("unexpected spec: %+v", created.Spec)
+	}
+	if created.Spec.Namespace != "acme-apps" {
+		t.Fatalf("namespace not set: %s", created.Spec.Namespace)
+	}
+
+	app.Description = "v2"
+	app.Image = "ghcr.io/example/api:v2"
+	if err := upsertNovaApp(context.Background(), cli, tenant, project, app); err != nil {
+		t.Fatalf("update novaapp: %v", err)
+	}
+	var updated v1alpha1.NovaApp
+	if err := cli.Get(context.Background(), ctrlclient.ObjectKey{Name: app.Name, Namespace: "acme-apps"}, &updated); err != nil {
+		t.Fatalf("get updated novaapp: %v", err)
+	}
+	if updated.Spec.Description != "v2" || updated.Spec.Image != "ghcr.io/example/api:v2" {
+		t.Fatalf("fields not updated: %+v", updated.Spec)
+	}
+}
