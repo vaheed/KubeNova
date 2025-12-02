@@ -15,12 +15,19 @@ func (a *TenantAdapter) ToManifests(t *types.Tenant) map[string]any {
 	if t == nil {
 		return map[string]any{}
 	}
+	owners := []map[string]any{}
+	for _, o := range t.Owners {
+		if o == "" {
+			continue
+		}
+		owners = append(owners, map[string]any{"name": o})
+	}
+	if len(owners) == 0 {
+		owners = append(owners, map[string]any{"name": t.Name})
+	}
 	return map[string]any{
 		"tenant": t.Name,
-		"namespaces": []string{
-			t.OwnerNamespace,
-			t.AppsNamespace,
-		},
+		"owners": owners,
 		"labels": t.Labels,
 	}
 }
