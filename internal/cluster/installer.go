@@ -49,6 +49,7 @@ const (
 	envVelauxRepo            = "VELAUX_REPO"
 	envOperatorRepo          = "OPERATOR_REPO"
 	envOperatorVersion       = "OPERATOR_VERSION"
+	envOperatorImageTag      = "OPERATOR_IMAGE_TAG"
 	envVelauxServiceType     = "VELAUX_SERVICE_TYPE"
 	envBootstrapCertManager  = "BOOTSTRAP_CERT_MANAGER"
 	envBootstrapCapsule      = "BOOTSTRAP_CAPSULE"
@@ -570,10 +571,14 @@ func (i *Installer) componentSetFlags(component string) []string {
 		}
 		return nil
 	case "operator":
+		flags := []string{}
 		if url := strings.TrimSpace(os.Getenv(envManagerURL)); url != "" {
-			return []string{"--set", fmt.Sprintf("manager.url=%s", url)}
+			flags = append(flags, "--set", fmt.Sprintf("manager.url=%s", url))
 		}
-		return nil
+		if tag := strings.TrimSpace(operatorImageTag()); tag != "" {
+			flags = append(flags, "--set", fmt.Sprintf("image.tag=%s", tag))
+		}
+		return flags
 	default:
 		return nil
 	}
@@ -657,6 +662,16 @@ func parseBool(v string) bool {
 	}
 }
 
+func operatorImageTag() string {
+	if v := os.Getenv(envOperatorImageTag); strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
+	if v := os.Getenv(envOperatorVersion); strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
 func parseBoolWithDefault(envKey string, def bool) bool {
 	raw := os.Getenv(envKey)
 	if raw == "" {
@@ -689,6 +704,9 @@ func (i *Installer) enableVelaAddon(ctx context.Context, addon string) error {
 		return err
 	}
 	args := []string{"addon", "enable", addon, "--yes"}
+	if svc := strings.TrimSpace(os.Getenv(envVelauxServiceType)); svc != "" {
+		args = append(args, fmt.Sprintf("serviceType=%s", svc))
+	}
 	home, err := os.MkdirTemp("", "kubenova-vela-home-*")
 	if err != nil {
 		return err
