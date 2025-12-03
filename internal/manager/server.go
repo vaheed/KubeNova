@@ -147,7 +147,7 @@ func (s *Server) Router() http.Handler {
 
 		api.With(s.authMiddleware).Route("/tenants", func(r chi.Router) {
 			r.Route("/{tenantID}", func(r chi.Router) {
-				r.Post("/kubeconfig", s.tenantKubeconfig)
+				r.Get("/kubeconfig", s.tenantKubeconfig)
 				r.Get("/usage", s.tenantUsage)
 			})
 		})

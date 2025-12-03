@@ -516,7 +516,7 @@ paths:
   /api/v1/tenants/{tenantID}/kubeconfig:
     parameters:
       - $ref: '#/components/parameters/TenantID'
-    post:
+    get:
       security: [{ bearerAuth: [] }]
       summary: Generate tenant kubeconfigs
       responses:

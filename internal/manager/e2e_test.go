@@ -73,6 +73,12 @@ func TestManagerEndToEndLifecycle(t *testing.T) {
 		t.Fatalf("namespaces should be populated: %#v", tenant)
 	}
 
+	tenantKubeconfigs := doJSON[map[string]string](t, client, http.MethodGet,
+		fmt.Sprintf("%s/tenants/%s/kubeconfig", baseURL, tenant.ID), nil, http.StatusOK)
+	if tenantKubeconfigs["owner"] == "" || tenantKubeconfigs["readonly"] == "" {
+		t.Fatalf("expected tenant kubeconfigs, got %#v", tenantKubeconfigs)
+	}
+
 	project := doJSON[*types.Project](t, client, http.MethodPost,
 		fmt.Sprintf("%s/clusters/%s/tenants/%s/projects", baseURL, cluster.ID, tenant.ID),
 		map[string]any{

@@ -131,6 +131,7 @@ GRAFANA_APP_ID=$(echo "$GRAFANA_APP" | jq -r '.id')
 curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$GRAFANA_APP_ID:deploy" \
   -H "$KN_ROLES"
 ```
+This payload mirrors the KubeVela `Application` shape (`spec.type` + `spec.properties` only). If you previously saw `unknown field "spec.spec"` or `spec.components: Required value`, make sure you are running the latest manager build and re-apply the app so the operator projects a valid Application.
 
 ## 6) Inspect + update
 ```bash

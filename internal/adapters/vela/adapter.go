@@ -39,11 +39,15 @@ func (a *AppAdapter) ToApplication(app *types.App) map[string]any {
 	if len(app.Traits) > 0 {
 		component["traits"] = app.Traits
 	}
-	return map[string]any{
-		"name": app.Name,
-		"spec": map[string]any{
-			"components": []map[string]any{component},
-			"policies":   app.Policies,
-		},
+	manifest := map[string]any{
+		"name":       app.Name,
+		"components": []map[string]any{component},
 	}
+	if len(app.Policies) > 0 {
+		manifest["policies"] = app.Policies
+	}
+	if app.ProjectID != "" {
+		manifest["project"] = app.ProjectID
+	}
+	return manifest
 }
