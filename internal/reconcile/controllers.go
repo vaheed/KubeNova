@@ -23,6 +23,7 @@ import (
 	v1alpha1 "github.com/vaheed/kubenova/pkg/api/v1alpha1"
 	"github.com/vaheed/kubenova/pkg/types"
 	"go.uber.org/zap"
+	authv1 "k8s.io/api/authentication/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/labels"
@@ -437,8 +438,14 @@ func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ns, pr
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	ownerToken, _ := findServiceAccountToken(ctx, c, ns, ownerSA)
-	readonlyToken, _ := findServiceAccountToken(ctx, c, ns, readonlySA)
+	ownerToken, _ := requestServiceAccountToken(ctx, c, ns, ownerSA)
+	if ownerToken == "" {
+		ownerToken, _ = findServiceAccountToken(ctx, c, ns, ownerSA)
+	}
+	readonlyToken, _ := requestServiceAccountToken(ctx, c, ns, readonlySA)
+	if readonlyToken == "" {
+		readonlyToken, _ = findServiceAccountToken(ctx, c, ns, readonlySA)
+	}
 	data := map[string][]byte{}
 	if ownerToken != "" {
 		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint+"/owner", ownerToken))
@@ -475,6 +482,24 @@ func findServiceAccountToken(ctx context.Context, c client.Client, ns, saName st
 		}
 	}
 	return "", fmt.Errorf("token secret for sa %s not found", saName)
+}
+
+func requestServiceAccountToken(ctx context.Context, c client.Client, ns, saName string) (string, error) {
+	sa := &corev1.ServiceAccount{}
+	if err := c.Get(ctx, client.ObjectKey{Name: saName, Namespace: ns}, sa); err != nil {
+		return "", err
+	}
+	ttl := int64(3600)
+	tr := &authv1.TokenRequest{
+		Spec: authv1.TokenRequestSpec{
+			Audiences:         []string{"kubernetes"},
+			ExpirationSeconds: &ttl,
+		},
+	}
+	if err := c.SubResource("token").Create(ctx, sa, tr); err != nil {
+		return "", err
+	}
+	return tr.Status.Token, nil
 }
 
 func buildProxyKubeconfig(serverURL, token string) string {

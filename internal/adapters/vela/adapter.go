@@ -39,18 +39,11 @@ func (a *AppAdapter) ToApplication(app *types.App) map[string]any {
 	if len(app.Traits) > 0 {
 		component["traits"] = app.Traits
 	}
-	spec := map[string]any{
-		"components": []map[string]any{component},
-	}
-	if len(app.Policies) > 0 {
-		spec["policies"] = app.Policies
-	}
 	return map[string]any{
-		"name":      app.Name,
-		"spec":      spec,
-		"revision":  app.Revision,
-		"projectId": app.ProjectID,
-		"clusterId": app.ClusterID,
-		"tenantId":  app.TenantID,
+		"name": app.Name,
+		"spec": map[string]any{
+			"components": []map[string]any{component},
+			"policies":   app.Policies,
+		},
 	}
 }

@@ -54,7 +54,12 @@ TENANT_ID=$(echo "$TENANT" | jq -r '.id')
 
 Fetch tenant kubeconfigs (owner/read-only) once the operator reconciles:
 ```bash
-curl -s "$KN_HOST/api/v1/tenants/$TENANT_ID/kubeconfig" -H "$KN_ROLES"
+curl -s "$KN_HOST/api/v1/tenants/$TENANT_ID/kubeconfig" -H "$KN_ROLES" | tee /tmp/tenant-kubeconfigs.json
+# grab the owner kubeconfig and use it:
+jq -r '.owner' /tmp/tenant-kubeconfigs.json > /tmp/tenant-owner.kubeconfig
+kubectl --kubeconfig /tmp/tenant-owner.kubeconfig get ns
+# verify the Secret exists in the cluster (optional, using your admin kubeconfig):
+kubectl get secret -n acme-owner kubenova-kubeconfigs
 ```
 If kubeconfigs aren’t ready yet, the response falls back to Capsule Proxy URLs.
 
@@ -95,6 +100,35 @@ APP=$(curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/p
 APP_ID=$(echo "$APP" | jq -r '.id')
 
 curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:deploy" \
+  -H "$KN_ROLES"
+```
+
+Create a Grafana app example:
+```bash
+GRAFANA_APP=$(curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps" \
+  -H "$KN_ROLES" -H 'Content-Type: application/json' \
+  -d '{
+    "name": "grafana",
+    "description": "Grafana dashboard",
+    "component": "grafana",
+    "image": "grafana/grafana:10.4.0",
+    "spec": {
+      "type": "webservice",
+      "properties": {
+        "image": "grafana/grafana:10.4.0",
+        "port": 3000
+      }
+    },
+    "traits": [
+      {
+        "type": "scaler",
+        "properties": { "min": 1, "max": 2 }
+      }
+    ]
+  }')
+GRAFANA_APP_ID=$(echo "$GRAFANA_APP" | jq -r '.id')
+
+curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$GRAFANA_APP_ID:deploy" \
   -H "$KN_ROLES"
 ```
 

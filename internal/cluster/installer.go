@@ -22,6 +22,8 @@ import (
 
 	"github.com/vaheed/kubenova/internal/logging"
 	"go.uber.org/zap"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"sigs.k8s.io/yaml"
 )
 
 // Installer coordinates bootstrap of in-cluster components.
@@ -143,6 +145,11 @@ func (i *Installer) bootstrapAndSummarize(ctx context.Context, component string)
 	// Ensure namespace
 	if err := i.ensureNamespace(ctx, ns); err != nil {
 		return err
+	}
+	if component == "kubevela" {
+		if err := i.ensureVelaProjectCRD(ctx); err != nil {
+			logging.L.Warn("vela_project_crd_install_failed", zap.Error(err))
+		}
 	}
 
 	if i.ChartsDir != "" {
@@ -753,6 +760,54 @@ func (i *Installer) disableVelaAddon(ctx context.Context, addon string) error {
 	)
 	return runVelaCommandWithBuffer(cmd)
 }
+
+func (i *Installer) ensureVelaProjectCRD(ctx context.Context) error {
+	_ = apiextensionsv1.AddToScheme(i.Scheme)
+	current := &apiextensionsv1.CustomResourceDefinition{}
+	err := i.Client.Get(ctx, client.ObjectKey{Name: "projects.core.oam.dev"}, current)
+	if err == nil {
+		return nil
+	}
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	obj := &apiextensionsv1.CustomResourceDefinition{}
+	if err := yaml.Unmarshal([]byte(velaProjectCRD), obj); err != nil {
+		return err
+	}
+	return i.Client.Create(ctx, obj)
+}
+
+const velaProjectCRD = `
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: projects.core.oam.dev
+spec:
+  group: core.oam.dev
+  names:
+    kind: Project
+    listKind: ProjectList
+    plural: projects
+    singular: project
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+    subresources:
+      status: {}
+`
 
 func (i *Installer) uninstall(ctx context.Context, component string) error {
 	start := time.Now()
