@@ -27,7 +27,7 @@ func TestAppAdapter(t *testing.T) {
 	if components[0]["name"] != "web" {
 		t.Fatalf("component name mismatch: %#v", components[0])
 	}
-	if result["project"] != "proj1" {
-		t.Fatalf("project not propagated: %#v", result)
+	if _, ok := result["project"]; ok {
+		t.Fatalf("project should not be set in Application spec: %#v", result)
 	}
 }

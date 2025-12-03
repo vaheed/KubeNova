@@ -46,8 +46,5 @@ func (a *AppAdapter) ToApplication(app *types.App) map[string]any {
 	if len(app.Policies) > 0 {
 		manifest["policies"] = app.Policies
 	}
-	if app.ProjectID != "" {
-		manifest["project"] = app.ProjectID
-	}
 	return manifest
 }
