@@ -527,7 +527,24 @@ paths:
               schema:
                 type: object
               example:
-                owner: https://proxy.dev.example.com/acme/owner
+                owner: |
+                  apiVersion: v1
+                  kind: Config
+                  clusters:
+                  - cluster:
+                      server: https://proxy.dev.example.com/acme/owner
+                      insecure-skip-tls-verify: true
+                    name: proxy
+                  contexts:
+                  - context:
+                      cluster: proxy
+                      user: sa
+                    name: proxy
+                  current-context: proxy
+                  users:
+                  - name: sa
+                    user:
+                      token: eyJhbGciOiJSUzI1NiIsImtpZCI6IiJ9...
                 readonly: https://proxy.dev.example.com/acme/readonly
         '404':
           $ref: '#/components/responses/Error'

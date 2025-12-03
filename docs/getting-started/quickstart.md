@@ -41,10 +41,11 @@ curl -s -X POST http://localhost:8080/api/v1/tokens \
 If you have a `kind` cluster (see [kind E2E setup](../operations/kind-e2e.md)):
 ```bash
 KUBE_B64=$(base64 -w0 kind/config)
+CAPSULE_PROXY_ENDPOINT="https://proxy.dev.example.com"
 curl -s -X POST http://localhost:8080/api/v1/clusters \
   -H 'Content-Type: application/json' \
   -H 'X-KN-Roles: admin' \
-  -d "{\"name\":\"dev-cluster\",\"datacenter\":\"dc1\",\"labels\":{\"env\":\"dev\"},\"kubeconfig\":\"$KUBE_B64\"}"
+  -d "{\"name\":\"dev-cluster\",\"datacenter\":\"dc1\",\"labels\":{\"env\":\"dev\"},\"kubeconfig\":\"$KUBE_B64\",\"capsuleProxyEndpoint\":\"$CAPSULE_PROXY_ENDPOINT\"}"
 ```
 The manager uses Helm (bundled in the image) and the local operator chart to install the operator into the cluster.
 

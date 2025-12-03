@@ -1736,7 +1736,8 @@ func (s *Server) syncTenantWithCluster(ctx context.Context, cluster *types.Clust
 	if err != nil {
 		return err
 	}
-	return upsertNovaTenant(ctx, cli, tenant)
+	base := fmt.Sprintf("%s/%s", s.clusterProxyBase(ctx, cluster.ID), tenant.Name)
+	return upsertNovaTenant(ctx, cli, tenant, base)
 }
 
 func (s *Server) syncProject(ctx context.Context, project *types.Project, tenant *types.Tenant) error {
@@ -1878,7 +1879,7 @@ func (s *Server) deleteAppResource(ctx context.Context, app *types.App) error {
 	return nil
 }
 
-func upsertNovaTenant(ctx context.Context, cli ctrlclient.Client, t *types.Tenant) error {
+func upsertNovaTenant(ctx context.Context, cli ctrlclient.Client, t *types.Tenant, proxyEndpoint string) error {
 	if cli == nil {
 		return errors.New("kube client is nil")
 	}
@@ -1894,6 +1895,7 @@ func upsertNovaTenant(ctx context.Context, cli ctrlclient.Client, t *types.Tenan
 		NetworkPolicies: t.NetworkPolicies,
 		Quotas:          t.Quotas,
 		Limits:          t.Limits,
+		ProxyEndpoint:   strings.TrimRight(proxyEndpoint, "/"),
 	}
 	current := &v1alpha1.NovaTenant{}
 	err := cli.Get(ctx, ctrlclient.ObjectKey{Name: t.Name}, current)

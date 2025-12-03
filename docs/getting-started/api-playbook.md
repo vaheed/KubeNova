@@ -55,13 +55,19 @@ TENANT_ID=$(echo "$TENANT" | jq -r '.id')
 Fetch tenant kubeconfigs (owner/read-only) once the operator reconciles:
 ```bash
 curl -s "$KN_HOST/api/v1/tenants/$TENANT_ID/kubeconfig" -H "$KN_ROLES" | tee /tmp/tenant-kubeconfigs.json
-# grab the owner kubeconfig and use it:
-jq -r '.owner' /tmp/tenant-kubeconfigs.json > /tmp/tenant-owner.kubeconfig
-kubectl --kubeconfig /tmp/tenant-owner.kubeconfig get ns
-# verify the Secret exists in the cluster (optional, using your admin kubeconfig):
-kubectl get secret -n acme-owner kubenova-kubeconfigs
+OWNER_KCFG=$(jq -r '.owner' /tmp/tenant-kubeconfigs.json)
+# The value is kubeconfig YAML that points at the Capsule Proxy endpoint (not the raw apiserver).
+# If it is a URL, the operator has not yet written the Secret; wait for reconciliation.
+if echo "$OWNER_KCFG" | grep -q '^apiVersion:'; then
+  printf "%s\n" "$OWNER_KCFG" > /tmp/tenant-owner.kubeconfig
+  kubectl --kubeconfig /tmp/tenant-owner.kubeconfig get ns
+else
+  echo "Owner kubeconfig not ready yet (got $OWNER_KCFG)"
+fi
+# verify the Secret exists in the cluster (using your admin kubeconfig):
+kubectl --kubeconfig kind/config get secret -n acme-owner kubenova-kubeconfigs
 ```
-If kubeconfigs aren’t ready yet, the response falls back to Capsule Proxy URLs.
+If kubeconfigs aren’t ready yet, the response may fall back to Capsule Proxy URLs. Always set `capsuleProxyEndpoint` on the cluster so the kubeconfigs use the proxy path.
 
 ## 4) Create a project
 ```bash
