@@ -109,7 +109,7 @@ curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/project
   -H "$KN_ROLES"
 ```
 
-Create a Grafana app example:
+Create a Grafana app example (with LoadBalancer):
 ```bash
 GRAFANA_APP=$(curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps" \
   -H "$KN_ROLES" -H 'Content-Type: application/json' \
@@ -122,7 +122,8 @@ GRAFANA_APP=$(curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TEN
       "type": "webservice",
       "properties": {
         "image": "grafana/grafana:10.4.0",
-        "port": 3000
+        "port": 3000,
+        "serviceType": "LoadBalancer"
       }
     },
     "traits": [
