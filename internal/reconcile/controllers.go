@@ -11,7 +11,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -383,6 +385,8 @@ func ensureTenantAccess(ctx context.Context, c client.Client, tenant, ownerNS, a
 	}
 	// Kubeconfigs secret (best-effort: skip if tokens not yet available)
 	_ = ensureKubeconfigSecret(ctx, c, tenant, ownerNS, server, ownerSA, readonlySA)
+	// Ensure capsule-proxy settings allow tenant service accounts
+	_ = ensureProxySetting(ctx, c, tenant, ownerNS, ownerSA, readonlySA)
 	return nil
 }
 
@@ -575,6 +579,33 @@ users:
   user:
     token: %s
 `, serverURL, token)
+}
+
+func ensureProxySetting(ctx context.Context, c client.Client, tenant, ownerNS, ownerSA, readonlySA string) error {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "capsule.clastix.io",
+		Version: "v1beta1",
+		Kind:    "ProxySetting",
+	})
+	name := "kubenova-proxy-" + tenant
+	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ownerNS}, obj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		ps := map[string]any{
+			"subjects": []any{
+				map[string]any{"kind": "ServiceAccount", "name": ownerSA},
+				map[string]any{"kind": "ServiceAccount", "name": readonlySA},
+			},
+		}
+		obj.SetName(name)
+		obj.SetNamespace(ownerNS)
+		obj.SetLabels(map[string]string{"managed-by": "kubenova", "tenant": tenant})
+		_ = unstructured.SetNestedMap(obj.Object, ps, "spec")
+		return c.Create(ctx, obj)
+	}
+	return nil
 }
 
 func setStatusReady(ctx context.Context, c client.Client, obj client.Object) error {
