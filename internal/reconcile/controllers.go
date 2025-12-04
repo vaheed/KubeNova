@@ -522,10 +522,10 @@ func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ns, pr
 	}
 	data := map[string][]byte{}
 	if ownerToken != "" {
-		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint, ownerToken))
+		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint, ownerToken, tenant, ns, "owner"))
 	}
 	if readonlyToken != "" {
-		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint, readonlyToken))
+		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint, readonlyToken, tenant, ns, "readonly"))
 	}
 	if len(data) == 0 {
 		return nil
@@ -593,26 +593,30 @@ func requestServiceAccountToken(ctx context.Context, c client.Client, ns, saName
 	return tr.Status.Token, nil
 }
 
-func buildProxyKubeconfig(serverURL, token string) string {
+func buildProxyKubeconfig(serverURL, token, tenant, namespace, role string) string {
 	serverURL = strings.TrimRight(serverURL, "/")
+	clusterName := fmt.Sprintf("%s-proxy", tenant)
+	userName := fmt.Sprintf("%s-%s", tenant, role)
+	contextName := fmt.Sprintf("%s-%s", tenant, role)
 	return fmt.Sprintf(`apiVersion: v1
 kind: Config
 clusters:
 - cluster:
     server: %s
     insecure-skip-tls-verify: true
-  name: proxy
+  name: %s
 contexts:
 - context:
-    cluster: proxy
-    user: sa
-  name: proxy
-current-context: proxy
+    cluster: %s
+    user: %s
+    namespace: %s
+  name: %s
+current-context: %s
 users:
-- name: sa
+- name: %s
   user:
     token: %s
-`, serverURL, token)
+`, serverURL, clusterName, clusterName, userName, namespace, contextName, contextName, userName, token)
 }
 
 func ensureProxySetting(ctx context.Context, c client.Client, tenant, ownerNS, ownerSA, readonlySA string) error {
