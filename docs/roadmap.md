@@ -44,32 +44,42 @@ A complete engineering roadmap for building the Kubenova multi-tenant applicatio
 - Add OpenAPI or protobuf definitions.
 
 ### 2.2 RBAC Layer
-- Implement role model:
-  - System Owner
-  - Tenant Owner
-  - App User
-- Map role actions to Kubernetes + Capsule permissions.
+- Implement role model (aligned to Capsule/KubeVela + Manager API):
+  - **System Owner** — manages clusters/tenants/projects; corresponds to manager roles `admin|ops`; cluster-scoped `capsule-proxy` access; can bootstrap components.
+  - **Tenant Owner** — manages their tenant/projects/apps; allowed to read usage; has owner SA kubeconfig (full access in `<tenant>-owner`/`<tenant>-apps` namespaces).
+  - **App User** — deploys/updates apps inside a project; maps to `projectDev`; inherits readonly SA kubeconfig and scoped Vela project access.
+- Map role actions to Kubernetes + Capsule permissions:
+  - Manager API routes → required roles (`admin|ops|tenantOwner|projectDev|readOnly`) documented in `internal/manager/server.go`.
+  - Capsule: Tenant Owner bound to `kubenova-owner` Role (all verbs) in both tenant namespaces; App User bound to readonly Role (get/list/watch).
+  - KubeVela: Vela Project per tenant; App User allowed to create/update Applications within that project; Tenant Owner allowed to manage project settings.
+  - Proxy: ensure Capsule Proxy enforces namespace scoping for owner/readonly kubeconfigs; keep proxy base URL stored on the cluster.
 
 ### 2.3 Tenant Management
-- CRUD for tenants
-- Assign tenant-level quotas
-- Store tenant metadata for Operator syncing
+- CRUD for tenants (Manager API + store) including labels/owners/plan/network policies/limits.
+- Quotas and limits persisted per tenant, validated in API, and projected into Capsule Tenant spec.
+- Capsule/KubeVela sync:
+  - Manager writes proxy endpoint on tenant (cluster-level default plus override).
+  - Operator reconciles namespaces, SA + RBAC, kubeconfigs Secret, Capsule Tenant, and publishes Capsule Proxy endpoint.
+- Usage reporting path defined (Operator → Manager) with API surface for `GET /tenants/{id}/usage`.
 
 ### 2.4 Project Management
-- CRUD for projects
-- Bind Capsule Projects to KubeVela Projects
-- Provide project-level owner/app kubeconfigs
+- CRUD for projects (per-tenant); enforce unique names per tenant and label support.
+- Bind Capsule Projects to KubeVela Projects:
+  - Manager ensures NovaProject -> Capsule tenant namespaces -> Vela Project creation.
+  - Operator reconciles NovaProject into Vela Project with access lists.
+- Provide project-level owner/app kubeconfigs (manager endpoint `/projects/{id}/kubeconfig`); enforce role-gated access (`admin|ops|tenantOwner|projectDev|readOnly`).
 
 ### 2.5 Kubeconfig Generator
-- Generate Owner and App kubeconfigs
-- Secure token creation
-- Auto-expiry and rotation support
-- Permission validation via Capsule Proxy
+- Generate Owner and Readonly kubeconfigs from ServiceAccounts created per tenant; store in `kubenova-kubeconfigs` Secret.
+- Secure token creation: prefer `TokenRequest` API; fall back to SA token Secrets; redact kubeconfig content in API responses except explicit kubeconfig endpoints.
+- Auto-expiry and rotation support: background refresh (operator) and on-demand regeneration via Manager endpoint; ensure Secrets are updated when tokens change.
+- Permission validation via Capsule Proxy: kubeconfigs point to the proxy base; proxy enforces namespace scoping; Manager falls back to proxy URL when Secret missing.
 
 ### 2.6 Capsule Proxy Integration
-- Auto-create proxy rules per tenant
-- Restrict App kubeconfig actions
-- Map user → tenant → project → namespace
+- Auto-publish proxy endpoint per tenant (Manager stores cluster proxy base; Operator publishes via PROXY_API_URL or ConfigMap).
+- Ensure kubeconfigs use proxy base URL; Capsule Proxy enforces namespace scoping for owner/readonly SAs.
+- Restrict readonly kubeconfig to get/list/watch; owner kubeconfig full verbs within tenant namespaces; validate via Capsule RBAC + proxy.
+- Map user → tenant → project → namespace for project/app operations; document proxy behavior and failure modes in docs.
 
 ---
 
