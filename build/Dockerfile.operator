@@ -1,20 +1,21 @@
 ARG HELM_VERSION=3.19.2
 ARG VELA_CLI_VERSION=1.10.5
 
-FROM golang:1.24 AS builder
+FROM golang:1.24.11 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/operator ./cmd/operator
 
-FROM debian:12-slim AS tools
+FROM golang:1.24.11 AS helm-builder
 ARG HELM_VERSION
+RUN GOBIN=/tmp/out go install helm.sh/helm/v3/cmd/helm@v${HELM_VERSION}
+
+FROM debian:12-slim AS tools
 ARG VELA_CLI_VERSION
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tar binutils && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz -o /tmp/helm.tgz \
-    && tar -C /tmp -zxvf /tmp/helm.tgz linux-amd64/helm \
-    && mv /tmp/linux-amd64/helm /usr/local/bin/helm
+COPY --from=helm-builder /tmp/out/helm /usr/local/bin/helm
 RUN curl -fsSL https://github.com/kubevela/kubevela/releases/download/v${VELA_CLI_VERSION}/vela-v${VELA_CLI_VERSION}-linux-amd64.tar.gz -o /tmp/vela.tgz \
     && tar -C /tmp -zxvf /tmp/vela.tgz linux-amd64/vela \
     && mv /tmp/linux-amd64/vela /usr/local/bin/vela
