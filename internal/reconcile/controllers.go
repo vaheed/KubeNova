@@ -317,32 +317,10 @@ func ensureCapsuleUserGroups(ctx context.Context, c client.Client, tenant string
 	return c.Update(ctx, obj)
 }
 
-// PeriodicComponentReconciler ensures add-ons stay aligned with desired versions.
+// PeriodicComponentReconciler is disabled to avoid repeated helm upgrades.
 func PeriodicComponentReconciler(ctx context.Context, c client.Client, reader client.Reader, scheme *runtime.Scheme, interval time.Duration) error {
-	installer := cluster.NewInstaller(c, scheme, nil, reader, false)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			for _, comp := range []string{"cert-manager", "capsule", "capsule-proxy", "kubevela"} {
-				start := time.Now()
-				logging.L.Info("reconcile_component_start", zap.String("component", comp))
-				if err := installer.Reconcile(ctx, comp); err != nil {
-					logging.L.Error("reconcile_component_error", zap.String("component", comp), zap.Error(err))
-					telemetry.Emit("component_install", map[string]string{
-						"component": comp,
-						"status":    "error",
-						"error":     err.Error(),
-					})
-					continue
-				}
-				logging.L.Info("reconcile_component_done", zap.String("component", comp), zap.Duration("duration", time.Since(start)))
-			}
-		}
-	}
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func ensureNamespace(ctx context.Context, c client.Client, name string) error {
