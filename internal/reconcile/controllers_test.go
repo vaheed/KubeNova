@@ -84,7 +84,7 @@ func TestAppReconcilerCallsVelaBackend(t *testing.T) {
 	velabackend.AddToScheme(scheme)
 	_ = v1alpha1.AddToScheme(scheme)
 	app := &v1alpha1.NovaApp{
-		ObjectMeta: metav1.ObjectMeta{Name: "web"},
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "tenant1-apps"},
 		Spec: v1alpha1.NovaAppSpec{
 			Tenant:   "tenant1",
 			Project:  "proj1",
@@ -96,12 +96,16 @@ func TestAppReconcilerCallsVelaBackend(t *testing.T) {
 		Spec:       v1alpha1.NovaTenantSpec{AppsNamespace: "tenant1-apps"},
 	}
 	mock := &mockVela{}
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app, tenant).Build()
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(app).
+		WithObjects(app, tenant).
+		Build()
 	r := &AppReconciler{
 		Client:  client,
 		Backend: mock,
 	}
-	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "web"}})
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "web", Namespace: "tenant1-apps"}})
 	if err != nil {
 		t.Fatalf("reconcile error: %v", err)
 	}

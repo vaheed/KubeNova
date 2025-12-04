@@ -12,6 +12,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -223,11 +224,23 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			return ctrl.Result{}, err
 		}
 	}
-	// Mark configmap with last reconciled timestamp for visibility
-	_ = setStatusReady(ctx, r.Client, &app)
-	return ctrl.Result{}, patchAnnotations(ctx, r.Client, &app, map[string]string{
-		"kubenova.io/last-applied": time.Now().UTC().Format(time.RFC3339),
+	// Mark status/annotations with retry to avoid conflicts
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		var latest v1alpha1.NovaApp
+		if err := r.Get(ctx, req.NamespacedName, &latest); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		if err := setStatusReady(ctx, r.Client, &latest); err != nil {
+			return err
+		}
+		return patchAnnotations(ctx, r.Client, &latest, map[string]string{
+			"kubenova.io/last-applied": time.Now().UTC().Format(time.RFC3339),
+		})
 	})
+	return ctrl.Result{}, err
 }
 
 func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
