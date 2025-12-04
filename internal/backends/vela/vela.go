@@ -100,6 +100,33 @@ func (c *clientImpl) ApplyProject(ctx context.Context, spec map[string]any) erro
 	})
 }
 
+func (c *clientImpl) ApplyProject(ctx context.Context, spec map[string]any) error {
+	name, _ := spec["name"].(string)
+	if name == "" {
+		return nil
+	}
+	namespace := "vela-system"
+	if ns, ok := spec["namespace"].(string); ok && ns != "" {
+		namespace = ns
+	}
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(projectGVK)
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, obj)
+	if apierrors.IsNotFound(err) {
+		obj.SetName(name)
+		obj.SetNamespace(namespace)
+		obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+		obj.Object["spec"] = specFromMap(spec)
+		return c.client.Create(ctx, obj)
+	}
+	if err != nil {
+		return err
+	}
+	obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+	obj.Object["spec"] = specFromMap(spec)
+	return c.client.Update(ctx, obj)
+}
+
 func specFromMap(spec map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range spec {
