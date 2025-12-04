@@ -800,10 +800,10 @@ func (s *Server) tenantKubeconfig(w http.ResponseWriter, r *http.Request) {
 	// Fallback to proxy URLs if kubeconfigs not found
 	base := s.clusterProxyBase(r.Context(), tenant.ClusterID)
 	if cfgs["owner"] == "" {
-		cfgs["owner"] = base
+		cfgs["owner"] = fmt.Sprintf("%s/%s/owner", base, tenant.Name)
 	}
 	if cfgs["readonly"] == "" {
-		cfgs["readonly"] = base
+		cfgs["readonly"] = fmt.Sprintf("%s/%s/readonly", base, tenant.Name)
 	}
 	writeJSON(w, http.StatusOK, cfgs)
 }
@@ -1736,7 +1736,7 @@ func (s *Server) syncTenantWithCluster(ctx context.Context, cluster *types.Clust
 	if err != nil {
 		return err
 	}
-	proxyEndpoint := s.clusterProxyBase(ctx, cluster.ID)
+	proxyEndpoint := fmt.Sprintf("%s/%s", s.clusterProxyBase(ctx, cluster.ID), tenant.Name)
 	return upsertNovaTenant(ctx, cli, tenant, proxyEndpoint)
 }
 

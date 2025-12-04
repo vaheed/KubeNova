@@ -14,12 +14,12 @@ KubeNova enforces tenant isolation with Capsule and Capsule Proxy. Each tenant r
 - ServiceAccounts:
   - Owner (full access within tenant namespaces)
   - Readonly (get/list/watch)
-- Two kubeconfigs per tenant derived from the ServiceAccounts (Secret `kubenova-kubeconfigs` in `<tenant>-owner`; Manager API surfaces these). The kubeconfigs point to the cluster Capsule Proxy base (no tenant/role suffix) and rely on the ServiceAccount token for role scoping, never the raw kube-apiserver.
+- Two kubeconfigs per tenant derived from the ServiceAccounts (Secret `kubenova-kubeconfigs` in `<tenant>-owner`; Manager API surfaces these). The kubeconfigs point to the per-tenant Capsule Proxy endpoint (`<proxy>/<tenant>/<role>`), never the raw kube-apiserver.
 - One KubeVela project per tenant; unlimited KubeVela applications per project
 
 ## Defaulting rules
 - If owner/apps namespaces are not provided, the operator derives them from the tenant name.
-- Proxy endpoint defaults to `https://proxy.kubenova.local` when not provided; set `capsuleProxyEndpoint` when registering the cluster to publish tenant kubeconfigs via your real proxy.
+- Proxy endpoint defaults to `https://proxy.kubenova.local/<tenant>` when not provided; set `capsuleProxyEndpoint` when registering the cluster to publish tenant kubeconfigs via your real proxy.
 - Plan/policy catalogs are plumbed via adapters; defaults apply during tenant creation when configured.
 
 ## Enforcement path

@@ -70,14 +70,14 @@ A complete engineering roadmap for building the Kubenova multi-tenant applicatio
 - Provide project-level owner/app kubeconfigs (manager endpoint `/projects/{id}/kubeconfig`); enforce role-gated access (`admin|ops|tenantOwner|projectDev|readOnly`).
 
 ### 2.5 Kubeconfig Generator
-- Generate Owner and Readonly kubeconfigs from ServiceAccounts created per tenant; store in `kubenova-kubeconfigs` Secret.
+- Generate Owner and Readonly kubeconfigs from ServiceAccounts created per tenant; store in `kubenova-kubeconfigs` Secret under `<tenant>-owner`.
 - Secure token creation: prefer `TokenRequest` API; fall back to SA token Secrets; redact kubeconfig content in API responses except explicit kubeconfig endpoints.
 - Auto-expiry and rotation support: background refresh (operator) and on-demand regeneration via Manager endpoint; ensure Secrets are updated when tokens change.
-- Permission validation via Capsule Proxy: kubeconfigs point to the proxy base; proxy enforces namespace scoping; Manager falls back to proxy URL when Secret missing.
+- Permission validation via Capsule Proxy: kubeconfigs point to `<proxy>/<tenant>/<role>`; proxy enforces namespace scoping; Manager falls back to proxy URL when Secret missing.
 
 ### 2.6 Capsule Proxy Integration
 - Auto-publish proxy endpoint per tenant (Manager stores cluster proxy base; Operator publishes via PROXY_API_URL or ConfigMap).
-- Ensure kubeconfigs use proxy base URL; Capsule Proxy enforces namespace scoping for owner/readonly SAs.
+- Ensure kubeconfigs use per-tenant proxy endpoint (`<proxy>/<tenant>/<role>`); Capsule Proxy enforces namespace scoping for owner/readonly SAs.
 - Restrict readonly kubeconfig to get/list/watch; owner kubeconfig full verbs within tenant namespaces; validate via Capsule RBAC + proxy.
 - Map user → tenant → project → namespace for project/app operations; document proxy behavior and failure modes in docs.
 

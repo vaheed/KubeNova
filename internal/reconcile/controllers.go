@@ -322,26 +322,22 @@ func proxyServerEndpoint(endpoint, tenant string) string {
 	}
 	u, err := url.Parse(trimmed)
 	if err != nil || u.Scheme == "" || u.Host == "" {
-		return strings.TrimRight(trimmed, "/")
+		return strings.TrimRight(fmt.Sprintf("%s/%s", strings.TrimRight(trimmed, "/"), tenant), "/")
 	}
 	parts := []string{}
 	if path := strings.Trim(u.Path, "/"); path != "" {
 		parts = strings.Split(path, "/")
-		for len(parts) > 0 {
-			last := parts[len(parts)-1]
-			if last == tenant || last == "owner" || last == "readonly" || last == "" {
-				parts = parts[:len(parts)-1]
-				continue
-			}
-			break
+	}
+	// strip role suffix if present
+	if n := len(parts); n > 0 {
+		if parts[n-1] == "owner" || parts[n-1] == "readonly" {
+			parts = parts[:n-1]
 		}
 	}
-	cleanPath := strings.Join(parts, "/")
-	if cleanPath != "" {
-		u.Path = "/" + cleanPath
-	} else {
-		u.Path = ""
+	if len(parts) == 0 || parts[len(parts)-1] != tenant {
+		parts = append(parts, tenant)
 	}
+	u.Path = "/" + strings.Join(parts, "/")
 	u.RawPath = ""
 	return strings.TrimRight(u.String(), "/")
 }
@@ -475,10 +471,10 @@ func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ns, pr
 	}
 	data := map[string][]byte{}
 	if ownerToken != "" {
-		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint, ownerToken))
+		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint+"/owner", ownerToken))
 	}
 	if readonlyToken != "" {
-		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint, readonlyToken))
+		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint+"/readonly", readonlyToken))
 	}
 	if len(data) == 0 {
 		return nil
