@@ -34,6 +34,8 @@ CLUSTER=$(curl -s -X POST "$KN_HOST/api/v1/clusters" \
     \"capsuleProxyEndpoint\": \"$CAPSULE_PROXY_ENDPOINT\"
   }")
 CLUSTER_ID=$(echo "$CLUSTER" | jq -r '.id')
+
+kubectl -n kubenova-system logs -f deploy/kubenova-operator
 ```
 The manager will install the operator (local Helm chart) into the cluster asynchronously and update status to `connected` when successful.
 
@@ -54,17 +56,11 @@ TENANT_ID=$(echo "$TENANT" | jq -r '.id')
 
 Fetch tenant kubeconfigs (owner/read-only) once the operator reconciles:
 ```bash
-curl -s "$KN_HOST/api/v1/tenants/$TENANT_ID/kubeconfig" -H "$KN_ROLES" | tee /tmp/tenant-kubeconfigs.json
-OWNER_KCFG=$(jq -r '.owner' /tmp/tenant-kubeconfigs.json)
-# The value is kubeconfig YAML that points at the Capsule Proxy endpoint (not the raw apiserver).
-# If it is a URL, the operator has not yet written the Secret; wait for reconciliation.
-if echo "$OWNER_KCFG" | grep -q '^apiVersion:'; then
-  printf "%s\n" "$OWNER_KCFG" > /tmp/tenant-owner.kubeconfig
-  kubectl --kubeconfig /tmp/tenant-owner.kubeconfig get ns
-else
-  echo "Owner kubeconfig not ready yet (got $OWNER_KCFG)"
-fi
-# verify the Secret exists in the cluster (using your admin kubeconfig):
+curl -s "$KN_HOST/api/v1/tenants/$TENANT_ID/kubeconfig" -H "$KN_ROLES" > /tmp/tenant-kubeconfigs.json
+jq -r '.owner' /tmp/tenant-kubeconfigs.json > /tmp/tenant-owner.kubeconfig
+jq -r '.readonly' /tmp/tenant-kubeconfigs.json > /tmp/tenant-readonly.kubeconfig
+
+
 kubectl --kubeconfig kind/config get secret -n acme-owner kubenova-kubeconfigs
 ```
 If kubeconfigs aren’t ready yet, the response may fall back to Capsule Proxy URLs. Always set `capsuleProxyEndpoint` on the cluster so the kubeconfigs use the proxy endpoint.
