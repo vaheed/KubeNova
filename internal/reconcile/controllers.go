@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -272,6 +273,50 @@ func BootstrapHelmJob(ctx context.Context, c client.Client, reader client.Reader
 	return nil
 }
 
+func ensureCapsuleUserGroups(ctx context.Context, c client.Client, tenant string) error {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "capsule.clastix.io",
+		Version: "v1beta2",
+		Kind:    "CapsuleConfiguration",
+	})
+	name := "default"
+	if err := c.Get(ctx, client.ObjectKey{Name: name}, obj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		cfg := map[string]any{
+			"userGroups": []any{
+				"system:serviceaccounts",
+				fmt.Sprintf("system:serviceaccounts:%s", tenant+"-owner"),
+			},
+		}
+		obj.SetName(name)
+		obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+		_ = unstructured.SetNestedMap(obj.Object, cfg, "spec")
+		return c.Create(ctx, obj)
+	}
+	ugs, found, _ := unstructured.NestedStringSlice(obj.Object, "spec", "userGroups")
+	set := sets.NewString(ugs...)
+	updated := false
+	if !found {
+		set = sets.NewString()
+	}
+	for _, g := range []string{"system:serviceaccounts", fmt.Sprintf("system:serviceaccounts:%s", tenant+"-owner")} {
+		if !set.Has(g) {
+			set.Insert(g)
+			updated = true
+		}
+	}
+	if !updated {
+		return nil
+	}
+	if err := unstructured.SetNestedStringSlice(obj.Object, set.List(), "spec", "userGroups"); err != nil {
+		return err
+	}
+	return c.Update(ctx, obj)
+}
+
 // PeriodicComponentReconciler ensures add-ons stay aligned with desired versions.
 func PeriodicComponentReconciler(ctx context.Context, c client.Client, reader client.Reader, scheme *runtime.Scheme, interval time.Duration) error {
 	installer := cluster.NewInstaller(c, scheme, nil, reader, false)
@@ -385,6 +430,8 @@ func ensureTenantAccess(ctx context.Context, c client.Client, tenant, ownerNS, a
 	}
 	// Kubeconfigs secret (best-effort: skip if tokens not yet available)
 	_ = ensureKubeconfigSecret(ctx, c, tenant, ownerNS, server, ownerSA, readonlySA)
+	// Ensure capsule-proxy settings allow tenant service accounts
+	_ = ensureCapsuleUserGroups(ctx, c, tenant)
 	// Ensure capsule-proxy settings allow tenant service accounts
 	_ = ensureProxySetting(ctx, c, tenant, ownerNS, ownerSA, readonlySA)
 	return nil
@@ -597,6 +644,7 @@ func ensureProxySetting(ctx context.Context, c client.Client, tenant, ownerNS, o
 			"subjects": []any{
 				map[string]any{"kind": "ServiceAccount", "name": ownerSA},
 				map[string]any{"kind": "ServiceAccount", "name": readonlySA},
+				map[string]any{"kind": "Group", "name": fmt.Sprintf("system:serviceaccounts:%s", ownerNS)},
 			},
 		}
 		obj.SetName(name)
