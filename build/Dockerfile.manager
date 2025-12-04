@@ -1,0 +1,26 @@
+ARG HELM_VERSION=3.19.2
+
+FROM golang:1.24 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/manager ./cmd/manager
+
+FROM debian:12-slim AS tools
+ARG HELM_VERSION
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tar binutils && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz -o /tmp/helm.tgz \
+    && tar -C /tmp -zxvf /tmp/helm.tgz linux-amd64/helm \
+    && mv /tmp/linux-amd64/helm /usr/local/bin/helm \
+    && chmod +x /usr/local/bin/helm \
+    && strip /usr/local/bin/helm || true
+
+FROM gcr.io/distroless/base-debian12
+WORKDIR /
+COPY --from=builder /out/manager /manager
+COPY --from=tools /usr/local/bin/helm /usr/local/bin/helm
+COPY deploy/helm/operator /charts/operator
+EXPOSE 8080
+USER 65532:65532
+ENTRYPOINT ["/manager"]

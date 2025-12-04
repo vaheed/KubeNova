@@ -1,0 +1,73 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: novaprojects.kubenova.io
+spec:
+  group: kubenova.io
+  scope: Cluster
+  names:
+    plural: novaprojects
+    singular: novaproject
+    kind: NovaProject
+    shortNames:
+      - nproj
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              properties:
+                tenant:
+                  type: string
+                description:
+                  type: string
+                labels:
+                  type: object
+                  additionalProperties:
+                    type: string
+                access:
+                  type: array
+                  items:
+                    type: string
+              required:
+                - tenant
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: ["type", "status", "reason", "lastTransitionTime"]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+          required:
+            - spec
+      subresources:
+        status: {}

@@ -1,0 +1,33 @@
+image:
+  repository: ghcr.io/vaheed/kubenova/kubenova-operator
+  tag: v0.1.3
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+redis:
+  enabled: true
+  image: redis:7
+  addr: redis:6379
+
+manager:
+  url: http://kubenova-manager.kubenova.svc.cluster.local:8080
+  batchIntervalSeconds: 10
+  batchMaxItems: 100
+otel:
+  endpoint: ""
+  insecure: true
+  environment: ""
+  version: ""
+  resourceAttributes: ""
+
+bootstrap:
+  capsuleVersion: 0.10.6
+  capsuleProxyVersion: 0.9.13
+  velaCoreVersion: "1.10.4"
