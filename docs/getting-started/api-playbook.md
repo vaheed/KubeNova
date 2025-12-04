@@ -67,7 +67,7 @@ fi
 # verify the Secret exists in the cluster (using your admin kubeconfig):
 kubectl --kubeconfig kind/config get secret -n acme-owner kubenova-kubeconfigs
 ```
-If kubeconfigs aren’t ready yet, the response may fall back to Capsule Proxy URLs. Always set `capsuleProxyEndpoint` on the cluster so the kubeconfigs use the proxy path.
+If kubeconfigs aren’t ready yet, the response may fall back to Capsule Proxy URLs. Always set `capsuleProxyEndpoint` on the cluster so the kubeconfigs use the proxy endpoint.
 
 ## 4) Create a project
 ```bash

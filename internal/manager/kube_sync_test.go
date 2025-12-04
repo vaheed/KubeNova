@@ -48,7 +48,7 @@ func TestUpsertNovaTenantCreatesAndUpdates(t *testing.T) {
 	tenant.Plan = "platinum"
 	tenant.Labels = map[string]string{"tier": "platinum"}
 	tenant.Owners = []string{"bob"}
-	if err := upsertNovaTenant(ctx, cli, tenant, "https://proxy.example/acme"); err != nil {
+	if err := upsertNovaTenant(ctx, cli, tenant, "https://proxy.example"); err != nil {
 		t.Fatalf("update tenant CR: %v", err)
 	}
 
@@ -62,7 +62,7 @@ func TestUpsertNovaTenantCreatesAndUpdates(t *testing.T) {
 	if len(updated.Spec.Owners) != 1 || updated.Spec.Owners[0] != "bob" {
 		t.Fatalf("owners not updated: %+v", updated.Spec.Owners)
 	}
-	if updated.Spec.ProxyEndpoint != "https://proxy.example/acme" {
+	if updated.Spec.ProxyEndpoint != "https://proxy.example" {
 		t.Fatalf("proxy endpoint not propagated: %s", updated.Spec.ProxyEndpoint)
 	}
 }

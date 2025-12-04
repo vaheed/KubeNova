@@ -15,7 +15,7 @@ title: API & OpenAPI
 - Auth: `POST /tokens`, `GET /me`
 - Clusters: CRUD + `/capabilities`, `/bootstrap/{component}`
 - Tenants/projects/apps: nested routes for creation, updates, workflow runs, revisions, usage
-- Tenant kubeconfigs: `GET /tenants/{tenantId}/kubeconfig` returns inline owner/readonly kubeconfigs pointing at the Capsule Proxy endpoint (`<proxy>/<tenant>/<role>`) when the Secret exists; before the Secret is written, it may return proxy URLs. Always register clusters with `capsuleProxyEndpoint` so tenants route through the proxy.
+- Tenant kubeconfigs: `GET /tenants/{tenantId}/kubeconfig` returns inline owner/readonly kubeconfigs pointing at the Capsule Proxy endpoint (`<proxy>`) when the Secret exists; before the Secret is written, it may return proxy URLs. Always register clusters with `capsuleProxyEndpoint` so tenants route through the proxy.
 - Usage: `/tenants/{id}/usage`, `/projects/{id}/usage`
 
 See the [API lifecycle walkthrough](../getting-started/api-playbook.md) for concrete curl examples that mirror the spec and tests.

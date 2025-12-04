@@ -532,7 +532,7 @@ paths:
                   kind: Config
                   clusters:
                   - cluster:
-                      server: https://proxy.dev.example.com/acme/owner
+                      server: https://proxy.dev.example.com
                       insecure-skip-tls-verify: true
                     name: proxy
                   contexts:
@@ -545,7 +545,7 @@ paths:
                   - name: sa
                     user:
                       token: eyJhbGciOiJSUzI1NiIsImtpZCI6IiJ9...
-                readonly: https://proxy.dev.example.com/acme/readonly
+                readonly: https://proxy.dev.example.com
         '404':
           $ref: '#/components/responses/Error'
   /api/v1/tenants/{tenantID}/usage:
