@@ -416,7 +416,7 @@ func ensureTenantAccess(ctx context.Context, c client.Client, tenant, ownerNS, a
 		}
 	}
 	// Kubeconfigs secret (best-effort: skip if tokens not yet available)
-	_ = ensureKubeconfigSecret(ctx, c, tenant, ownerNS, server, ownerSA, readonlySA)
+	_ = ensureKubeconfigSecret(ctx, c, tenant, ownerNS, appsNS, server, ownerSA, readonlySA)
 	// Ensure capsule-proxy settings allow tenant service accounts
 	_ = ensureCapsuleUserGroups(ctx, c, tenant)
 	// Ensure capsule-proxy settings allow tenant service accounts
@@ -505,27 +505,27 @@ func ensureRoleBinding(ctx context.Context, c client.Client, ns, name, roleName,
 	return c.Update(ctx, rb)
 }
 
-func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ns, proxyEndpoint, ownerSA, readonlySA string) error {
+func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ownerNS, appsNS, proxyEndpoint, ownerSA, readonlySA string) error {
 	proxyEndpoint = proxyServerEndpoint(proxyEndpoint, tenant)
 	secret := &corev1.Secret{}
-	err := c.Get(ctx, client.ObjectKey{Name: "kubenova-kubeconfigs", Namespace: ns}, secret)
+	err := c.Get(ctx, client.ObjectKey{Name: "kubenova-kubeconfigs", Namespace: ownerNS}, secret)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	ownerToken, _ := requestServiceAccountToken(ctx, c, ns, ownerSA)
+	ownerToken, _ := requestServiceAccountToken(ctx, c, ownerNS, ownerSA)
 	if ownerToken == "" {
-		ownerToken, _ = findServiceAccountToken(ctx, c, ns, ownerSA)
+		ownerToken, _ = findServiceAccountToken(ctx, c, ownerNS, ownerSA)
 	}
-	readonlyToken, _ := requestServiceAccountToken(ctx, c, ns, readonlySA)
+	readonlyToken, _ := requestServiceAccountToken(ctx, c, ownerNS, readonlySA)
 	if readonlyToken == "" {
-		readonlyToken, _ = findServiceAccountToken(ctx, c, ns, readonlySA)
+		readonlyToken, _ = findServiceAccountToken(ctx, c, ownerNS, readonlySA)
 	}
 	data := map[string][]byte{}
 	if ownerToken != "" {
-		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint, ownerToken, tenant, ns, "owner"))
+		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint, ownerToken, tenant, ownerNS, "owner"))
 	}
 	if readonlyToken != "" {
-		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint, readonlyToken, tenant, ns, "readonly"))
+		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint, readonlyToken, tenant, appsNS, "readonly"))
 	}
 	if len(data) == 0 {
 		return nil
@@ -534,7 +534,7 @@ func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ns, pr
 		secret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "kubenova-kubeconfigs",
-				Namespace: ns,
+				Namespace: ownerNS,
 				Labels:    map[string]string{"managed-by": "kubenova", "tenant": tenant},
 			},
 			Type: corev1.SecretTypeOpaque,
