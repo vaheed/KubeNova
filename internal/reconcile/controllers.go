@@ -542,9 +542,10 @@ func requestServiceAccountToken(ctx context.Context, c client.Client, ns, saName
 		return "", err
 	}
 	ttl := int64(3600)
+	audiences := []string{"https://kubernetes.default.svc.cluster.local", "kubernetes"}
 	tr := &authv1.TokenRequest{
 		Spec: authv1.TokenRequestSpec{
-			Audiences:         []string{"kubernetes"},
+			Audiences:         audiences,
 			ExpirationSeconds: &ttl,
 		},
 	}
