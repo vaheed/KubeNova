@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubenova-manager
+  labels: { app: kubenova-manager }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: kubenova-manager}
+  template:
+    metadata:
+      labels: {app: kubenova-manager}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: manager
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          env:
+            - name: KUBENOVA_REQUIRE_AUTH
+              value: "{{ .Values.env.KUBENOVA_REQUIRE_AUTH }}"
+            - name: MANAGER_URL_PUBLIC
+              value: "{{ .Values.env.MANAGER_URL_PUBLIC }}"
+            - name: DEFAULT_NS_RESOURCEQUOTA
+              value: "{{ .Values.env.DEFAULT_NS_RESOURCEQUOTA | default "" }}"
+            - name: DEFAULT_PROJECT_QUOTA
+              value: "{{ .Values.env.DEFAULT_PROJECT_QUOTA | default "" }}"
+            {{- with .Values.otel }}
+            {{- if .endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "{{ .endpoint }}"
+            {{- end }}
+            - name: OTEL_EXPORTER_OTLP_INSECURE
+              value: "{{ ternary "true" "false" .insecure }}"
+            {{- if .environment }}
+            - name: KUBENOVA_ENV
+              value: "{{ .environment }}"
+            {{- end }}
+            {{- if .version }}
+            - name: KUBENOVA_VERSION
+              value: "{{ .version }}"
+            {{- end }}
+            {{- if .resourceAttributes }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "{{ .resourceAttributes }}"
+            {{- end }}
+            {{- end }}
+            {{- if or .Values.jwt.existingSecret .Values.jwt.value }}
+            - name: JWT_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.jwt.existingSecret }}{{ .Values.jwt.existingSecret }}{{ else }}kubenova-manager-jwt{{ end }}
+                  key: {{ .Values.jwt.key | default "JWT_SIGNING_KEY" }}
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
