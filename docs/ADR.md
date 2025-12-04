@@ -152,7 +152,7 @@ Each tenant gets:
 ### Implementation Notes
 - The operator creates both namespaces during `NovaTenant` reconciliation, plus Capsule Tenant CR.
 - Owner/readonly ServiceAccounts, Roles, and RoleBindings are created in both namespaces; kubeconfigs are packaged into `kubenova-kubeconfigs` Secret under `<tenant>-owner`.
-- Manager’s `/api/v1/tenants/{tenantId}/kubeconfig` returns the kubeconfig content from that Secret when present (keys: `owner`, `readonly`); if missing, it falls back to Capsule Proxy URLs (`{proxyBase}/{tenant}/{role}`).
+- Manager’s `/api/v1/tenants/{tenantId}/kubeconfig` returns the kubeconfig content from that Secret when present (keys: `owner`, `readonly`); if missing, it falls back to the Capsule Proxy endpoint (`{proxyBase}`).
 
 ### Consequences
 **Pros:** predictable structure; clean roles; reproducible model.  

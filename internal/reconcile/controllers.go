@@ -1,14 +1,21 @@
 package reconcile
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -23,7 +30,9 @@ import (
 	v1alpha1 "github.com/vaheed/kubenova/pkg/api/v1alpha1"
 	"github.com/vaheed/kubenova/pkg/types"
 	"go.uber.org/zap"
+	authv1 "k8s.io/api/authentication/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/labels"
 )
 
@@ -72,7 +81,11 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			"labels":      proj.Spec.Labels,
 		}
 		if err := r.Backend.ApplyProject(ctx, manifest); err != nil {
-			return ctrl.Result{}, err
+			if apimeta.IsNoMatchError(err) {
+				logging.L.Warn("vela_project_crd_missing", zap.Error(err))
+			} else {
+				return ctrl.Result{}, err
+			}
 		}
 	}
 	return ctrl.Result{}, nil
@@ -136,12 +149,9 @@ func (r *TenantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{}, err
 		}
 	}
+	proxyServer := proxyServerEndpoint(tenantObj.Spec.ProxyEndpoint, tenantName)
 	if r.Proxy != nil {
-		endpoint := tenantObj.Spec.ProxyEndpoint
-		if endpoint == "" {
-			endpoint = fmt.Sprintf("https://proxy.kubenova.local/%s", tenantName)
-		}
-		_ = r.Proxy.Publish(ctx, tenantName, endpoint)
+		_ = r.Proxy.Publish(ctx, tenantName, proxyServer)
 	}
 	if err := ensureNamespace(ctx, r.Client, ownerNS); err != nil {
 		return ctrl.Result{}, err
@@ -149,7 +159,7 @@ func (r *TenantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err := ensureNamespace(ctx, r.Client, appsNS); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := ensureTenantAccess(ctx, r.Client, tenantName, ownerNS, appsNS, tenantObj.Spec.ProxyEndpoint); err != nil {
+	if err := ensureTenantAccess(ctx, r.Client, tenantName, ownerNS, appsNS, proxyServer); err != nil {
 		return ctrl.Result{}, err
 	}
 	_ = setStatusReady(ctx, r.Client, &tenantObj)
@@ -217,11 +227,23 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			return ctrl.Result{}, err
 		}
 	}
-	// Mark configmap with last reconciled timestamp for visibility
-	_ = setStatusReady(ctx, r.Client, &app)
-	return ctrl.Result{}, patchAnnotations(ctx, r.Client, &app, map[string]string{
-		"kubenova.io/last-applied": time.Now().UTC().Format(time.RFC3339),
+	// Mark status/annotations with retry to avoid conflicts
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		var latest v1alpha1.NovaApp
+		if err := r.Get(ctx, req.NamespacedName, &latest); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		if err := setStatusReady(ctx, r.Client, &latest); err != nil {
+			return err
+		}
+		return patchAnnotations(ctx, r.Client, &latest, map[string]string{
+			"kubenova.io/last-applied": time.Now().UTC().Format(time.RFC3339),
+		})
 	})
+	return ctrl.Result{}, err
 }
 
 func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -251,32 +273,54 @@ func BootstrapHelmJob(ctx context.Context, c client.Client, reader client.Reader
 	return nil
 }
 
-// PeriodicComponentReconciler ensures add-ons stay aligned with desired versions.
-func PeriodicComponentReconciler(ctx context.Context, c client.Client, reader client.Reader, scheme *runtime.Scheme, interval time.Duration) error {
-	installer := cluster.NewInstaller(c, scheme, nil, reader, false)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			for _, comp := range []string{"cert-manager", "capsule", "capsule-proxy", "kubevela"} {
-				start := time.Now()
-				logging.L.Info("reconcile_component_start", zap.String("component", comp))
-				if err := installer.Reconcile(ctx, comp); err != nil {
-					logging.L.Error("reconcile_component_error", zap.String("component", comp), zap.Error(err))
-					telemetry.Emit("component_install", map[string]string{
-						"component": comp,
-						"status":    "error",
-						"error":     err.Error(),
-					})
-					continue
-				}
-				logging.L.Info("reconcile_component_done", zap.String("component", comp), zap.Duration("duration", time.Since(start)))
-			}
+func ensureCapsuleUserGroups(ctx context.Context, c client.Client, tenant string) error {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "capsule.clastix.io",
+		Version: "v1beta2",
+		Kind:    "CapsuleConfiguration",
+	})
+	name := "default"
+	if err := c.Get(ctx, client.ObjectKey{Name: name}, obj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		cfg := map[string]any{
+			"userGroups": []any{
+				"system:serviceaccounts",
+				fmt.Sprintf("system:serviceaccounts:%s", tenant+"-owner"),
+			},
+		}
+		obj.SetName(name)
+		obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+		_ = unstructured.SetNestedMap(obj.Object, cfg, "spec")
+		return c.Create(ctx, obj)
+	}
+	ugs, found, _ := unstructured.NestedStringSlice(obj.Object, "spec", "userGroups")
+	set := sets.NewString(ugs...)
+	updated := false
+	if !found {
+		set = sets.NewString()
+	}
+	for _, g := range []string{"system:serviceaccounts", fmt.Sprintf("system:serviceaccounts:%s", tenant+"-owner")} {
+		if !set.Has(g) {
+			set.Insert(g)
+			updated = true
 		}
 	}
+	if !updated {
+		return nil
+	}
+	if err := unstructured.SetNestedStringSlice(obj.Object, set.List(), "spec", "userGroups"); err != nil {
+		return err
+	}
+	return c.Update(ctx, obj)
+}
+
+// PeriodicComponentReconciler is disabled to avoid repeated helm upgrades.
+func PeriodicComponentReconciler(ctx context.Context, c client.Client, reader client.Reader, scheme *runtime.Scheme, interval time.Duration) error {
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func ensureNamespace(ctx context.Context, c client.Client, name string) error {
@@ -309,9 +353,24 @@ func patchAnnotations(ctx context.Context, c client.Client, obj client.Object, a
 	return c.Update(ctx, obj)
 }
 
+func proxyServerEndpoint(endpoint, tenant string) string {
+	trimmed := strings.TrimSpace(endpoint)
+	if trimmed == "" {
+		trimmed = "https://proxy.kubenova.local"
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return strings.TrimRight(trimmed, "/")
+	}
+	u.Path = ""
+	u.RawPath = ""
+	return strings.TrimRight(u.String(), "/")
+}
+
 func ensureTenantAccess(ctx context.Context, c client.Client, tenant, ownerNS, appsNS, proxyEndpoint string) error {
 	ownerSA := "kubenova-owner"
 	readonlySA := "kubenova-readonly"
+	server := proxyServerEndpoint(proxyEndpoint, tenant)
 	// ServiceAccounts
 	if err := ensureServiceAccount(ctx, c, ownerNS, ownerSA); err != nil {
 		return err
@@ -335,7 +394,11 @@ func ensureTenantAccess(ctx context.Context, c client.Client, tenant, ownerNS, a
 		}
 	}
 	// Kubeconfigs secret (best-effort: skip if tokens not yet available)
-	_ = ensureKubeconfigSecret(ctx, c, tenant, ownerNS, proxyEndpoint, ownerSA, readonlySA)
+	_ = ensureKubeconfigSecret(ctx, c, tenant, ownerNS, appsNS, server, ownerSA, readonlySA)
+	// Ensure capsule-proxy settings allow tenant service accounts
+	_ = ensureCapsuleUserGroups(ctx, c, tenant)
+	// Ensure capsule-proxy settings allow tenant service accounts
+	_ = ensureProxySetting(ctx, c, tenant, ownerNS, ownerSA, readonlySA)
 	return nil
 }
 
@@ -420,40 +483,57 @@ func ensureRoleBinding(ctx context.Context, c client.Client, ns, name, roleName,
 	return c.Update(ctx, rb)
 }
 
-func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ns, proxyEndpoint, ownerSA, readonlySA string) error {
-	if proxyEndpoint == "" {
-		proxyEndpoint = fmt.Sprintf("https://proxy.kubenova.local/%s", tenant)
-	}
+func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ownerNS, appsNS, proxyEndpoint, ownerSA, readonlySA string) error {
+	proxyEndpoint = proxyServerEndpoint(proxyEndpoint, tenant)
 	secret := &corev1.Secret{}
-	err := c.Get(ctx, client.ObjectKey{Name: "kubenova-kubeconfigs", Namespace: ns}, secret)
-	if err == nil {
-		return nil
-	}
+	err := c.Get(ctx, client.ObjectKey{Name: "kubenova-kubeconfigs", Namespace: ownerNS}, secret)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	ownerToken, _ := findServiceAccountToken(ctx, c, ns, ownerSA)
-	readonlyToken, _ := findServiceAccountToken(ctx, c, ns, readonlySA)
+	ownerToken, _ := requestServiceAccountToken(ctx, c, ownerNS, ownerSA)
+	if ownerToken == "" {
+		ownerToken, _ = findServiceAccountToken(ctx, c, ownerNS, ownerSA)
+	}
+	readonlyToken, _ := requestServiceAccountToken(ctx, c, ownerNS, readonlySA)
+	if readonlyToken == "" {
+		readonlyToken, _ = findServiceAccountToken(ctx, c, ownerNS, readonlySA)
+	}
 	data := map[string][]byte{}
 	if ownerToken != "" {
-		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint+"/owner", ownerToken))
+		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint, ownerToken, tenant, ownerNS, "owner"))
 	}
 	if readonlyToken != "" {
-		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint+"/readonly", readonlyToken))
+		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint, readonlyToken, tenant, appsNS, "readonly"))
 	}
 	if len(data) == 0 {
 		return nil
 	}
-	secret = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubenova-kubeconfigs",
-			Namespace: ns,
-			Labels:    map[string]string{"managed-by": "kubenova", "tenant": tenant},
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: data,
+	if apierrors.IsNotFound(err) {
+		secret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kubenova-kubeconfigs",
+				Namespace: ownerNS,
+				Labels:    map[string]string{"managed-by": "kubenova", "tenant": tenant},
+			},
+			Type: corev1.SecretTypeOpaque,
+			Data: data,
+		}
+		return c.Create(ctx, secret)
 	}
-	return c.Create(ctx, secret)
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	updated := false
+	for key, val := range data {
+		if !bytes.Equal(secret.Data[key], val) {
+			secret.Data[key] = val
+			updated = true
+		}
+	}
+	if !updated {
+		return nil
+	}
+	return c.Update(ctx, secret)
 }
 
 func findServiceAccountToken(ctx context.Context, c client.Client, ns, saName string) (string, error) {
@@ -472,25 +552,77 @@ func findServiceAccountToken(ctx context.Context, c client.Client, ns, saName st
 	return "", fmt.Errorf("token secret for sa %s not found", saName)
 }
 
-func buildProxyKubeconfig(serverURL, token string) string {
+func requestServiceAccountToken(ctx context.Context, c client.Client, ns, saName string) (string, error) {
+	sa := &corev1.ServiceAccount{}
+	if err := c.Get(ctx, client.ObjectKey{Name: saName, Namespace: ns}, sa); err != nil {
+		return "", err
+	}
+	ttl := int64(3600)
+	audiences := []string{"https://kubernetes.default.svc.cluster.local", "kubernetes"}
+	tr := &authv1.TokenRequest{
+		Spec: authv1.TokenRequestSpec{
+			Audiences:         audiences,
+			ExpirationSeconds: &ttl,
+		},
+	}
+	if err := c.SubResource("token").Create(ctx, sa, tr); err != nil {
+		return "", err
+	}
+	return tr.Status.Token, nil
+}
+
+func buildProxyKubeconfig(serverURL, token, tenant, namespace, role string) string {
+	serverURL = strings.TrimRight(serverURL, "/")
+	clusterName := fmt.Sprintf("%s-proxy", tenant)
+	userName := fmt.Sprintf("%s-%s", tenant, role)
+	contextName := fmt.Sprintf("%s-%s", tenant, role)
 	return fmt.Sprintf(`apiVersion: v1
 kind: Config
 clusters:
 - cluster:
     server: %s
     insecure-skip-tls-verify: true
-  name: proxy
+  name: %s
 contexts:
 - context:
-    cluster: proxy
-    user: sa
-  name: proxy
-current-context: proxy
+    cluster: %s
+    user: %s
+    namespace: %s
+  name: %s
+current-context: %s
 users:
-- name: sa
+- name: %s
   user:
     token: %s
-`, serverURL, token)
+`, serverURL, clusterName, clusterName, userName, namespace, contextName, contextName, userName, token)
+}
+
+func ensureProxySetting(ctx context.Context, c client.Client, tenant, ownerNS, ownerSA, readonlySA string) error {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "capsule.clastix.io",
+		Version: "v1beta1",
+		Kind:    "ProxySetting",
+	})
+	name := "kubenova-proxy-" + tenant
+	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ownerNS}, obj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		ps := map[string]any{
+			"subjects": []any{
+				map[string]any{"kind": "ServiceAccount", "name": ownerSA},
+				map[string]any{"kind": "ServiceAccount", "name": readonlySA},
+				map[string]any{"kind": "Group", "name": fmt.Sprintf("system:serviceaccounts:%s", ownerNS)},
+			},
+		}
+		obj.SetName(name)
+		obj.SetNamespace(ownerNS)
+		obj.SetLabels(map[string]string{"managed-by": "kubenova", "tenant": tenant})
+		_ = unstructured.SetNestedMap(obj.Object, ps, "spec")
+		return c.Create(ctx, obj)
+	}
+	return nil
 }
 
 func setStatusReady(ctx context.Context, c client.Client, obj client.Object) error {

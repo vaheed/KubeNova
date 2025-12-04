@@ -34,6 +34,8 @@ CLUSTER=$(curl -s -X POST "$KN_HOST/api/v1/clusters" \
     \"capsuleProxyEndpoint\": \"$CAPSULE_PROXY_ENDPOINT\"
   }")
 CLUSTER_ID=$(echo "$CLUSTER" | jq -r '.id')
+
+kubectl -n kubenova-system logs -f deploy/kubenova-operator
 ```
 The manager will install the operator (local Helm chart) into the cluster asynchronously and update status to `connected` when successful.
 
@@ -54,9 +56,14 @@ TENANT_ID=$(echo "$TENANT" | jq -r '.id')
 
 Fetch tenant kubeconfigs (owner/read-only) once the operator reconciles:
 ```bash
-curl -s "$KN_HOST/api/v1/tenants/$TENANT_ID/kubeconfig" -H "$KN_ROLES"
+curl -s "$KN_HOST/api/v1/tenants/$TENANT_ID/kubeconfig" -H "$KN_ROLES" > /tmp/tenant-kubeconfigs.json
+jq -r '.owner' /tmp/tenant-kubeconfigs.json > /tmp/tenant-owner.kubeconfig
+jq -r '.readonly' /tmp/tenant-kubeconfigs.json > /tmp/tenant-readonly.kubeconfig
+
+
+kubectl --kubeconfig kind/config get secret -n acme-owner kubenova-kubeconfigs
 ```
-If kubeconfigs aren’t ready yet, the response falls back to Capsule Proxy URLs.
+If kubeconfigs aren’t ready yet, the response may fall back to Capsule Proxy URLs. Always set `capsuleProxyEndpoint` on the cluster so the kubeconfigs use the proxy endpoint.
 
 ## 4) Create a project
 ```bash
@@ -97,6 +104,37 @@ APP_ID=$(echo "$APP" | jq -r '.id')
 curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$APP_ID:deploy" \
   -H "$KN_ROLES"
 ```
+
+Create a Grafana app example (with LoadBalancer):
+```bash
+GRAFANA_APP=$(curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps" \
+  -H "$KN_ROLES" -H 'Content-Type: application/json' \
+  -d '{
+    "name": "grafana",
+    "description": "Grafana dashboard",
+    "component": "grafana",
+    "image": "grafana/grafana:10.4.0",
+    "spec": {
+      "type": "webservice",
+      "properties": {
+        "image": "grafana/grafana:10.4.0",
+        "port": 3000,
+        "serviceType": "LoadBalancer"
+      }
+    },
+    "traits": [
+      {
+        "type": "scaler",
+        "properties": { "min": 1, "max": 2 }
+      }
+    ]
+  }')
+GRAFANA_APP_ID=$(echo "$GRAFANA_APP" | jq -r '.id')
+
+curl -s -X POST "$KN_HOST/api/v1/clusters/$CLUSTER_ID/tenants/$TENANT_ID/projects/$PROJECT_ID/apps/$GRAFANA_APP_ID:deploy" \
+  -H "$KN_ROLES"
+```
+This payload mirrors the KubeVela `Application` shape (`spec.type` + `spec.properties` only). If you previously saw `unknown field "spec.spec"` or `spec.components: Required value`, make sure you are running the latest manager build and re-apply the app so the operator projects a valid Application.
 
 ## 6) Inspect + update
 ```bash

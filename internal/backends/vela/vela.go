@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -50,22 +51,53 @@ func (c *clientImpl) ApplyApp(ctx context.Context, spec map[string]any) error {
 	if name == "" || namespace == "" {
 		return nil
 	}
-	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(applicationGVK)
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, obj)
-	if apierrors.IsNotFound(err) {
-		obj.SetName(name)
-		obj.SetNamespace(namespace)
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(applicationGVK)
+		err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, obj)
+		if apierrors.IsNotFound(err) {
+			obj.SetName(name)
+			obj.SetNamespace(namespace)
+			obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+			obj.Object["spec"] = specFromMap(spec)
+			return c.client.Create(ctx, obj)
+		}
+		if err != nil {
+			return err
+		}
 		obj.SetLabels(map[string]string{"managed-by": "kubenova"})
 		obj.Object["spec"] = specFromMap(spec)
-		return c.client.Create(ctx, obj)
+		return c.client.Update(ctx, obj)
+	})
+}
+
+func (c *clientImpl) ApplyProject(ctx context.Context, spec map[string]any) error {
+	name, _ := spec["name"].(string)
+	if name == "" {
+		return nil
 	}
-	if err != nil {
-		return err
+	namespace := "vela-system"
+	if ns, ok := spec["namespace"].(string); ok && ns != "" {
+		namespace = ns
 	}
-	obj.SetLabels(map[string]string{"managed-by": "kubenova"})
-	obj.Object["spec"] = specFromMap(spec)
-	return c.client.Update(ctx, obj)
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(projectGVK)
+		err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, obj)
+		if apierrors.IsNotFound(err) {
+			obj.SetName(name)
+			obj.SetNamespace(namespace)
+			obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+			obj.Object["spec"] = specFromMap(spec)
+			return c.client.Create(ctx, obj)
+		}
+		if err != nil {
+			return err
+		}
+		obj.SetLabels(map[string]string{"managed-by": "kubenova"})
+		obj.Object["spec"] = specFromMap(spec)
+		return c.client.Update(ctx, obj)
+	})
 }
 
 func (c *clientImpl) ApplyProject(ctx context.Context, spec map[string]any) error {

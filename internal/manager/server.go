@@ -147,7 +147,7 @@ func (s *Server) Router() http.Handler {
 
 		api.With(s.authMiddleware).Route("/tenants", func(r chi.Router) {
 			r.Route("/{tenantID}", func(r chi.Router) {
-				r.Post("/kubeconfig", s.tenantKubeconfig)
+				r.Get("/kubeconfig", s.tenantKubeconfig)
 				r.Get("/usage", s.tenantUsage)
 			})
 		})
@@ -800,10 +800,10 @@ func (s *Server) tenantKubeconfig(w http.ResponseWriter, r *http.Request) {
 	// Fallback to proxy URLs if kubeconfigs not found
 	base := s.clusterProxyBase(r.Context(), tenant.ClusterID)
 	if cfgs["owner"] == "" {
-		cfgs["owner"] = fmt.Sprintf("%s/%s/owner", base, tenant.Name)
+		cfgs["owner"] = base
 	}
 	if cfgs["readonly"] == "" {
-		cfgs["readonly"] = fmt.Sprintf("%s/%s/readonly", base, tenant.Name)
+		cfgs["readonly"] = base
 	}
 	writeJSON(w, http.StatusOK, cfgs)
 }
@@ -1736,7 +1736,8 @@ func (s *Server) syncTenantWithCluster(ctx context.Context, cluster *types.Clust
 	if err != nil {
 		return err
 	}
-	return upsertNovaTenant(ctx, cli, tenant)
+	proxyEndpoint := s.clusterProxyBase(ctx, cluster.ID)
+	return upsertNovaTenant(ctx, cli, tenant, proxyEndpoint)
 }
 
 func (s *Server) syncProject(ctx context.Context, project *types.Project, tenant *types.Tenant) error {
@@ -1878,7 +1879,7 @@ func (s *Server) deleteAppResource(ctx context.Context, app *types.App) error {
 	return nil
 }
 
-func upsertNovaTenant(ctx context.Context, cli ctrlclient.Client, t *types.Tenant) error {
+func upsertNovaTenant(ctx context.Context, cli ctrlclient.Client, t *types.Tenant, proxyEndpoint string) error {
 	if cli == nil {
 		return errors.New("kube client is nil")
 	}
@@ -1894,6 +1895,7 @@ func upsertNovaTenant(ctx context.Context, cli ctrlclient.Client, t *types.Tenan
 		NetworkPolicies: t.NetworkPolicies,
 		Quotas:          t.Quotas,
 		Limits:          t.Limits,
+		ProxyEndpoint:   strings.TrimRight(proxyEndpoint, "/"),
 	}
 	current := &v1alpha1.NovaTenant{}
 	err := cli.Get(ctx, ctrlclient.ObjectKey{Name: t.Name}, current)
