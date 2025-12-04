@@ -1,8 +1,11 @@
 package reconcile
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -142,12 +145,9 @@ func (r *TenantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{}, err
 		}
 	}
+	proxyServer := proxyServerEndpoint(tenantObj.Spec.ProxyEndpoint, tenantName)
 	if r.Proxy != nil {
-		endpoint := tenantObj.Spec.ProxyEndpoint
-		if endpoint == "" {
-			endpoint = fmt.Sprintf("https://proxy.kubenova.local/%s", tenantName)
-		}
-		_ = r.Proxy.Publish(ctx, tenantName, endpoint)
+		_ = r.Proxy.Publish(ctx, tenantName, proxyServer)
 	}
 	if err := ensureNamespace(ctx, r.Client, ownerNS); err != nil {
 		return ctrl.Result{}, err
@@ -155,7 +155,7 @@ func (r *TenantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err := ensureNamespace(ctx, r.Client, appsNS); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := ensureTenantAccess(ctx, r.Client, tenantName, ownerNS, appsNS, tenantObj.Spec.ProxyEndpoint); err != nil {
+	if err := ensureTenantAccess(ctx, r.Client, tenantName, ownerNS, appsNS, proxyServer); err != nil {
 		return ctrl.Result{}, err
 	}
 	_ = setStatusReady(ctx, r.Client, &tenantObj)
@@ -315,9 +315,41 @@ func patchAnnotations(ctx context.Context, c client.Client, obj client.Object, a
 	return c.Update(ctx, obj)
 }
 
+func proxyServerEndpoint(endpoint, tenant string) string {
+	trimmed := strings.TrimSpace(endpoint)
+	if trimmed == "" {
+		trimmed = "https://proxy.kubenova.local"
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return strings.TrimRight(trimmed, "/")
+	}
+	parts := []string{}
+	if path := strings.Trim(u.Path, "/"); path != "" {
+		parts = strings.Split(path, "/")
+		for len(parts) > 0 {
+			last := parts[len(parts)-1]
+			if last == tenant || last == "owner" || last == "readonly" || last == "" {
+				parts = parts[:len(parts)-1]
+				continue
+			}
+			break
+		}
+	}
+	cleanPath := strings.Join(parts, "/")
+	if cleanPath != "" {
+		u.Path = "/" + cleanPath
+	} else {
+		u.Path = ""
+	}
+	u.RawPath = ""
+	return strings.TrimRight(u.String(), "/")
+}
+
 func ensureTenantAccess(ctx context.Context, c client.Client, tenant, ownerNS, appsNS, proxyEndpoint string) error {
 	ownerSA := "kubenova-owner"
 	readonlySA := "kubenova-readonly"
+	server := proxyServerEndpoint(proxyEndpoint, tenant)
 	// ServiceAccounts
 	if err := ensureServiceAccount(ctx, c, ownerNS, ownerSA); err != nil {
 		return err
@@ -341,7 +373,7 @@ func ensureTenantAccess(ctx context.Context, c client.Client, tenant, ownerNS, a
 		}
 	}
 	// Kubeconfigs secret (best-effort: skip if tokens not yet available)
-	_ = ensureKubeconfigSecret(ctx, c, tenant, ownerNS, proxyEndpoint, ownerSA, readonlySA)
+	_ = ensureKubeconfigSecret(ctx, c, tenant, ownerNS, server, ownerSA, readonlySA)
 	return nil
 }
 
@@ -427,14 +459,9 @@ func ensureRoleBinding(ctx context.Context, c client.Client, ns, name, roleName,
 }
 
 func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ns, proxyEndpoint, ownerSA, readonlySA string) error {
-	if proxyEndpoint == "" {
-		proxyEndpoint = fmt.Sprintf("https://proxy.kubenova.local/%s", tenant)
-	}
+	proxyEndpoint = proxyServerEndpoint(proxyEndpoint, tenant)
 	secret := &corev1.Secret{}
 	err := c.Get(ctx, client.ObjectKey{Name: "kubenova-kubeconfigs", Namespace: ns}, secret)
-	if err == nil {
-		return nil
-	}
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -448,24 +475,40 @@ func ensureKubeconfigSecret(ctx context.Context, c client.Client, tenant, ns, pr
 	}
 	data := map[string][]byte{}
 	if ownerToken != "" {
-		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint+"/owner", ownerToken))
+		data["owner"] = []byte(buildProxyKubeconfig(proxyEndpoint, ownerToken))
 	}
 	if readonlyToken != "" {
-		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint+"/readonly", readonlyToken))
+		data["readonly"] = []byte(buildProxyKubeconfig(proxyEndpoint, readonlyToken))
 	}
 	if len(data) == 0 {
 		return nil
 	}
-	secret = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubenova-kubeconfigs",
-			Namespace: ns,
-			Labels:    map[string]string{"managed-by": "kubenova", "tenant": tenant},
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: data,
+	if apierrors.IsNotFound(err) {
+		secret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kubenova-kubeconfigs",
+				Namespace: ns,
+				Labels:    map[string]string{"managed-by": "kubenova", "tenant": tenant},
+			},
+			Type: corev1.SecretTypeOpaque,
+			Data: data,
+		}
+		return c.Create(ctx, secret)
 	}
-	return c.Create(ctx, secret)
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	updated := false
+	for key, val := range data {
+		if !bytes.Equal(secret.Data[key], val) {
+			secret.Data[key] = val
+			updated = true
+		}
+	}
+	if !updated {
+		return nil
+	}
+	return c.Update(ctx, secret)
 }
 
 func findServiceAccountToken(ctx context.Context, c client.Client, ns, saName string) (string, error) {
@@ -503,6 +546,7 @@ func requestServiceAccountToken(ctx context.Context, c client.Client, ns, saName
 }
 
 func buildProxyKubeconfig(serverURL, token string) string {
+	serverURL = strings.TrimRight(serverURL, "/")
 	return fmt.Sprintf(`apiVersion: v1
 kind: Config
 clusters:

@@ -54,7 +54,7 @@ func TestTenantReconcilerCreatesNamespacesAndPublishes(t *testing.T) {
 		Spec: v1alpha1.NovaTenantSpec{
 			OwnerNamespace: "acme-owner",
 			AppsNamespace:  "acme-apps",
-			ProxyEndpoint:  "https://proxy.example/acme",
+			ProxyEndpoint:  "https://proxy.example",
 		},
 	}
 	caps := &mockCapsule{}
