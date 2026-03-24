@@ -65,7 +65,7 @@ jobs:
           key: ${{ runner.os }}-trivy-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-trivy-
       - name: Trivy FS scan
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: 'fs'
           ignore-unfixed: true
@@ -88,7 +88,7 @@ jobs:
           key: ${{ runner.os }}-trivy-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-trivy-
       - name: Trivy Config scan (Helm, manifests)
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: 'config'
           scan-ref: 'deploy'
@@ -117,7 +117,7 @@ jobs:
           key: ${{ runner.os }}-trivy-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-trivy-
       - name: Trivy image scan (Manager)
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           input: 'manager-scan.tar'
           format: 'table'
@@ -125,7 +125,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
       - name: Trivy image scan (operator)
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           input: 'kubenova-operator-scan.tar'
           format: 'table'
